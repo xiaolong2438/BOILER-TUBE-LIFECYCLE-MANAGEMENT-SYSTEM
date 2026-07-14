@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - "炉管全生命周期管理系统.html"
+      - "functions/**"
+      - "migrations/**"
       - ".github/workflows/deploy-cloudflare-pages.yml"
   workflow_dispatch:
 
@@ -46,14 +48,67 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Ensure Cloudflare Pages project exists
+      - name: Prepare Cloudflare config and D1
         if: steps.cloudflare.outputs.ready == 'true'
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          set -euo pipefail
+          DB_NAME="boiler_tube_lifecycle_system"
+          npx --yes wrangler@latest d1 list --json > d1-list.json
+          D1_DATABASE_ID="$(python <<'PY'
+import json
+with open('d1-list.json', 'r', encoding='utf-8') as file_handle:
+    data = json.load(file_handle)
+for item in data if isinstance(data, list) else []:
+    if item.get('name') == 'boiler_tube_lifecycle_system':
+        print(item.get('uuid') or item.get('id') or item.get('database_id') or '')
+        raise SystemExit(0)
+print('')
+PY
+)"
+          if [[ -z "$D1_DATABASE_ID" ]]; then
+            npx --yes wrangler@latest d1 create "$DB_NAME" --json > d1-create.json
+            D1_DATABASE_ID="$(python <<'PY'
+import json
+with open('d1-create.json', 'r', encoding='utf-8') as file_handle:
+    data = json.load(file_handle)
+def ids(node):
+    if isinstance(node, dict):
+        for key in ('uuid', 'database_id', 'id'):
+            value = node.get(key)
+            if value:
+                yield value
+        for value in node.values():
+            yield from ids(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from ids(value)
+for value in ids(data):
+    print(value)
+    raise SystemExit(0)
+print('')
+PY
+)"
+          fi
+          if [[ -z "$D1_DATABASE_ID" ]]; then
+            echo "Unable to resolve D1 database id."
+            exit 1
+          fi
+          cat > wrangler.toml <<EOF
+name = "boiler-tube-lifecycle-system"
+compatibility_date = "2026-07-14"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "$DB_NAME"
+database_id = "$D1_DATABASE_ID"
+EOF
           npx --yes wrangler@latest pages project create boiler-tube-lifecycle-system --production-branch=main || true
+          npx --yes wrangler@latest d1 execute "$DB_NAME" --remote --file=migrations/0001_init.sql
 
       - name: Publish to Cloudflare Pages
         if: steps.cloudflare.outputs.ready == 'true'

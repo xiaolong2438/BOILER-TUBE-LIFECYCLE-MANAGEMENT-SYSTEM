@@ -852,6 +852,65 @@ const LLM_PROVIDER_PRESETS = {
 };
 function escapeHTML(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 function downloadBlob(filename, content, type = 'text/plain;charset=utf-8;') { const blob = new Blob([content], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href); }
+const CLOUD_STORAGE_ENDPOINT = '/api/storage';
+const cloudSaveTimers = new Map();
+function cloudStorageEnabled() { return location.protocol.startsWith('http') && location.host && location.origin !== 'null'; }
+async function cloudStorageRequest(key, method = 'GET', value) {
+  if(!cloudStorageEnabled()) return null;
+  try {
+    const response = await fetch(`${CLOUD_STORAGE_ENDPOINT}/${encodeURIComponent(key)}`, {
+      method,
+      headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
+      body: method === 'GET' ? undefined : JSON.stringify({ value })
+    });
+    if(response.status === 404) return { found: false };
+    if(!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+function queueCloudStorageSave(key, value) {
+  if(!cloudStorageEnabled()) return;
+  const prev = cloudSaveTimers.get(key);
+  if(prev) clearTimeout(prev);
+  cloudSaveTimers.set(key, setTimeout(() => { cloudStorageRequest(key, 'PUT', value); }, 250));
+}
+async function bootstrapCloudStorage() {
+  if(!cloudStorageEnabled()) return;
+  const [remoteUserDB, remoteMaterialLibrary] = await Promise.all([
+    cloudStorageRequest('boiler_user_db'),
+    cloudStorageRequest('boiler_material_library')
+  ]);
+  let changed = false;
+  if(remoteUserDB?.found && remoteUserDB.value && typeof remoteUserDB.value === 'object') {
+    userDB = remoteUserDB.value;
+    localStorage.setItem('boiler_user_db', JSON.stringify(userDB));
+    changed = true;
+  }
+  if(remoteMaterialLibrary?.found && Array.isArray(remoteMaterialLibrary.value)) {
+    localStorage.setItem('boiler_material_library', JSON.stringify(remoteMaterialLibrary.value));
+    changed = true;
+  }
+  if(remoteUserDB?.found === false && ((userDB.events || []).length || (userDB.replacements || []).length)) {
+    queueCloudStorageSave('boiler_user_db', userDB);
+  }
+  if(remoteMaterialLibrary?.found === false) {
+    const localMaterials = JSON.parse(localStorage.getItem('boiler_material_library') || '[]');
+    if(Array.isArray(localMaterials) && localMaterials.length) queueCloudStorageSave('boiler_material_library', localMaterials);
+  }
+  if(changed) {
+    renderDMTable();
+    updateLifecycleDropdown();
+    populateAIThicknessTargets();
+    renderDashboardWarnings();
+    syncDashboardSnapshot();
+    renderMaintenancePlan();
+    renderComponent('ww');
+    const activeComp = document.querySelector('.comp-tab.active')?.dataset.comp || 'ww';
+    renderMaterialLibrary(activeComp);
+  }
+}
 function parseCSVLine(line) {
   const result = []; let current = ''; let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
@@ -866,7 +925,7 @@ function parseCSVLine(line) {
   result.push(current); return result;
 }
 function csvEscape(value) { return `"${String(value ?? '').replace(/"/g, '""')}"`; }
-function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); renderDMTable(); updateLifecycleDropdown(); populateAIThicknessTargets(); renderDashboardWarnings(); syncDashboardSnapshot(); }
+function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); queueCloudStorageSave('boiler_user_db', userDB); renderDMTable(); updateLifecycleDropdown(); populateAIThicknessTargets(); renderDashboardWarnings(); syncDashboardSnapshot(); }
 function getBoilerFromCode(code) {
   const match = String(code || '').trim().match(/^([12])-/);
   return match ? match[1] : '';
@@ -1789,6 +1848,7 @@ function getMaterialLibrary() {
 }
 function saveMaterialLibrary(items) {
   localStorage.setItem(MATERIAL_LIBRARY_KEY, JSON.stringify(items));
+  queueCloudStorageSave(MATERIAL_LIBRARY_KEY, items);
   const active = document.querySelector('.comp-tab.active')?.dataset.comp || 'ww';
   renderMaterialLibrary(active);
 }
@@ -3116,6 +3176,7 @@ populateAIThicknessTargets();
 loadLLMConfigToForm();
 renderDashboardWarnings(); syncDashboardSnapshot();
 renderMaintenancePlan();
+bootstrapCloudStorage();
 </script>
 </body>
 </html>

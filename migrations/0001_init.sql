@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS app_kv (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL CHECK (json_valid(value)),
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
