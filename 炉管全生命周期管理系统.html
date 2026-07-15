@@ -1721,6 +1721,21 @@ function renderDashboardSurfaceList() {
     </button>`;
   }).join('');
 }
+function renderDashboardHealthCore(stats) {
+  const ring = document.getElementById('dashboardHealthRing');
+  const value = document.getElementById('dashboard-overall-health');
+  const left = document.getElementById('dashboardCoreLeftMetrics');
+  const right = document.getElementById('dashboardCoreRightMetrics');
+  if(!ring || !value || !left || !right) return;
+  const health = Math.max(0, Math.min(100, Number(stats.current) || 0));
+  const tone = health < 60 ? 'var(--danger)' : health < 75 ? 'var(--warn)' : 'var(--ok)';
+  ring.style.setProperty('--health-value', health);
+  ring.style.setProperty('--health-color', tone);
+  ring.setAttribute('aria-label', `综合健康度 ${health}%`);
+  value.textContent = `${health}%`;
+  left.innerHTML = `<div class="health-side-metric" style="--metric-color:var(--danger)"><span>严重风险</span><strong>${stats.highCount}</strong></div><div class="health-side-metric" style="--metric-color:var(--warn)"><span>预警关注</span><strong>${stats.mediumCount}</strong></div>`;
+  right.innerHTML = `<div class="health-side-metric" style="--metric-color:${stats.delta >= 0 ? 'var(--ok)' : 'var(--danger)'}"><span>较上次检修</span><strong>${stats.delta >= 0 ? '+' : ''}${stats.delta}%</strong></div><div class="health-side-metric" style="--metric-color:var(--ok)"><span>闭环率</span><strong>83%</strong></div>`;
+}
 function syncDashboardSnapshot() {
   const updateTime = document.getElementById('dashboard-update-time');
   if(updateTime) updateTime.textContent = new Date().toLocaleString('zh-CN', { hour12: false });
@@ -1740,7 +1755,10 @@ function syncDashboardSnapshot() {
   const highCount = warnings.filter(item => item.level === 'HIGH').length;
   const mediumCount = warnings.filter(item => item.level === 'MEDIUM').length;
   const trendStats = getDashboardTrendStats(warnings);
+  renderDashboardHealthCore(trendStats);
   const ledgerCount = dashboardUnit === 'all' ? 5139 * 2 : 5139;
+  const leftUnit = document.getElementById('dashboard-left-unit');
+  if(leftUnit) leftUnit.textContent = unitLabel;
   const highEl = document.getElementById('dashboard-high-risk-count');
   if(highEl) highEl.textContent = highCount.toLocaleString();
   const warnEl = document.getElementById('dashboard-warn-risk-count');
