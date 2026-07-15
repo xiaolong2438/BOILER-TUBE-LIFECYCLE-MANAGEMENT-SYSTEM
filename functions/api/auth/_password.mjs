@@ -14,8 +14,7 @@ function base64ToBytes(value) {
 
 async function getCrypto() {
   if(globalThis.crypto?.subtle && globalThis.crypto?.getRandomValues) return globalThis.crypto;
-  const { webcrypto } = await import('node:crypto');
-  return webcrypto;
+  throw new Error('Web Crypto API is not available in this runtime.');
 }
 
 export async function hashPassword(password, saltBase64, iterations = PASSWORD_ITERATIONS) {
