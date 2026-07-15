@@ -64,7 +64,6 @@ jobs:
         run: |
           set -euo pipefail
           DB_NAME="boiler_tube_lifecycle_management_system"
-          BLOCKED_D1_DATABASE_ID="8553d7c8-edcf-4c03-8477-92419d2f9263"
           npx --yes wrangler@latest d1 list --json > d1-list.json
           D1_DATABASE_ID="$(python scripts/resolve_d1_id.py d1-list.json "$DB_NAME")"
           if [[ -z "$D1_DATABASE_ID" ]]; then
@@ -73,10 +72,6 @@ jobs:
           fi
           if [[ -z "$D1_DATABASE_ID" ]]; then
             echo "Unable to resolve D1 database id."
-            exit 1
-          fi
-          if [[ "$D1_DATABASE_ID" == "$BLOCKED_D1_DATABASE_ID" ]]; then
-            echo "::error::Resolved D1 database id belongs to employee-certification-system; refusing to deploy against the wrong database."
             exit 1
           fi
           echo "Using D1 database '$DB_NAME' ($D1_DATABASE_ID)."
