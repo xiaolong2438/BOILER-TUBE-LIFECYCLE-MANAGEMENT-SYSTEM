@@ -1789,12 +1789,12 @@ function syncDashboardSnapshot() {
 function renderDashboardWarnings() {
   const box = document.getElementById('dashboard-warning-list');
   if(!box) return;
-  const warnings = getDashboardScopedWarnings();
+  const warnings = getDashboardScopedWarnings(3);
   if(warnings.length === 0) {
-    box.innerHTML = `<div class="alert alert-info"><div>ℹ</div><div><strong>[INFO]</strong> ${escapeHTML(getDashboardUnitLabel())}当前未发现需要展示的预警，请录入测厚、金相、蠕变或更换事件后刷新。</div></div>`;
+    box.innerHTML = `<div class="command-warning alert-info"><strong>当前无预警</strong><span>${escapeHTML(getDashboardUnitLabel())}暂无需要优先关注的管段</span></div>`;
     return;
   }
-  box.innerHTML = warnings.map(item => `<div class="alert ${warningClass(item.level)}"><div>${item.level === 'INFO' ? 'ℹ' : '⚠'}</div><div><strong>[${item.level}]</strong> ${escapeHTML(item.code)} ${escapeHTML(item.text)} <span style="color:var(--text-dim); font-size:11px;">${escapeHTML(item.source)}</span></div></div>`).join('');
+  box.innerHTML = warnings.map(item => `<button type="button" class="command-warning ${warningClass(item.level)}" onclick="openTubeProfile('${escapeHTML(item.code)}')"><strong>${escapeHTML(item.code)}</strong><span>${escapeHTML(item.text)}</span></button>`).join('');
 }
 function formatDashboardWarningsForPrompt() {
   const warnings = getDashboardScopedWarnings();
