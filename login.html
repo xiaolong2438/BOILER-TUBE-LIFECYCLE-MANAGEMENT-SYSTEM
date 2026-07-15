@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 | 锅炉受热面全寿命管理系统</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-0: #00060f; --bg-1: #001122; --accent: #00d4ff; --text: #e0f7ff;
+    --text-dim: #7fb3d5; --danger: #ff3860; --ok: #00e676;
+  }
+  body {
+    min-height: 100vh; display: grid; place-items: center; padding: 24px;
+    background: radial-gradient(circle at 20% 20%, rgba(0,119,182,.22), transparent 34%),
+      radial-gradient(circle at 80% 70%, rgba(72,202,228,.14), transparent 30%), var(--bg-0);
+    color: var(--text); font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .login-shell {
+    width: min(420px, 100%); border: 1px solid rgba(0,212,255,.28); border-radius: 10px;
+    background: linear-gradient(135deg, rgba(0,29,61,.72), rgba(0,17,34,.78));
+    box-shadow: 0 0 32px rgba(0,212,255,.16); padding: 30px;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+  .brand-mark {
+    width: 46px; height: 46px; border: 2px solid var(--accent); border-radius: 8px;
+    display: grid; place-items: center; color: var(--accent); font-weight: 800;
+    box-shadow: 0 0 20px rgba(0,212,255,.45);
+  }
+  h1 { font-size: 18px; letter-spacing: 1px; }
+  .brand p { color: var(--text-dim); font-size: 12px; margin-top: 4px; letter-spacing: 1px; }
+  label { display: block; color: var(--text-dim); font-size: 12px; margin: 16px 0 8px; letter-spacing: 1px; }
+  input {
+    width: 100%; padding: 12px 13px; border-radius: 6px; border: 1px solid rgba(0,212,255,.32);
+    background: rgba(0,6,15,.86); color: var(--text); font: inherit; outline: none;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 14px rgba(0,212,255,.28); }
+  button {
+    width: 100%; margin-top: 22px; padding: 12px 14px; border: 1px solid var(--accent);
+    border-radius: 6px; background: linear-gradient(135deg, rgba(0,212,255,.24), rgba(0,119,182,.28));
+    color: #fff; font: inherit; cursor: pointer; letter-spacing: 2px;
+  }
+  button:disabled { opacity: .55; cursor: wait; }
+  .status { min-height: 22px; margin-top: 14px; color: var(--text-dim); font-size: 13px; }
+  .status.error { color: var(--danger); }
+  .status.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+  <form class="login-shell" id="login-form">
+    <div class="brand">
+      <div class="brand-mark">BT</div>
+      <div>
+        <h1>BOILER-TUBE LIFECYCLE SYSTEM</h1>
+        <p>账号认证 · D1 SESSION</p>
+      </div>
+    </div>
+    <label for="username">账号</label>
+    <input id="username" name="username" autocomplete="username" required autofocus>
+    <label for="password">密码</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button id="submit-btn" type="submit">登录系统</button>
+    <div class="status" id="status"></div>
+  </form>
+<script>
+const form = document.getElementById('login-form');
+const statusEl = document.getElementById('status');
+const submitBtn = document.getElementById('submit-btn');
+
+function setStatus(message, type = '') {
+  statusEl.textContent = message;
+  statusEl.className = `status ${type}`.trim();
+}
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  submitBtn.disabled = true;
+  setStatus('正在验证账号...');
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: form.username.value.trim(),
+        password: form.password.value
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if(!response.ok) throw new Error(payload.error || '登录失败');
+    setStatus('登录成功，正在进入系统...', 'ok');
+    const params = new URLSearchParams(location.search);
+    location.href = params.get('next') || '/';
+  } catch (error) {
+    setStatus(error.message || '登录失败', 'error');
+    submitBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

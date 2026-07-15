@@ -28,6 +28,9 @@
   .logo-text p { font-size: 11px; color: var(--text-dim); letter-spacing: 3px; }
   .header-info { display: flex; gap: 25px; align-items: center; font-size: 12px; color: var(--text-dim); }
   .header-info .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+  .auth-user { color: var(--accent-3); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .auth-btn { padding: 6px 10px; border: 1px solid rgba(0, 212, 255, 0.28); border-radius: 6px; background: rgba(0, 29, 61, 0.35); color: var(--text-dim); cursor: pointer; font: inherit; font-size: 12px; }
+  .auth-btn:hover { border-color: var(--accent); color: var(--accent); }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
 
   nav { display: flex; gap: 12px; padding: 15px 40px; background: rgba(0, 17, 34, 0.4); border-bottom: 1px solid rgba(0, 212, 255, 0.1); overflow-x: auto; }
@@ -326,6 +329,8 @@
     <div><span class="dot"></span>系统在线 · AI就绪</div>
     <div>⏱ <span id="clock">--:--:--</span></div>
     <div>🏭 1#/2# 机组</div>
+    <div class="auth-user" id="auth-user">账号校验中</div>
+    <button class="auth-btn" type="button" onclick="logoutUser()">退出</button>
   </div>
 </header>
 
@@ -910,6 +915,31 @@ async function bootstrapCloudStorage() {
     const activeComp = document.querySelector('.comp-tab.active')?.dataset.comp || 'ww';
     renderMaterialLibrary(activeComp);
   }
+}
+async function loadAuthSession() {
+  if(!cloudStorageEnabled()) return;
+  try {
+    const response = await fetch('/api/auth/session');
+    if(response.status === 401) {
+      location.href = '/login.html';
+      return;
+    }
+    if(!response.ok) return;
+    const session = await response.json();
+    const userEl = document.getElementById('auth-user');
+    if(userEl && session.username) userEl.textContent = `账号：${session.username}`;
+  } catch {
+    const userEl = document.getElementById('auth-user');
+    if(userEl) userEl.textContent = '本地模式';
+  }
+}
+async function logoutUser() {
+  if(!cloudStorageEnabled()) {
+    location.reload();
+    return;
+  }
+  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => null);
+  location.href = '/login.html';
 }
 function parseCSVLine(line) {
   const result = []; let current = ''; let inQuotes = false;
@@ -3176,6 +3206,7 @@ populateAIThicknessTargets();
 loadLLMConfigToForm();
 renderDashboardWarnings(); syncDashboardSnapshot();
 renderMaintenancePlan();
+loadAuthSession();
 bootstrapCloudStorage();
 </script>
 </body>

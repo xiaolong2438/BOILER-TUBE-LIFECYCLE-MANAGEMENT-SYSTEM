@@ -6,34 +6,36 @@ import pathlib
 import sys
 
 
-def find_id(node) -> str:
+def find_id(node, name: str = "") -> str:
     if isinstance(node, dict):
+        if name and node.get("name") and node.get("name") != name:
+            return ""
         for key in ("uuid", "database_id", "id"):
             value = node.get(key)
             if value:
                 return str(value)
         for value in node.values():
-            found = find_id(value)
+            found = find_id(value, name)
             if found:
                 return found
     elif isinstance(node, list):
         for value in node:
-            found = find_id(value)
+            found = find_id(value, name)
             if found:
                 return found
     return ""
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("Usage: resolve_d1_id.py <json-file>", file=sys.stderr)
+    if len(sys.argv) not in (2, 3):
+        print("Usage: resolve_d1_id.py <json-file> [database-name]", file=sys.stderr)
         return 1
     path = pathlib.Path(sys.argv[1])
+    name = sys.argv[2] if len(sys.argv) == 3 else ""
     data = json.loads(path.read_text(encoding="utf-8"))
-    result = find_id(data)
+    result = find_id(data, name)
     if not result:
-        print("Could not resolve D1 database id.", file=sys.stderr)
-        return 1
+        return 0
     print(result)
     return 0
 
