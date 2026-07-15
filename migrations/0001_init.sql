@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS app_kv (
 
 CREATE TABLE IF NOT EXISTS users (
   username TEXT PRIMARY KEY,
+  role TEXT NOT NULL DEFAULT 'user',
   password_hash TEXT NOT NULL,
   salt TEXT NOT NULL,
   iterations INTEGER NOT NULL,

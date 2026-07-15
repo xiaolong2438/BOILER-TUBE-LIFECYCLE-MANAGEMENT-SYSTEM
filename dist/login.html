@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>登录 | 锅炉全生命周期管理系统</title>
+<title>登录 | 锅炉炉管全生命周期管理系统</title>
+<link rel="preload" as="image" href="assets/power-station-boiler-bg.webp" type="image/webp" media="(min-width: 901px)" fetchpriority="high">
+<link rel="preload" as="image" href="assets/power-station-boiler-bg-mobile.webp" type="image/webp" media="(max-width: 900px)" fetchpriority="high">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -17,6 +19,14 @@
     --line: rgba(34, 217, 255, .42);
     --danger: #ff6b85;
     --ok: #57f0b0;
+  }
+  @supports (background-image: image-set(url("assets/power-station-boiler-bg.webp") type("image/webp"))) {
+    :root {
+      --login-bg-image: image-set(
+        url("assets/power-station-boiler-bg.webp") type("image/webp"),
+        url("assets/power-station-boiler-bg.png") type("image/png")
+      );
+    }
   }
   body {
     min-height: 100vh;
@@ -251,6 +261,14 @@
     .login-card { padding: 54px 44px 42px; }
   }
   @media (max-width: 900px) {
+    @supports (background-image: image-set(url("assets/power-station-boiler-bg-mobile.webp") type("image/webp"))) {
+      :root {
+        --login-bg-image: image-set(
+          url("assets/power-station-boiler-bg-mobile.webp") type("image/webp"),
+          url("assets/power-station-boiler-bg.png") type("image/png")
+        );
+      }
+    }
     body { overflow: auto; }
     .page {
       min-height: 100vh;
@@ -349,7 +367,7 @@ form.addEventListener('submit', async (event) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username,
-        password: form.password.value
+        password: form.password.value.trim()
       })
     });
     const payload = await response.json().catch(() => ({}));

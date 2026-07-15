@@ -15,16 +15,20 @@ def sql_literal(value: str) -> str:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print("Usage: hash_password_sql.py <username> <password>", file=sys.stderr)
+    if len(sys.argv) not in (3, 4):
+        print("Usage: hash_password_sql.py <username> <password> [role]", file=sys.stderr)
         return 1
     username = sys.argv[1].strip()
     password = sys.argv[2].strip()
+    role = sys.argv[3].strip().lower() if len(sys.argv) == 4 else 'admin'
     if not username:
         print("Username cannot be empty.", file=sys.stderr)
         return 1
     if len(password) < 8:
         print("Password must be at least 8 characters.", file=sys.stderr)
+        return 1
+    if role not in ('admin', 'user'):
+        print("Role must be admin or user.", file=sys.stderr)
         return 1
 
     salt = os.urandom(16)
@@ -33,9 +37,10 @@ def main() -> int:
     digest_b64 = base64.b64encode(digest).decode("ascii")
 
     print(
-        "INSERT INTO users (username, password_hash, salt, iterations, updated_at) "
-        f"VALUES ({sql_literal(username)}, {sql_literal(digest_b64)}, {sql_literal(salt_b64)}, {ITERATIONS}, CURRENT_TIMESTAMP) "
+        "INSERT INTO users (username, role, password_hash, salt, iterations, updated_at) "
+        f"VALUES ({sql_literal(username)}, {sql_literal(role)}, {sql_literal(digest_b64)}, {sql_literal(salt_b64)}, {ITERATIONS}, CURRENT_TIMESTAMP) "
         "ON CONFLICT(username) DO UPDATE SET "
+        "role = excluded.role, "
         "password_hash = excluded.password_hash, "
         "salt = excluded.salt, "
         "iterations = excluded.iterations, "

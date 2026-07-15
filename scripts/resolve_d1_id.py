@@ -7,14 +7,35 @@ import pathlib
 import sys
 
 
+def object_name(node: dict) -> str:
+    for key in ("name", "database_name", "binding"):
+        value = node.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def object_id(node: dict) -> str:
+    for key in ("uuid", "database_id", "id"):
+        value = node.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
 def find_id(node, name: str = "") -> str:
     if isinstance(node, dict):
-        if name and node.get("name") and node.get("name") != name:
-            return ""
-        for key in ("uuid", "database_id", "id"):
-            value = node.get(key)
-            if value:
-                return str(value)
+        node_name = object_name(node)
+        if name and node_name:
+            if node_name != name:
+                return ""
+            found_id = object_id(node)
+            if found_id:
+                return found_id
+        elif not name:
+            found_id = object_id(node)
+            if found_id:
+                return found_id
         for value in node.values():
             found = find_id(value, name)
             if found:
@@ -44,6 +65,11 @@ def find_id_in_text(text: str, name: str = "") -> str:
                 match = UUID_PATTERN.search(line)
                 if match:
                     return match.group(0)
+        if name.lower() in text.lower():
+            match = UUID_PATTERN.search(text)
+            if match:
+                return match.group(0)
+        return ""
     for line in lines:
         match = UUID_PATTERN.search(line)
         if match:

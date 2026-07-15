@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>锅炉受热面全寿命管理系统 | v6.6</title>
+<title>锅炉炉管全生命周期管理系统 | v6.6</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
@@ -28,9 +28,33 @@
   .logo-text p { font-size: 11px; color: var(--text-dim); letter-spacing: 3px; }
   .header-info { display: flex; gap: 25px; align-items: center; font-size: 12px; color: var(--text-dim); }
   .header-info .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+  .auth-actions { display: flex; gap: 8px; align-items: center; }
   .auth-user { color: var(--accent-3); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .auth-btn { padding: 6px 10px; border: 1px solid rgba(0, 212, 255, 0.28); border-radius: 6px; background: rgba(0, 29, 61, 0.35); color: var(--text-dim); cursor: pointer; font: inherit; font-size: 12px; }
   .auth-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .password-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 6, 15, 0.72); backdrop-filter: blur(8px); z-index: 400; }
+  .password-modal.open { display: flex; }
+  .password-panel { width: min(720px, 100%); border: 1px solid rgba(0, 212, 255, 0.34); border-radius: 10px; background: rgba(3, 18, 38, 0.96); box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45), 0 0 32px rgba(0, 212, 255, 0.12); overflow: hidden; }
+  .password-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid rgba(0, 212, 255, 0.14); }
+  .password-kicker { color: var(--text-dim); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+  .password-panel-head h3 { margin-top: 4px; font-size: 20px; color: #fff; }
+  .password-close { width: 32px; height: 32px; border: 1px solid rgba(0, 212, 255, 0.2); border-radius: 6px; background: rgba(0, 29, 61, 0.4); color: var(--text-dim); cursor: pointer; font-size: 18px; line-height: 1; }
+  .password-close:hover { color: var(--accent); border-color: var(--accent); }
+  .password-tabs { display: flex; gap: 8px; padding: 16px 20px 0; }
+  .password-tab { padding: 9px 14px; border: 1px solid rgba(0, 212, 255, 0.18); border-radius: 6px 6px 0 0; background: rgba(0, 16, 34, 0.72); color: var(--text-dim); cursor: pointer; font: inherit; font-size: 12px; }
+  .password-tab.active { border-color: rgba(0, 212, 255, 0.38); border-bottom-color: transparent; background: rgba(0, 43, 84, 0.96); color: #fff; }
+  .password-body { padding: 18px 20px 20px; border-top: 1px solid rgba(0, 212, 255, 0.14); }
+  .password-form[hidden] { display: none; }
+  .password-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .password-field label { display: block; margin-bottom: 6px; color: var(--text-dim); font-size: 12px; }
+  .password-field input { width: 100%; padding: 10px 12px; border: 1px solid rgba(0, 212, 255, 0.18); border-radius: 6px; background: rgba(0, 16, 34, 0.78); color: #fff; font: inherit; }
+  .password-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.12); }
+  .password-actions { margin-top: 14px; display: flex; justify-content: flex-end; gap: 10px; }
+  .password-submit { padding: 9px 16px; border: none; border-radius: 6px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: white; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+  .password-submit:disabled { opacity: 0.6; cursor: wait; }
+  .password-message { min-height: 20px; margin-top: 14px; color: var(--text-dim); font-size: 12px; }
+  .password-message.error { color: var(--danger); }
+  .password-message.ok { color: var(--ok); }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
 
   nav { display: flex; gap: 12px; padding: 15px 40px; background: rgba(0, 17, 34, 0.4); border-bottom: 1px solid rgba(0, 212, 255, 0.1); overflow-x: auto; }
@@ -296,6 +320,11 @@
   @media (max-width: 600px) {
     header { flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px 18px; }
     .header-info { flex-wrap: wrap; gap: 10px 16px; }
+    .auth-actions { flex-wrap: wrap; }
+    .password-modal { padding: 14px; }
+    .password-panel-head, .password-body { padding-left: 16px; padding-right: 16px; }
+    .password-tabs { padding-left: 16px; padding-right: 16px; }
+    .password-grid { grid-template-columns: 1fr; }
     nav { padding: 12px 18px; gap: 10px; }
     .nav-group { flex-wrap: nowrap; padding-right: 10px; }
     main { padding: 20px 18px 48px; }
@@ -321,8 +350,8 @@
   <div class="logo">
     <div class="logo-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.3l7.5 3.7L12 11.7 4.5 8 12 4.3zM4 9.5l7 3.5v7l-7-3.5v-7zm16 0v7l-7 3.5v-7l7-3.5z"/></svg></div>
     <div class="logo-text">
-      <h1>BOILER-TUBE LIFECYCLE SYSTEM</h1>
-      <p>锅炉受热面全寿命管理系统 v6.6</p>
+      <h1>BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM</h1>
+      <p>锅炉炉管全生命周期管理系统 v6.6</p>
     </div>
   </div>
   <div class="header-info">
@@ -330,9 +359,69 @@
     <div>⏱ <span id="clock">--:--:--</span></div>
     <div>🏭 1#/2# 机组</div>
     <div class="auth-user" id="auth-user">账号校验中</div>
-    <button class="auth-btn" type="button" onclick="logoutUser()">退出</button>
+    <div class="auth-actions">
+      <button class="auth-btn" type="button" onclick="openPasswordManager()">密码管理</button>
+      <button class="auth-btn" type="button" onclick="logoutUser()">退出</button>
+    </div>
   </div>
 </header>
+
+<div class="password-modal" id="password-modal" aria-hidden="true">
+  <div class="password-panel" role="dialog" aria-modal="true" aria-labelledby="password-title">
+    <div class="password-panel-head">
+      <div>
+        <div class="password-kicker">Account Security</div>
+        <h3 id="password-title">密码管理</h3>
+      </div>
+      <button class="password-close" type="button" onclick="closePasswordManager()" aria-label="关闭">×</button>
+    </div>
+    <div class="password-tabs" role="tablist" aria-label="密码管理">
+      <button class="password-tab active" id="password-tab-change" type="button" onclick="switchPasswordTab('change')">修改密码</button>
+      <button class="password-tab" id="password-tab-reset" type="button" onclick="switchPasswordTab('reset')" hidden>管理员重置</button>
+    </div>
+    <div class="password-body">
+      <form class="password-form" id="change-password-form">
+        <div class="password-grid">
+          <div class="password-field">
+            <label for="current-password">当前密码</label>
+            <input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required>
+          </div>
+          <div class="password-field">
+            <label for="new-password">新密码</label>
+            <input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+          <div class="password-field">
+            <label for="confirm-password">确认新密码</label>
+            <input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+        </div>
+        <div class="password-actions">
+          <button class="password-submit" type="submit">更新密码</button>
+        </div>
+      </form>
+      <form class="password-form" id="reset-password-form" hidden>
+        <div class="password-grid">
+          <div class="password-field">
+            <label for="target-username">目标账号</label>
+            <input id="target-username" name="targetUsername" type="text" autocomplete="off" required>
+          </div>
+          <div class="password-field">
+            <label for="reset-new-password">新密码</label>
+            <input id="reset-new-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+          <div class="password-field">
+            <label for="reset-confirm-password">确认新密码</label>
+            <input id="reset-confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+        </div>
+        <div class="password-actions">
+          <button class="password-submit" type="submit">重置密码</button>
+        </div>
+      </form>
+      <div class="password-message" id="password-message" role="status"></div>
+    </div>
+  </div>
+</div>
 
 <nav>
   <div class="nav-group" aria-label="总览监控">
@@ -841,7 +930,7 @@
   </section>
 </main>
 
-<footer>⬢ BOILER-TUBE LIFECYCLE SYSTEM v6.6 DEDUPE-STABLE · 2026 ⬢</footer>
+<footer>⬢ BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v6.6 DEDUPE-STABLE · 2026 ⬢</footer>
 
 <script>
 // ========== LOCAL DB (CSV 数据录入模块) ==========
@@ -859,6 +948,7 @@ function escapeHTML(value) { return String(value ?? '').replace(/[&<>"']/g, ch =
 function downloadBlob(filename, content, type = 'text/plain;charset=utf-8;') { const blob = new Blob([content], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href); }
 const CLOUD_STORAGE_ENDPOINT = '/api/storage';
 const cloudSaveTimers = new Map();
+let currentAuthSession = null;
 function cloudStorageEnabled() { return location.protocol.startsWith('http') && location.host && location.origin !== 'null'; }
 async function cloudStorageRequest(key, method = 'GET', value) {
   if(!cloudStorageEnabled()) return null;
@@ -921,16 +1011,22 @@ async function loadAuthSession() {
   try {
     const response = await fetch('/api/auth/session');
     if(response.status === 401) {
-      location.href = '/login.html';
+      location.href = '/login';
       return;
     }
     if(!response.ok) return;
     const session = await response.json();
+    currentAuthSession = session;
     const userEl = document.getElementById('auth-user');
-    if(userEl && session.username) userEl.textContent = `账号：${session.username}`;
+    if(userEl && session.username) userEl.textContent = `账号：${session.username}${session.role === 'admin' ? '（管理员）' : ''}`;
+    const resetTab = document.getElementById('password-tab-reset');
+    if(resetTab) resetTab.hidden = session.role !== 'admin';
   } catch {
+    currentAuthSession = null;
     const userEl = document.getElementById('auth-user');
     if(userEl) userEl.textContent = '本地模式';
+    const resetTab = document.getElementById('password-tab-reset');
+    if(resetTab) resetTab.hidden = true;
   }
 }
 async function logoutUser() {
@@ -939,8 +1035,111 @@ async function logoutUser() {
     return;
   }
   await fetch('/api/auth/logout', { method: 'POST' }).catch(() => null);
-  location.href = '/login.html';
+  location.href = '/login';
 }
+function openPasswordManager() {
+  const modal = document.getElementById('password-modal');
+  if(!modal) return;
+  setPasswordMessage('', '');
+  switchPasswordTab('change');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  const resetTab = document.getElementById('password-tab-reset');
+  if(resetTab) resetTab.hidden = currentAuthSession?.role !== 'admin';
+  setTimeout(() => document.getElementById('current-password')?.focus(), 0);
+}
+function closePasswordManager() {
+  const modal = document.getElementById('password-modal');
+  if(!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+}
+function switchPasswordTab(tab) {
+  const isReset = tab === 'reset' && currentAuthSession?.role === 'admin';
+  const activeTab = isReset ? 'reset' : 'change';
+  document.getElementById('password-tab-change')?.classList.toggle('active', activeTab === 'change');
+  document.getElementById('password-tab-reset')?.classList.toggle('active', activeTab === 'reset');
+  const changeForm = document.getElementById('change-password-form');
+  const resetForm = document.getElementById('reset-password-form');
+  if(changeForm) changeForm.hidden = activeTab !== 'change';
+  if(resetForm) resetForm.hidden = activeTab !== 'reset';
+  setPasswordMessage('', '');
+}
+function setPasswordMessage(message, type = '') {
+  const messageEl = document.getElementById('password-message');
+  if(!messageEl) return;
+  messageEl.textContent = message;
+  messageEl.className = `password-message${type ? ` ${type}` : ''}`;
+}
+async function submitPasswordChange(event) {
+  event.preventDefault();
+  if(!cloudStorageEnabled()) {
+    setPasswordMessage('本地文件预览模式不能修改云端密码。', 'error');
+    return;
+  }
+  const form = event.currentTarget;
+  const submitButton = form.querySelector('button[type="submit"]');
+  const body = Object.fromEntries(new FormData(form).entries());
+  submitButton.disabled = true;
+  setPasswordMessage('正在更新密码...', '');
+  try {
+    const response = await fetch('/api/auth/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const result = await response.json().catch(() => ({}));
+    if(!response.ok) throw new Error(result.error || '密码更新失败');
+    form.reset();
+    setPasswordMessage(result.message || '密码已更新，请重新登录。', 'ok');
+    setTimeout(() => logoutUser(), 900);
+  } catch (error) {
+    setPasswordMessage(error.message || '密码更新失败', 'error');
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+async function submitAdminPasswordReset(event) {
+  event.preventDefault();
+  if(!cloudStorageEnabled()) {
+    setPasswordMessage('本地文件预览模式不能修改云端密码。', 'error');
+    return;
+  }
+  const form = event.currentTarget;
+  const formData = new FormData(form);
+  const targetUsername = String(formData.get('targetUsername') || '').trim();
+  const submitButton = form.querySelector('button[type="submit"]');
+  if(!targetUsername) {
+    setPasswordMessage('请输入目标账号。', 'error');
+    return;
+  }
+  submitButton.disabled = true;
+  setPasswordMessage('正在重置密码...', '');
+  try {
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(targetUsername)}/password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        newPassword: formData.get('newPassword'),
+        confirmPassword: formData.get('confirmPassword')
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    if(!response.ok) throw new Error(result.error || '密码重置失败');
+    form.reset();
+    setPasswordMessage(result.message || `已重置 ${targetUsername} 的密码。`, 'ok');
+    if(currentAuthSession?.username === targetUsername) setTimeout(() => logoutUser(), 900);
+  } catch (error) {
+    setPasswordMessage(error.message || '密码重置失败', 'error');
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+document.getElementById('change-password-form')?.addEventListener('submit', submitPasswordChange);
+document.getElementById('reset-password-form')?.addEventListener('submit', submitAdminPasswordReset);
+document.getElementById('password-modal')?.addEventListener('click', event => {
+  if(event.target?.id === 'password-modal') closePasswordManager();
+});
 function parseCSVLine(line) {
   const result = []; let current = ''; let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
@@ -2553,7 +2752,7 @@ function buildLLMContext() {
   const recentEvents = userDB.events.slice(-8).map(e => `${e.date} ${e.code} ${e.type}: ${e.desc}`).join('\n') || '暂无本地录入事件';
   const lifecycle = Object.entries(LIFECYCLE_DATA).slice(0, 4).map(([code, d]) => `${code}: ${d.name}, ${d.spec}, 投运/记录 ${d.install}, 风险 ${d.risk}`).join('\n');
   return [
-    '系统：锅炉受热面全寿命管理系统，覆盖 1#/2# 机组炉管台账、寿命跟踪、预警与检修记录。',
+    '系统：锅炉炉管全生命周期管理系统，覆盖 1#/2# 机组炉管台账、寿命跟踪、预警与检修记录。',
     '总览：单炉管管理单元 5139；水冷壁 722；过热器系统 2681；再热+省煤器 1736。',
     `当前实际预警：\n${formatDashboardWarningsForPrompt()}`,
     `本地录入：事件 ${userDB.events.length} 条，更换 ${userDB.replacements.length} 条；涉及管码：${localCodes.join(', ') || '暂无'}`,
@@ -2723,7 +2922,7 @@ function exportLLMReportPDF() {
         <section class="report-header">
           <h1>AI结构化分析报告</h1>
           <div class="meta">
-            <div>系统：锅炉受热面炉管全生命周期管理系统</div>
+            <div>系统：锅炉炉管全生命周期管理系统</div>
             <div>导出时间：${escapeHTML(exportedAt)}</div>
           </div>
         </section>

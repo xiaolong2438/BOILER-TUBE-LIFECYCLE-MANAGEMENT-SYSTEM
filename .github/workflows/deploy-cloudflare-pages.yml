@@ -63,7 +63,8 @@ jobs:
           APP_ADMIN_PASSWORD: ${{ secrets.APP_ADMIN_PASSWORD }}
         run: |
           set -euo pipefail
-          DB_NAME="boiler_tube_lifecycle_system"
+          DB_NAME="boiler_tube_lifecycle_management_system"
+          BLOCKED_D1_DATABASE_ID="8553d7c8-edcf-4c03-8477-92419d2f9263"
           npx --yes wrangler@latest d1 list --json > d1-list.json
           D1_DATABASE_ID="$(python scripts/resolve_d1_id.py d1-list.json "$DB_NAME")"
           if [[ -z "$D1_DATABASE_ID" ]]; then
@@ -74,6 +75,11 @@ jobs:
             echo "Unable to resolve D1 database id."
             exit 1
           fi
+          if [[ "$D1_DATABASE_ID" == "$BLOCKED_D1_DATABASE_ID" ]]; then
+            echo "::error::Resolved D1 database id belongs to employee-certification-system; refusing to deploy against the wrong database."
+            exit 1
+          fi
+          echo "Using D1 database '$DB_NAME' ($D1_DATABASE_ID)."
           cat > wrangler.toml <<EOF
           name = "boiler-tube-lifecycle-system"
           compatibility_date = "2026-07-14"
@@ -93,7 +99,7 @@ jobs:
           npx --yes wrangler@latest d1 execute DB --remote --file=reset-schema.sql
           npx --yes wrangler@latest d1 execute DB --remote --file=migrations/0001_init.sql
           if [[ -n "${APP_ADMIN_USERNAME:-}" && -n "${APP_ADMIN_PASSWORD:-}" ]]; then
-            python scripts/hash_password_sql.py "$APP_ADMIN_USERNAME" "$APP_ADMIN_PASSWORD" > seed-admin.sql
+            python scripts/hash_password_sql.py "$APP_ADMIN_USERNAME" "$APP_ADMIN_PASSWORD" admin > seed-admin.sql
             npx --yes wrangler@latest d1 execute DB --remote --file=seed-admin.sql
             npx --yes wrangler@latest d1 execute DB --remote --command="SELECT COUNT(*) AS admin_user_count FROM users;" --json
           else
