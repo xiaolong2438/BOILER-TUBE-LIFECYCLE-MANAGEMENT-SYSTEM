@@ -34,12 +34,8 @@ def load_payload(path: pathlib.Path):
 
 def iter_rows(node) -> Iterable[dict]:
     if isinstance(node, dict):
-        results = node.get("results")
-        if isinstance(results, list):
-            for row in results:
-                if isinstance(row, dict):
-                    yield row
-            return
+        if isinstance(node.get("name"), str):
+            yield node
         for value in node.values():
             yield from iter_rows(value)
     elif isinstance(node, list):
@@ -50,9 +46,11 @@ def iter_rows(node) -> Iterable[dict]:
 def load_columns(path: pathlib.Path) -> list[dict[str, str]]:
     payload = load_payload(path)
     columns: list[dict[str, str]] = []
+    seen: set[str] = set()
     for row in iter_rows(payload):
         name = row.get("name")
-        if isinstance(name, str) and name:
+        if isinstance(name, str) and name and name not in seen:
+            seen.add(name)
             columns.append(
                 {
                     "name": name,
