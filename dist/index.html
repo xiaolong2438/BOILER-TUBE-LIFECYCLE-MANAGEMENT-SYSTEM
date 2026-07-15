@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>锅炉炉管全生命周期管理系统 | v6.6</title>
+<title>锅炉受热面全寿命管理系统 | v6.6</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
@@ -321,8 +321,8 @@
   <div class="logo">
     <div class="logo-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.3l7.5 3.7L12 11.7 4.5 8 12 4.3zM4 9.5l7 3.5v7l-7-3.5v-7zm16 0v7l-7 3.5v-7l7-3.5z"/></svg></div>
     <div class="logo-text">
-      <h1>BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM</h1>
-      <p>锅炉炉管全生命周期管理系统 v6.6</p>
+      <h1>BOILER-TUBE LIFECYCLE SYSTEM</h1>
+      <p>锅炉受热面全寿命管理系统 v6.6</p>
     </div>
   </div>
   <div class="header-info">
@@ -841,7 +841,7 @@
   </section>
 </main>
 
-<footer>⬢ BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v6.6 DEDUPE-STABLE · 2026 ⬢</footer>
+<footer>⬢ BOILER-TUBE LIFECYCLE SYSTEM v6.6 DEDUPE-STABLE · 2026 ⬢</footer>
 
 <script>
 // ========== LOCAL DB (CSV 数据录入模块) ==========
@@ -2553,7 +2553,7 @@ function buildLLMContext() {
   const recentEvents = userDB.events.slice(-8).map(e => `${e.date} ${e.code} ${e.type}: ${e.desc}`).join('\n') || '暂无本地录入事件';
   const lifecycle = Object.entries(LIFECYCLE_DATA).slice(0, 4).map(([code, d]) => `${code}: ${d.name}, ${d.spec}, 投运/记录 ${d.install}, 风险 ${d.risk}`).join('\n');
   return [
-    '系统：锅炉炉管全生命周期管理系统，覆盖 1#/2# 机组炉管台账、寿命跟踪、预警与检修记录。',
+    '系统：锅炉受热面全寿命管理系统，覆盖 1#/2# 机组炉管台账、寿命跟踪、预警与检修记录。',
     '总览：单炉管管理单元 5139；水冷壁 722；过热器系统 2681；再热+省煤器 1736。',
     `当前实际预警：\n${formatDashboardWarningsForPrompt()}`,
     `本地录入：事件 ${userDB.events.length} 条，更换 ${userDB.replacements.length} 条；涉及管码：${localCodes.join(', ') || '暂无'}`,
@@ -2723,7 +2723,7 @@ function exportLLMReportPDF() {
         <section class="report-header">
           <h1>AI结构化分析报告</h1>
           <div class="meta">
-            <div>系统：锅炉炉管全生命周期管理系统</div>
+            <div>系统：锅炉受热面炉管全生命周期管理系统</div>
             <div>导出时间：${escapeHTML(exportedAt)}</div>
           </div>
         </section>
