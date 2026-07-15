@@ -66,11 +66,10 @@ jobs:
           DB_NAME="boiler_tube_lifecycle_system"
           npx --yes wrangler@latest d1 list --json > d1-list.json
           D1_DATABASE_ID="$(python scripts/resolve_d1_id.py d1-list.json "$DB_NAME")"
-          if [[ -n "$D1_DATABASE_ID" ]]; then
-            npx --yes wrangler@latest d1 delete "$DB_NAME" --skip-confirmation
+          if [[ -z "$D1_DATABASE_ID" ]]; then
+            npx --yes wrangler@latest d1 create "$DB_NAME" > d1-create.txt
+            D1_DATABASE_ID="$(python scripts/resolve_d1_id.py d1-create.txt "$DB_NAME")"
           fi
-          npx --yes wrangler@latest d1 create "$DB_NAME" > d1-create.txt
-          D1_DATABASE_ID="$(python scripts/resolve_d1_id.py d1-create.txt "$DB_NAME")"
           if [[ -z "$D1_DATABASE_ID" ]]; then
             echo "Unable to resolve D1 database id."
             exit 1
@@ -86,10 +85,16 @@ jobs:
           database_id = "$D1_DATABASE_ID"
           EOF
           npx --yes wrangler@latest pages project create boiler-tube-lifecycle-system --production-branch=main || true
-          npx --yes wrangler@latest d1 execute "$DB_NAME" --remote --file=migrations/0001_init.sql
+          cat > reset-schema.sql <<EOF
+          DROP TABLE IF EXISTS sessions;
+          DROP TABLE IF EXISTS users;
+          DROP TABLE IF EXISTS app_kv;
+          EOF
+          npx --yes wrangler@latest d1 execute DB --remote --file=reset-schema.sql
+          npx --yes wrangler@latest d1 execute DB --remote --file=migrations/0001_init.sql
           if [[ -n "${APP_ADMIN_USERNAME:-}" && -n "${APP_ADMIN_PASSWORD:-}" ]]; then
             python scripts/hash_password_sql.py "$APP_ADMIN_USERNAME" "$APP_ADMIN_PASSWORD" > seed-admin.sql
-            npx --yes wrangler@latest d1 execute "$DB_NAME" --remote --file=seed-admin.sql
+            npx --yes wrangler@latest d1 execute DB --remote --file=seed-admin.sql
           else
             echo "::warning::APP_ADMIN_USERNAME and APP_ADMIN_PASSWORD are not configured. Login will be enabled, but no admin user will be seeded."
           fi
