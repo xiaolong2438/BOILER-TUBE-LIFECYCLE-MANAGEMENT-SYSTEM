@@ -3,347 +3,400 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>登录 | 锅炉受热面全寿命管理系统</title>
+<title>登录 | 锅炉全生命周期管理系统</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #05070b;
-    --panel: #0b131b;
-    --panel-2: #111d29;
-    --line: rgba(166, 205, 220, 0.18);
-    --cyan: #39c7df;
-    --green: #19d18b;
-    --amber: #ffb545;
-    --red: #ff5d6c;
-    --text: #edf7fb;
-    --muted: #91a8b7;
+    --login-bg-image: url("assets/power-station-boiler-bg.png");
+    --cyan: #22d9ff;
+    --cyan-soft: rgba(34, 217, 255, .22);
+    --blue: #147bff;
+    --text: #f2fbff;
+    --muted: #a6d8f0;
+    --panel: rgba(2, 24, 64, .62);
+    --line: rgba(34, 217, 255, .42);
+    --danger: #ff6b85;
+    --ok: #57f0b0;
   }
   body {
     min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 26px;
+    overflow: hidden;
     color: var(--text);
     font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-    background:
-      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 48px 48px,
-      linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px) 0 0 / 48px 48px,
-      radial-gradient(circle at 14% 18%, rgba(57,199,223,.16), transparent 31%),
-      radial-gradient(circle at 86% 72%, rgba(255,181,69,.13), transparent 27%),
-      var(--bg);
+    background: #02091b;
   }
-  .shell {
-    width: min(1120px, 100%);
-    min-height: 640px;
-    display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(360px, .85fr);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    overflow: hidden;
-    background: rgba(8, 14, 20, .86);
-    box-shadow: 0 24px 80px rgba(0, 0, 0, .46), 0 0 0 1px rgba(57,199,223,.08);
-  }
-  .visual {
+  .page {
     position: relative;
-    padding: 34px;
-    min-height: 640px;
+    min-height: 100vh;
+    padding: 50px 70px 54px;
     background:
-      linear-gradient(135deg, rgba(16, 28, 38, .94), rgba(6, 10, 14, .82)),
-      radial-gradient(circle at 30% 32%, rgba(57,199,223,.16), transparent 35%);
-    border-right: 1px solid var(--line);
-    overflow: hidden;
+      linear-gradient(90deg, rgba(2, 12, 39, .18) 0%, rgba(0, 24, 73, .08) 52%, rgba(0, 22, 69, .72) 100%),
+      linear-gradient(180deg, rgba(0, 10, 30, .05) 0%, rgba(0, 7, 24, .24) 100%),
+      var(--login-bg-image) left center / cover no-repeat;
   }
-  .visual::after {
+  .page::before {
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(transparent 0 48%, rgba(57,199,223,.08) 49%, transparent 51% 100%);
-    background-size: 100% 7px;
-    opacity: .32;
+    background:
+      linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 42px 42px,
+      linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px) 0 0 / 42px 42px;
+    mask-image: linear-gradient(90deg, black 0%, black 72%, transparent 100%);
     pointer-events: none;
   }
-  .brand-row {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-  .brand-mark {
-    width: 50px;
-    height: 50px;
-    display: grid;
-    place-items: center;
-    border-radius: 8px;
-    border: 1px solid rgba(57,199,223,.72);
-    color: var(--cyan);
-    font-weight: 800;
-    letter-spacing: 1px;
-    background: rgba(57,199,223,.08);
-    box-shadow: 0 0 24px rgba(57,199,223,.2);
-  }
-  .brand h1 {
-    font-size: 19px;
-    letter-spacing: 1.6px;
-    font-weight: 700;
-  }
-  .brand p, .top-status {
-    color: var(--muted);
-    font-size: 12px;
-    letter-spacing: 1px;
-    margin-top: 5px;
-  }
-  .top-status {
-    padding: 8px 10px;
-    border: 1px solid rgba(25,209,139,.28);
-    border-radius: 6px;
-    color: #bdf9df;
-    background: rgba(25,209,139,.07);
-    white-space: nowrap;
-  }
-  .boiler-map {
-    position: relative;
-    z-index: 1;
-    height: 380px;
-    margin: 46px 10px 30px;
-    border: 1px solid rgba(166,205,220,.16);
-    border-radius: 10px;
-    background:
-      linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px) 0 0 / 34px 34px,
-      linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 34px 34px,
-      rgba(4, 9, 13, .58);
-    overflow: hidden;
-  }
-  .duct {
-    position: absolute;
-    left: 12%;
-    top: 19%;
-    width: 72%;
-    height: 60%;
-    border: 3px solid rgba(145,168,183,.34);
-    border-bottom-width: 0;
-    clip-path: polygon(0 0, 78% 0, 78% 68%, 56% 68%, 56% 100%, 28% 100%, 28% 68%, 0 68%);
-  }
-  .fire-bed {
-    position: absolute;
-    left: 13.5%;
-    bottom: 18%;
-    width: 28%;
-    height: 22%;
-    border-radius: 0 0 120px 120px;
-    background: radial-gradient(circle at 50% 80%, rgba(255,93,108,.48), rgba(255,181,69,.18) 46%, transparent 72%);
-  }
-  .tube {
-    position: absolute;
-    width: 18px;
-    height: 220px;
-    border-radius: 16px;
-    border: 1px solid rgba(255,255,255,.22);
-    background: linear-gradient(90deg, rgba(255,255,255,.18), transparent 35%, rgba(0,0,0,.35));
-    box-shadow: inset 0 0 18px rgba(0,0,0,.44), 0 0 18px var(--glow, rgba(57,199,223,.22));
-  }
-  .tube::before {
+  .page::after {
     content: "";
     position: absolute;
-    inset: 12px 5px;
-    border-radius: 12px;
-    border-left: 2px dashed rgba(255,255,255,.2);
+    inset: 0;
+    background: radial-gradient(circle at 52% 66%, rgba(34,217,255,.2), transparent 24%);
+    pointer-events: none;
   }
-  .tube.t1 { left: 20%; top: 16%; background-color: rgba(255,93,108,.72); --glow: rgba(255,93,108,.28); }
-  .tube.t2 { left: 31%; top: 12%; background-color: rgba(255,181,69,.72); --glow: rgba(255,181,69,.32); }
-  .tube.t3 { left: 44%; top: 15%; background-color: rgba(57,199,223,.72); }
-  .tube.t4 { right: 24%; top: 24%; height: 180px; background-color: rgba(25,209,139,.72); --glow: rgba(25,209,139,.24); transform: rotate(90deg); }
-  .smoke-line {
-    position: absolute;
-    left: 24%;
-    top: 66%;
-    width: 54%;
-    height: 3px;
-    background: repeating-linear-gradient(90deg, rgba(255,181,69,.85) 0 12px, transparent 12px 23px);
-    transform: rotate(-18deg);
-    opacity: .78;
-  }
-  .metric-strip {
+  .content {
     position: relative;
     z-index: 1;
+    min-height: calc(100vh - 104px);
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
+    grid-template-columns: minmax(620px, 1fr) 500px;
+    gap: 48px;
+    align-items: center;
   }
-  .metric {
-    min-height: 88px;
-    padding: 14px;
-    border: 1px solid rgba(166,205,220,.16);
-    border-radius: 8px;
-    background: rgba(9, 18, 26, .72);
-  }
-  .metric .k {
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 1px;
-  }
-  .metric .v {
-    margin-top: 10px;
-    font-size: 24px;
-    font-weight: 800;
-  }
-  .metric .v.green { color: var(--green); }
-  .metric .v.amber { color: var(--amber); }
-  .metric .v.red { color: var(--red); }
-  .login-panel {
-    padding: 46px 42px;
-    background: linear-gradient(180deg, rgba(17,29,41,.94), rgba(7,11,15,.96));
+  .hero {
+    align-self: stretch;
     display: flex;
     flex-direction: column;
-    justify-content: center;
   }
-  .login-panel h2 {
+  .title-block {
+    margin-top: 2px;
+    text-shadow: 0 6px 28px rgba(0, 0, 0, .36);
+  }
+  .title-block h1 {
+    font-size: clamp(42px, 4vw, 70px);
+    line-height: 1.05;
+    letter-spacing: 3px;
+    font-weight: 900;
+  }
+  .title-block .en {
+    margin-top: 12px;
+    color: #c5ecff;
+    font-size: clamp(17px, 1.45vw, 26px);
+    letter-spacing: 1.5px;
+    font-weight: 600;
+  }
+  .title-line {
+    width: 82px;
+    height: 4px;
+    margin-top: 18px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--cyan), transparent);
+    box-shadow: 0 0 16px rgba(34,217,255,.85);
+  }
+  .process {
+    width: min(900px, 100%);
+    margin-top: 38px;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 18px;
+    position: relative;
+  }
+  .process::before {
+    content: "";
+    position: absolute;
+    left: 22px;
+    right: 22px;
+    bottom: 7px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(34,217,255,.5), transparent);
+  }
+  .step {
+    min-width: 0;
+    text-align: center;
+    color: #e8f8ff;
+    font-weight: 700;
+    text-shadow: 0 3px 14px rgba(0, 0, 0, .35);
+  }
+  .step-icon {
+    width: 42px;
+    height: 42px;
+    margin: 0 auto 10px;
+    display: grid;
+    place-items: center;
+    border: 2px solid rgba(34,217,255,.78);
+    border-radius: 10px;
+    color: var(--cyan);
     font-size: 24px;
-    letter-spacing: 1px;
-    margin-bottom: 8px;
+    box-shadow: 0 0 20px rgba(34,217,255,.22);
+    background: rgba(0, 31, 85, .24);
   }
-  .login-panel .subtitle {
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 1.7;
-    margin-bottom: 28px;
+  .step-name {
+    font-size: 15px;
+    letter-spacing: .5px;
+    white-space: nowrap;
   }
-  label {
-    display: block;
-    color: var(--muted);
-    font-size: 12px;
-    margin: 17px 0 8px;
-    letter-spacing: 1px;
+  .step-dot {
+    width: 10px;
+    height: 10px;
+    margin: 13px auto 0;
+    border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 16px var(--cyan);
+  }
+  .bottom-tags {
+    margin-top: auto;
+    display: none;
+    gap: 34px;
+    align-items: flex-end;
+    padding-left: 90px;
+  }
+  .tag {
+    min-width: 104px;
+    text-align: center;
+    color: #f4fbff;
+    font-size: 15px;
+    font-weight: 700;
+    text-shadow: 0 4px 16px rgba(0, 0, 0, .38);
+  }
+  .tag-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 10px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 2px solid rgba(34,217,255,.72);
+    color: var(--cyan);
+    font-size: 25px;
+    background: rgba(0, 60, 130, .22);
+    box-shadow: inset 0 0 18px rgba(34,217,255,.13), 0 0 22px rgba(34,217,255,.28);
+  }
+  .login-card {
+    width: 100%;
+    min-height: 560px;
+    padding: 66px 62px 52px;
+    border: 1px solid rgba(34,217,255,.74);
+    border-radius: 16px;
+    background:
+      linear-gradient(145deg, rgba(10, 57, 127, .58), rgba(1, 24, 77, .74)),
+      radial-gradient(circle at 18% 0%, rgba(34,217,255,.22), transparent 34%);
+    box-shadow:
+      0 0 0 1px rgba(34,217,255,.12),
+      0 0 38px rgba(34,217,255,.38),
+      inset 0 0 42px rgba(19, 93, 199, .22);
+    backdrop-filter: blur(10px);
+  }
+  .login-card h2 {
+    text-align: center;
+    font-size: 31px;
+    letter-spacing: 1.5px;
+    font-weight: 900;
+    text-shadow: 0 0 18px rgba(34,217,255,.28);
+  }
+  .login-subtitle {
+    margin: 28px 0 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    color: #8eeaff;
+    font-size: 22px;
+    letter-spacing: 3px;
+    font-weight: 700;
+  }
+  .login-subtitle::before,
+  .login-subtitle::after {
+    content: "";
+    width: 72px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan));
+  }
+  .login-subtitle::after {
+    background: linear-gradient(90deg, var(--cyan), transparent);
+  }
+  .field {
+    position: relative;
+    margin-bottom: 22px;
+  }
+  .field span {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #7fe8ff;
+    font-size: 22px;
   }
   input {
     width: 100%;
-    height: 46px;
-    padding: 0 13px;
-    border-radius: 7px;
-    border: 1px solid rgba(166,205,220,.22);
-    background: rgba(2, 6, 10, .78);
+    height: 58px;
+    padding: 0 18px 0 58px;
+    border: 1px solid rgba(126, 222, 255, .36);
+    border-radius: 6px;
+    background: rgba(0, 31, 92, .36);
     color: var(--text);
     font: inherit;
+    font-size: 16px;
     outline: none;
   }
+  input::placeholder { color: rgba(198,232,250,.62); }
   input:focus {
     border-color: var(--cyan);
-    box-shadow: 0 0 0 3px rgba(57,199,223,.14);
+    box-shadow: 0 0 0 3px rgba(34,217,255,.12), 0 0 18px rgba(34,217,255,.22);
+  }
+  .options {
+    margin: 4px 0 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #b8dff4;
+    font-size: 14px;
+  }
+  .remember {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .remember input {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    accent-color: var(--cyan);
+  }
+  .options a {
+    color: #a9d9f4;
+    text-decoration: none;
   }
   button {
     width: 100%;
-    height: 46px;
-    margin-top: 24px;
-    border: 1px solid rgba(57,199,223,.76);
-    border-radius: 7px;
-    background: linear-gradient(135deg, rgba(57,199,223,.28), rgba(25,209,139,.18));
-    color: #fff;
+    height: 58px;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #1fd5ff, #147bff);
+    color: white;
     font: inherit;
-    font-weight: 700;
-    cursor: pointer;
+    font-size: 21px;
+    font-weight: 800;
     letter-spacing: 2px;
+    cursor: pointer;
+    box-shadow: 0 16px 28px rgba(0, 86, 199, .28), inset 0 0 12px rgba(255,255,255,.16);
   }
-  button:hover { box-shadow: 0 0 24px rgba(57,199,223,.2); }
-  button:disabled { opacity: .58; cursor: wait; }
+  button:hover {
+    filter: brightness(1.08);
+    box-shadow: 0 18px 34px rgba(0, 113, 255, .34), 0 0 22px rgba(34,217,255,.3);
+  }
+  button:disabled {
+    opacity: .6;
+    cursor: wait;
+  }
   .status {
     min-height: 22px;
-    margin-top: 15px;
+    margin-top: 16px;
+    text-align: center;
     color: var(--muted);
-    font-size: 13px;
+    font-size: 14px;
   }
-  .status.error { color: var(--red); }
-  .status.ok { color: var(--green); }
-  .security-note {
-    margin-top: 28px;
-    display: grid;
-    grid-template-columns: 10px 1fr;
-    gap: 10px;
-    color: var(--muted);
-    font-size: 12px;
-    line-height: 1.7;
-  }
-  .security-note::before {
-    content: "";
-    width: 10px;
-    height: 10px;
-    margin-top: 5px;
-    border-radius: 50%;
-    background: var(--green);
-    box-shadow: 0 0 12px rgba(25,209,139,.54);
+  .status.error { color: var(--danger); }
+  .status.ok { color: var(--ok); }
+  @media (max-width: 1200px) {
+    .page { padding: 36px 34px; }
+    .content { grid-template-columns: 1fr 440px; gap: 30px; }
+    .bottom-tags { padding-left: 20px; gap: 18px; }
+    .login-card { padding: 54px 44px 42px; }
   }
   @media (max-width: 900px) {
-    body { padding: 16px; place-items: stretch; }
-    .shell { min-height: 100vh; grid-template-columns: 1fr; }
-    .visual { min-height: auto; padding: 22px; border-right: none; border-bottom: 1px solid var(--line); }
-    .boiler-map { height: 168px; margin: 20px 0 14px; }
-    .tube { height: 102px; width: 13px; }
-    .tube.t4 { height: 88px; }
-    .metric-strip { grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .metric { min-height: 68px; padding: 10px; }
-    .metric .k { font-size: 9px; }
-    .metric .v { font-size: 19px; margin-top: 7px; }
-    .login-panel { padding: 30px 24px 36px; }
-    .brand-row { align-items: flex-start; flex-direction: column; }
+    body { overflow: auto; }
+    .page {
+      min-height: 100vh;
+      padding: 24px 16px;
+      background-position: 34% center;
+    }
+    .content {
+      min-height: auto;
+      grid-template-columns: 1fr;
+      gap: 26px;
+    }
+    .title-block h1 { font-size: 34px; }
+    .title-block .en { font-size: 14px; }
+    .process {
+      margin-top: 26px;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px 10px;
+    }
+    .process::before { display: none; }
+    .step-name { font-size: 13px; }
+    .bottom-tags {
+      display: none;
+    }
+    .login-card {
+      min-height: auto;
+      padding: 34px 24px 28px;
+      border-radius: 14px;
+    }
+    .login-card h2 { font-size: 24px; }
+    .login-subtitle { font-size: 17px; margin: 20px 0 24px; }
+    .login-subtitle::before,
+    .login-subtitle::after { width: 44px; }
   }
 </style>
 </head>
 <body>
-  <main class="shell">
-    <section class="visual" aria-label="系统态势">
-      <div class="brand-row">
-        <div class="brand">
-          <div class="brand-mark">BT</div>
-          <div>
-            <h1>BOILER-TUBE LIFECYCLE SYSTEM</h1>
-            <p>锅炉受热面全寿命管理系统</p>
-          </div>
+  <main class="page">
+    <div class="content">
+      <section class="hero" aria-label="系统介绍">
+        <div class="title-block">
+          <h1>锅炉全生命周期管理系统</h1>
+          <div class="en">BOILER WHOLE LIFE CYCLE MANAGEMENT SYSTEM</div>
+          <div class="title-line"></div>
         </div>
-        <div class="top-status">D1 SESSION READY</div>
-      </div>
 
-      <div class="boiler-map" aria-hidden="true">
-        <div class="duct"></div>
-        <div class="fire-bed"></div>
-        <div class="tube t1"></div>
-        <div class="tube t2"></div>
-        <div class="tube t3"></div>
-        <div class="tube t4"></div>
-        <div class="smoke-line"></div>
-      </div>
+        <div class="process" aria-label="生命周期流程">
+          <div class="step"><div class="step-icon">▧</div><div class="step-name">设计制造</div><div class="step-dot"></div></div>
+          <div class="step"><div class="step-icon">⚒</div><div class="step-name">安装调试</div><div class="step-dot"></div></div>
+          <div class="step"><div class="step-icon">▥</div><div class="step-name">运行监控</div><div class="step-dot"></div></div>
+          <div class="step"><div class="step-icon">盾</div><div class="step-name">检验检测</div><div class="step-dot"></div></div>
+          <div class="step"><div class="step-icon">⚙</div><div class="step-name">维护保养</div><div class="step-dot"></div></div>
+          <div class="step"><div class="step-icon">♻</div><div class="step-name">报废更新</div><div class="step-dot"></div></div>
+        </div>
 
-      <div class="metric-strip">
-        <div class="metric"><div class="k">ACTIVE UNITS</div><div class="v green">1 / 2</div></div>
-        <div class="metric"><div class="k">RISK CHANNEL</div><div class="v amber">LIVE</div></div>
-        <div class="metric"><div class="k">ACCESS GATE</div><div class="v red">LOCK</div></div>
-      </div>
-    </section>
+        <div class="bottom-tags" aria-label="系统能力">
+          <div class="tag"><div class="tag-icon">▤</div>数据驱动</div>
+          <div class="tag"><div class="tag-icon">◎</div>智能分析</div>
+          <div class="tag"><div class="tag-icon">盾</div>安全可控</div>
+          <div class="tag"><div class="tag-icon">⚒</div>高效运维</div>
+        </div>
+      </section>
 
-    <section class="login-panel">
-      <h2>身份认证</h2>
-      <p class="subtitle">请输入授权账号进入炉管台账、检修计划、材料库与 D1 云端数据区。</p>
-      <form id="login-form">
-        <label for="username">账号</label>
-        <input id="username" name="username" autocomplete="username" required>
-        <label for="password">密码</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required>
-        <button id="submit-btn" type="submit">登录系统</button>
-        <div class="status" id="status"></div>
-      </form>
-      <div class="security-note">登录状态由服务端 Session 校验，台账数据接口与主页面访问会同步受保护。</div>
-    </section>
+      <section class="login-card" aria-label="用户登录">
+        <h2>锅炉全生命周期管理系统</h2>
+        <div class="login-subtitle">用户登录</div>
+        <form id="login-form">
+          <div class="field">
+            <span>●</span>
+            <input id="username" name="username" autocomplete="username" placeholder="请输入用户名" required>
+          </div>
+          <div class="field">
+            <span>▣</span>
+            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+          </div>
+          <div class="options">
+            <label class="remember"><input id="remember" type="checkbox">记住密码</label>
+            <a href="javascript:void(0)" onclick="setStatus('请联系系统管理员重置密码。')">忘记密码?</a>
+          </div>
+          <button id="submit-btn" type="submit">登录</button>
+          <div class="status" id="status"></div>
+        </form>
+      </section>
+    </div>
   </main>
 <script>
 const form = document.getElementById('login-form');
 const statusEl = document.getElementById('status');
 const submitBtn = document.getElementById('submit-btn');
 const usernameInput = document.getElementById('username');
+const rememberInput = document.getElementById('remember');
 
+const rememberedUsername = localStorage.getItem('bt_login_username') || '';
+if(rememberedUsername) {
+  usernameInput.value = rememberedUsername;
+  rememberInput.checked = true;
+}
 if(window.matchMedia('(min-width: 901px)').matches) usernameInput.focus();
 
 function setStatus(message, type = '') {
@@ -356,16 +409,19 @@ form.addEventListener('submit', async (event) => {
   submitBtn.disabled = true;
   setStatus('正在验证账号...');
   try {
+    const username = form.username.value.trim();
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        username: form.username.value.trim(),
+        username,
         password: form.password.value
       })
     });
     const payload = await response.json().catch(() => ({}));
     if(!response.ok) throw new Error(payload.error || '登录失败');
+    if(rememberInput.checked) localStorage.setItem('bt_login_username', username);
+    else localStorage.removeItem('bt_login_username');
     setStatus('登录成功，正在进入系统...', 'ok');
     const params = new URLSearchParams(location.search);
     location.href = params.get('next') || '/';

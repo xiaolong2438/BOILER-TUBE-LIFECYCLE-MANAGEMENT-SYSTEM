@@ -1,4 +1,5 @@
 const PUBLIC_PATHS = new Set(['/login.html', '/api/auth/login', '/api/auth/logout']);
+const PUBLIC_PREFIXES = ['/assets/'];
 
 function jsonResponse(payload, init = {}) {
   return new Response(JSON.stringify(payload), {
@@ -44,6 +45,10 @@ export async function onRequest(context) {
   }
 
   if(PUBLIC_PATHS.has(pathname)) {
+    return next();
+  }
+
+  if(PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix))) {
     return next();
   }
 
