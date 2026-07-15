@@ -117,15 +117,7 @@ jobs:
           APP_ADMIN_PASSWORD: ${{ secrets.APP_ADMIN_PASSWORD }}
         run: |
           set -euo pipefail
-          payload="$(python - <<'PY'
-import json
-import os
-print(json.dumps({
-    "username": os.environ["APP_ADMIN_USERNAME"],
-    "password": os.environ["APP_ADMIN_PASSWORD"],
-}))
-PY
-)"
+          payload="$(python -c 'import json, os; print(json.dumps({"username": os.environ["APP_ADMIN_USERNAME"], "password": os.environ["APP_ADMIN_PASSWORD"]}))')"
           status="$(curl -sS -o login-response.json -c login-cookies.txt -w "%{http_code}" \
             -H 'Content-Type: application/json' \
             -d "$payload" \
