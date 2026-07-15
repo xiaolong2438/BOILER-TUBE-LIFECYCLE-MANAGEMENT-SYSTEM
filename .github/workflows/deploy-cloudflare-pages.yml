@@ -86,6 +86,12 @@ jobs:
           EOF
           npx --yes wrangler@latest pages project create boiler-tube-lifecycle-system --production-branch=main || true
           npx --yes wrangler@latest d1 execute "$DB_NAME" --remote --file=migrations/0001_init.sql
+          npx --yes wrangler@latest d1 execute "$DB_NAME" --remote --command="SELECT name, type, pk FROM pragma_table_info('users') ORDER BY cid;" --json > users-columns.json
+          npx --yes wrangler@latest d1 execute "$DB_NAME" --remote --command="SELECT name, type, pk FROM pragma_table_info('sessions') ORDER BY cid;" --json > sessions-columns.json
+          python scripts/repair_auth_schema.py users-columns.json sessions-columns.json > auth-repair.sql
+          if [[ -s auth-repair.sql ]]; then
+            npx --yes wrangler@latest d1 execute "$DB_NAME" --remote --file=auth-repair.sql
+          fi
           if [[ -n "${APP_ADMIN_USERNAME:-}" && -n "${APP_ADMIN_PASSWORD:-}" ]]; then
             python scripts/hash_password_sql.py "$APP_ADMIN_USERNAME" "$APP_ADMIN_PASSWORD" > seed-admin.sql
             npx --yes wrangler@latest d1 execute "$DB_NAME" --remote --file=seed-admin.sql
