@@ -14,10 +14,17 @@ assert.match(html, /id="dashboardHealthRing"/);
 assert.match(html, /id="dashboardTrendChart"/);
 assert.match(html, /id="dashboardSurfaceList"/);
 assert.match(html, /id="dashboard-warning-list"/);
+assert.doesNotMatch(html, /id="dashboardCoreLeftMetrics"/);
+assert.doesNotMatch(html, /const left = document\.getElementById\('dashboardCoreLeftMetrics'\)/);
+assert.match(html, /\.health-ring\s*\{[^}]*grid-column:\s*2;/s);
+assert.match(html, /#dashboardCoreRightMetrics\s*\{[^}]*grid-column:\s*3;/s);
 assert.match(html, /class="dashboard-status-band"/);
 assert.match(html, /renderDashboardHealthCore\(trendStats\)/);
-assert.match(html, /getDashboardScopedWarnings\(3\)/);
+assert.match(html, /getDashboardScopedWarnings\(8\)/);
 assert.match(html, /class="command-warning/);
+assert.match(html, /\.command-warning:hover\s*\{[^}]*border-top-color:[^}]*background:[^}]*box-shadow:/s);
+assert.match(html, /\.command-warning:focus-visible\s*\{[^}]*outline:/s);
+assert.match(html, /#dashboard-warning-list\s*\{[^}]*height:\s*145px;[^}]*overflow-y:\s*scroll;[^}]*scrollbar-gutter:\s*stable/s);
 for (const id of ["dashboardHealthRing", "dashboardTrendChart", "dashboardSurfaceList", "dashboard-warning-list"]) {
   assert.equal((html.match(new RegExp(`id="${id}"`, "g")) || []).length, 1, `${id} must be unique`);
 }
