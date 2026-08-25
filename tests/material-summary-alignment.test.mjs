@@ -8,8 +8,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
 const html = [
   readFileOrEmpty(resolve(here, "../炉管全生命周期管理系统.html")),
-  readFileOrEmpty(resolve(here, "../assets/app/app.js")),
-  readFileOrEmpty(resolve(here, "../assets/app/app.css"))
+  readFileOrEmpty(resolve(here, "../assets/app/app-v7.9.js")),
+  readFileOrEmpty(resolve(here, "../assets/app/app-v7.9.css"))
 ].join("\n");
 
 const expectedBySys = new Map([
