@@ -34,10 +34,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
+          # dist is a tracked local artifact, so always rebuild it from scratch.
+          # Otherwise stale app.css/app.js can survive and be published by Pages.
+          rm -rf dist
+          mkdir -p dist/assets
           cp "炉管全生命周期管理系统.html" dist/index.html
           cp "login.html" dist/login.html
-          cp -R assets dist/assets
+          cp -R assets/. dist/assets/
+
+          test -f dist/assets/app/app-v7.9.css
+          test -f dist/assets/app/app-v7.9.js
+          grep -q 'assets/app/app-v7.9.css' dist/index.html
+          grep -q 'assets/app/app-v7.9.js' dist/index.html
+          test ! -e dist/assets/app/app.css
+          test ! -e dist/assets/app/app.js
 
       - name: Check Cloudflare secrets
         id: cloudflare
