@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const htmlPath = "C:/Users/DLX/Desktop/炉管全生命周期管理系统.html";
-const html = readFileSync(htmlPath, "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+// v6.7 起样式与脚本拆分为外部文件，改为合并检索 HTML + JS + CSS
+const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
+const html = [
+  readFileOrEmpty(resolve(here, "../炉管全生命周期管理系统.html")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.js")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.css"))
+].join("\n");
 const materialRenderStart = html.indexOf("function renderMaterialLibrary(key) {");
 const materialRenderEnd = html.indexOf("\nfunction renderComponent", materialRenderStart);
 assert.ok(materialRenderStart > -1 && materialRenderEnd > materialRenderStart, "material render block should be found");
@@ -10,7 +18,7 @@ const materialRenderBlock = html.slice(materialRenderStart, materialRenderEnd);
 
 const checks = [
   ["component library is renamed to heat-surface material library", () => {
-    assert.match(html, />▣ 受热面材料库</);
+    assert.match(html, /<span>受热面材料库<\/span>/);
     assert.match(html, /<h2>受热面材料库<\/h2>/);
     assert.match(html, /MATERIAL DATABASE/);
   }],

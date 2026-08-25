@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const htmlPath = "C:/Users/DLX/Desktop/\u7089\u7ba1\u5168\u751f\u547d\u5468\u671f\u7ba1\u7406\u7cfb\u7edf.html";
-const html = readFileSync(htmlPath, "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+// v6.7 起样式与脚本拆分为外部文件，改为合并检索 HTML + JS + CSS
+const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
+const html = [
+  readFileOrEmpty(resolve(here, "../\u7089\u7ba1\u5168\u751f\u547d\u5468\u671f\u7ba1\u7406\u7cfb\u7edf.html")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.js")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.css"))
+].join("\n");
 
 assert.match(html, /function collectAICompositeSignals\s*\(/, "composite evidence collector should exist");
 assert.match(html, /function buildCompositeAIReport\s*\(/, "composite report builder should exist");

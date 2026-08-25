@@ -767,7 +767,7 @@ function buildDashboardTrendChart(stats = getDashboardTrendStats()) {
   if(!svg) return;
   const values = stats.series;
   const labels = stats.labels || ['2018', '2020', '2022', '当前'];
-  const width = 520, height = 174;
+  const width = 520, height = 284;
   const pad = { left: 38, right: 18, top: 22, bottom: 32 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
@@ -899,7 +899,8 @@ function renderDashboardHealthCore(stats) {
     };
     window.__healthRaf = requestAnimationFrame(step);
   }
-  right.innerHTML = `<div class="health-side-metric" style="--metric-color:${stats.delta >= 0 ? 'var(--ok)' : 'var(--danger)'}"><span>较上次检修</span><strong>${stats.delta >= 0 ? '+' : ''}${stats.delta}%</strong></div><div class="health-side-metric" style="--metric-color:var(--ok)"><span>闭环率</span><strong>83%</strong></div>`;
+  right.style.display = 'contents';
+  right.innerHTML = `<div class="health-side-metric hl" style="--metric-color:${stats.delta >= 0 ? 'var(--ok)' : 'var(--danger)'};grid-column:1;grid-row:1;align-self:center"><span>较上次检修</span><strong>${stats.delta >= 0 ? '+' : '-'}${stats.delta}%</strong></div><div class="health-side-metric" style="--metric-color:var(--ok);grid-column:3;grid-row:1;align-self:center"><span>生命周期闭环率</span><strong>83%</strong></div>`;
 }
 function syncDashboardSnapshot() {
   const updateTime = document.getElementById('dashboard-update-time');
@@ -997,6 +998,11 @@ function switchView(viewId, { updateHash = true } = {}) {
   const btn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b === btn));
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === target));
+  const titleEl = document.getElementById('topbar-title');
+  const VIEW_TITLES = { dashboard: '炉管风险驾驶舱', 'tube-analysis': '管段综合分析', 'maintenance-plan': '检修计划指挥', datamgr: '数据录入与管理', generator: '编码生成器', inventory: '全量管段台账', components: '受热面材料库', headers: '集箱库', diagram: '炉管分布图' };
+  if(titleEl) titleEl.textContent = VIEW_TITLES[viewId] || (btn ? btn.querySelector('span')?.textContent : '') || titleEl.textContent;
+  if(window.scrollY > 8) window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.body.classList.remove('rail-open');
   if(btn) btn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   if(updateHash && location.hash !== '#view-' + viewId) history.replaceState(null, '', '#view-' + viewId);
 }
@@ -1016,6 +1022,17 @@ function initNav() {
   const fromHash = (location.hash || '').replace('#view-', '');
   if(fromHash && document.getElementById('view-' + fromHash)) switchView(fromHash, { updateHash: false });
 }
+function toggleRail() { document.body.classList.toggle('rail-open'); }
+
+// 数字键 1-9 快速切换模块（焦点不在输入控件时生效）
+document.addEventListener('keydown', (e) => {
+  if(!/^[1-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if(tag === 'input' || tag === 'select' || tag === 'textarea' || e.target.isContentEditable) return;
+  const btns = [...document.querySelectorAll('.nav-btn')];
+  const idx = Number(e.key) - 1;
+  if(idx < btns.length && !btns[idx].classList.contains('active')) switchView(btns[idx].dataset.view);
+});
 function updateClock() { document.getElementById('clock').textContent = new Date().toLocaleTimeString('zh-CN', {hour12: false}); }
 let clockTimer = setInterval(updateClock, 1000);
 document.addEventListener('visibilitychange', () => {
@@ -2733,7 +2750,7 @@ function renderAIChart(data) {
 function typeWriter(elementId, text, speed = 20) { const el = document.getElementById(elementId); el.innerHTML = ''; let i = 0; const cursor = '<span class="ai-cursor"></span>'; function type() { if (i < text.length) { el.innerHTML = text.substring(0, i + 1).replace(/\n/g, '<br>') + cursor; i++; setTimeout(type, speed); } else { el.innerHTML = text.replace(/\n/g, '<br>'); } } type(); }
 function generateMockAIData(target, model) { if (model === 'thickness') { return { current: 7.1, threshold: 5.5, rate: '0.085 mm/y', rul: 18500, conf: 92, status: '关注', history: [{year:2018,val:8.0},{year:2020,val:7.8},{year:2023,val:7.4},{year:2025,val:7.1}], prediction: [{year:2026,val:6.9},{year:2028,val:6.5},{year:2030,val:6.1},{year:2032,val:5.7},{year:2033,val:5.5}], report: `【AI 壁厚减薄趋势分析报告】\n对象：${target}\n模型：LSTM 时序预测网络 + 物理约束\n\n1. 趋势分析：历史数据显示该管段壁厚呈非线性减薄趋势，近3年劣化速率从 0.05mm/y 加速至 0.085mm/y，表明内壁可能存在轻微的酸性腐蚀或外壁高温氧化加剧。\n2. 寿命预测：根据当前轨迹，预计将于 2032年底 触及设计最小壁厚阈值(5.5mm)。\n3. 剩余寿命(RUL)：折算运行小时数约 18,500 小时。\n4. AI 建议：建议在下次A级检修中对该管段及同屏相邻管进行超声波测厚(UT)复测，并检查烟气侧是否存在局部冲刷磨损。若减薄速率持续>0.1mm/y，请提前列入更换计划。` }; } else { return { current: 68, threshold: 90, rate: '1.2 %/y', rul: 22000, conf: 88, status: '预警', history: [{year:2018,val:10},{year:2020,val:25},{year:2023,val:45},{year:2025,val:68}], prediction: [{year:2026,val:75},{year:2028,val:82},{year:2030,val:88},{year:2031,val:90}], report: `【AI 蠕变损伤评估报告】\n对象：${target}\n模型：Larson-Miller 参数融合神经网络\n\n1. 损伤评估：当前蠕变损伤度已达 68%，进入加速蠕变阶段(第三阶段)。金相组织可能已出现明显的碳化物球化和晶界微裂纹。\n2. 趋势预测：预计在未来 5 年内损伤度将突破 90% 的安全红线。\n3. AI 建议：立即安排现场金相复型检验，重点关注热影响区(HAZ)。建议降低该区域管段的运行壁温控制设定值 5-10℃，以延缓蠕变进程。` }; } }
 
-const ZONES = { qdp: {title:'全大屏过热器', sys:'PSH', spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', count:'6片×4小屏', desc:'位于炉膛上方，全辐射式受热面。工作条件极为恶劣，屏底外圈采用 SA-213T91 耐热钢。', params:'吸收炉膛高温辐射热 | 烟气侧易结渣 | 需重点监控夹持管状态'}, hp: {title:'后屏/屏式过热器', sys:'ISH', spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', count:'21屏', desc:'布置于炉膛出口处，辐射对流式受热面。最外圈及包扎管底部采用奥氏体不锈钢 TP347H。', params:'承受炉膛出口高温烟气冲刷 | 易发生高温腐蚀 | 节距 S1=685.8'}, gg: {title:'高温过热器 (高过)', sys:'HSH', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', count:'32片', desc:'悬吊于水平烟道内，顺列顺流布置。12管圈U形绕制，暴露在最外侧的管子采用 TP304H。', params:'蒸汽温度最高区 | 烟气流向转折区 | 需防范管排晃动磨损'}, gz: {title:'高温再热器 (高再)', sys:'HRH', spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', count:'64片', desc:'位于水平烟道后部，7根管圈绕制。入口设有喷水减温器，控制再热汽温。', params:'带喷水减温控制 | 烟气温度开始下降 | 管间由带状机械管夹定位'}, dwgr: {title:'低温过热器 (低过)', sys:'LSH', spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', count:'112排', desc:'布置于尾部竖井前烟道，顺列逆流布置。水平段分4组，留有检修空间。', params:'入口烟温 876.6℃ | 出口烟温 382.7℃ | 压降 -0.3kPa | 易积灰'}, dwzr: {title:'低温再热器 (低再)', sys:'LRH', spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', count:'112片+56片', desc:'布置于尾部竖井后烟道，与低过并列。水平段5组，垂直段每2排并1排。', params:'入口烟温 840.3℃ | 出口烟温 349.4℃ | 压降 -0.2kPa | 支撑块承重'}, scr: {title:'SCR 脱硝反应器', sys:'SCR', spec:'氨注射栅格 + 催化剂', count:'A/B侧', desc:'位于尾部烟道下方，喷氨格栅将氨气与烟气均匀混合，通过催化剂还原 NOx。', params:'入口NOx ~278 mg/Nm³ | 出口NOx 25.1 mg/Nm³ | 脱硝效率 99.9% | 氨逃逸 <3ppm'}, smq: {title:'省煤器', sys:'ECO', spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', count:'124管', desc:'布置于SCR下方，利用尾部烟气余热加热锅炉给水，降低排烟温度，提高锅炉热效率。', params:'烟温 287.5℃ → 289.0℃ | 给水温度提升 | 易发生低温腐蚀与飞灰磨损'} };
+const ZONES = { qdp: {title:'全大屏过热器', sys:'PSH', spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', count:'6片×4小屏', desc:'位于炉膛上方，全辐射式受热面。工作条件极为恶劣，屏底外圈采用 SA-213T91 耐热钢。', params:'吸收炉膛高温辐射热 | 烟气侧易结渣 | 需重点监控夹持管状态'}, hp: {title:'后屏/屏式过热器', sys:'ISH', spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', count:'21屏', desc:'布置于炉膛出口处，辐射对流式受热面。最外圈及包扎管底部采用奥氏体不锈钢 TP347H。', params:'承受炉膛出口高温烟气冲刷 | 易发生高温腐蚀 | 节距 S1=685.8'}, gg: {title:'高温过热器 (高过)', sys:'HSH', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', count:'32片', desc:'悬吊于水平烟道内，顺列顺流布置。12管圈U形绕制，暴露在最外侧的管子采用 TP304H。', params:'蒸汽温度最高区 | 烟气流向转折区 | 需防范管排晃动磨损'}, gz: {title:'高温再热器 (高再)', sys:'HRH', spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', count:'64片', desc:'位于水平烟道后部，7根管圈绕制。入口设有喷水减温器，控制再热汽温。', params:'带喷水减温控制 | 烟气温度开始下降 | 管间由带状机械管夹定位'}, dwgr: {title:'低温过热器 (低过)', sys:'LSH', spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', count:'112排', desc:'布置于尾部竖井前烟道，顺列逆流布置。水平段分4组，留有检修空间。', params:'入口烟温 876.6℃ | 出口烟温 382.7℃ | 压降 -0.3kPa | 易积灰'}, dwzr: {title:'低温再热器 (低再)', sys:'LRH', spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', count:'112片+56片', desc:'布置于尾部竖井后烟道，与低过并列。水平段5组，垂直段每2排并1排。', params:'入口烟温 840.3℃ | 出口烟温 349.4℃ | 压降 -0.2kPa | 支撑块承重'}, scr: {title:'SCR 脱硝反应器', sys:'SCR', spec:'氨注射栅格 + 催化剂', count:'A/B侧', desc:'位于尾部烟道下方，喷氨格栅将氨气与烟气均匀混合，通过催化剂还原 NOx。', params:'入口NOx ~278 mg/Nm³ | 出口NOx 25.1 mg/Nm³ | 脱硝效率 99.9% | 氨逃逸 <3ppm'}, smq: {title:'省煤器', sys:'ECO', spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', count:'124管', desc:'分上、下两级串联布置于烟气挡板之后的下行竖井内，利用尾部烟气余热加热锅炉给水，降低排烟温度。', params:'上/下两级分级串联 | 烟温 287.5℃ → 289.0℃ | 易发生低温腐蚀与飞灰磨损'} };
 function showZone(z) { const info = ZONES[z]; const el = document.getElementById('zoneDetail'); el.style.display = 'block'; el.innerHTML = `<div class="card-title"><span class="badge badge-ww">${info.sys}</span> ${info.title}</div><div class="info-grid"><div class="info-item"><div class="k">规格/材质</div><div class="v">${info.spec}</div></div><div class="info-item"><div class="k">数量/规模</div><div class="v">${info.count}</div></div><div class="info-item" style="grid-column:span 2;"><div class="k">湛江#1机组 实时运行参数</div><div class="v" style="font-size:13px; color:var(--warn);">${info.params}</div></div><div class="info-item" style="grid-column:span 2;"><div class="k">工艺与防磨防爆描述</div><div class="v" style="font-size:12px;">${info.desc}</div></div></div>`; el.scrollIntoView({behavior:'smooth', block:'nearest'}); }
 
 // ========== INIT ==========

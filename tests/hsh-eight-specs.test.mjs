@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const htmlPath = "C:/Users/DLX/Desktop/炉管全生命周期管理系统.html";
-const html = readFileSync(htmlPath, "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+// v6.7 起样式与脚本拆分为外部文件，改为合并检索 HTML + JS + CSS
+const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
+const html = [
+  readFileOrEmpty(resolve(here, "../炉管全生命周期管理系统.html")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.js")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.css"))
+].join("\n");
 
 const hshEightSpecSummary = "Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG";
 const hshMaterialRows = [...html.matchAll(/component:'高温过热器'[\s\S]*?position:'(?:24|25|26|27|28|29|30|31) [^']+'[\s\S]*?spec:'([^']+)'[\s\S]*?material:'([^']+)'/g)]

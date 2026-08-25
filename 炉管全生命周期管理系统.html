@@ -3,116 +3,92 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>锅炉炉管全生命周期管理系统 | v6.7</title>
+<title>锅炉炉管全生命周期管理系统 | v7.0</title>
 <meta name="description" content="锅炉炉管全生命周期管理系统：风险驾驶舱、编码生成、寿命跟踪、AI 综合分析、检修计划、全量台账一体化平台。">
-<meta name="theme-color" content="#00060f">
+<meta name="theme-color" content="#03060d">
+<meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='2' width='20' height='20' rx='5' fill='%23001122' stroke='%2300d4ff' stroke-width='1.5'/%3E%3Cpath d='M12 4.5L5.5 8v8L12 19.5 18.5 16V8z' fill='none' stroke='%2300d4ff' stroke-width='1.4'/%3E%3Cpath d='M12 4.5V12l6.5 3M12 12L5.5 8' fill='none' stroke='%2348cae4' stroke-width='1.1'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="assets/app/app.css">
+<link rel="stylesheet" href="assets/app/app.css?v=7.9">
 </head>
 <body>
 <a class="skip-link" href="#view-dashboard">跳到主要内容</a>
 <div class="bg-grid" aria-hidden="true"></div>
 <div class="bg-glow" aria-hidden="true"></div>
 
-<header>
-  <div class="logo">
+<div class="app-shell">
+<aside class="app-rail">
+  <div class="logo rail-logo">
     <div class="logo-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.3l7.5 3.7L12 11.7 4.5 8 12 4.3zM4 9.5l7 3.5v7l-7-3.5v-7zm16 0v7l-7 3.5v-7l7-3.5z"/></svg></div>
     <div class="logo-text">
-      <h1>锅炉炉管全生命周期管理系统</h1>
+      <h1>锅炉炉管<br>全生命周期管理系统</h1>
       <p>BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM</p>
     </div>
   </div>
-  <div class="header-info">
-    <div><span class="dot"></span>系统在线 · AI就绪</div>
-    <div>⏱ <span id="clock">--:--:--</span></div>
-    <div>🏭 1#/2# 机组</div>
+
+<nav>
+  <div class="nav-group" aria-label="总览监控">
+    <span class="nav-caption">总览监控</span>
+    <button class="nav-btn active" data-view="dashboard"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>总览</span></button>
+    <button class="nav-btn ai-btn" data-view="tube-analysis"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.2-4.2M11 8v6M8 11h6"/></svg><span>管段综合分析</span></button>
+    <button class="nav-btn" data-view="maintenance-plan"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 5.6L3 17.6V21h3.4l5.7-5.7a4.5 4.5 0 0 0 5.6-6L14.6 12l-2.6-2.6 2.7-3.1z"/></svg><span>检修模块</span></button>
+  </div>
+  <div class="nav-group" aria-label="台账与编码">
+    <span class="nav-caption">台账与编码</span>
+    <button class="nav-btn" data-view="datamgr"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>数据录入</span></button>
+    <button class="nav-btn" data-view="generator"><svg viewBox="0 0 24 24"><path d="M4 7V5m0 14v-2m0-6v-2m0 6h2m-2-6h2M10 5h10M10 12h10M10 19h10"/></svg><span>编码生成</span></button>
+    <button class="nav-btn" data-view="inventory"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.8"/><path d="M4 5.5V18.5c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8V5.5"/><path d="M4 12c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8"/></svg><span>全量台账</span></button>
+  </div>
+  <div class="nav-group" aria-label="设备资料">
+    <span class="nav-caption">设备资料</span>
+    <button class="nav-btn" data-view="components"><svg viewBox="0 0 24 24"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg><span>受热面材料库</span></button>
+    <button class="nav-btn" data-view="headers"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/></svg><span>集箱库</span></button>
+    <button class="nav-btn" data-view="diagram"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg><span>炉管分布图</span></button>
+  </div>
+</nav>
+
+  <div class="rail-foot">
+    <div class="rail-status"><span class="dot"></span>系统在线 · AI 就绪</div>
     <div class="auth-user" id="auth-user">账号校验中</div>
     <div class="auth-actions">
       <button class="auth-btn" type="button" onclick="openPasswordManager()">密码管理</button>
       <button class="auth-btn" type="button" onclick="logoutUser()">退出</button>
     </div>
+    <div class="rail-version">BOILER-TUBE LCMS · v7.0</div>
   </div>
-</header>
+</aside>
 
-<div class="password-modal" id="password-modal" aria-hidden="true">
-  <div class="password-panel" role="dialog" aria-modal="true" aria-labelledby="password-title">
-    <div class="password-panel-head">
-      <div>
-        <div class="password-kicker">Account Security</div>
-        <h3 id="password-title">密码管理</h3>
-      </div>
-      <button class="password-close" type="button" onclick="closePasswordManager()" aria-label="关闭">×</button>
-    </div>
-    <div class="password-tabs" role="tablist" aria-label="密码管理">
-      <button class="password-tab active" id="password-tab-change" type="button" onclick="switchPasswordTab('change')">修改密码</button>
-      <button class="password-tab" id="password-tab-reset" type="button" onclick="switchPasswordTab('reset')" hidden>管理员重置</button>
-    </div>
-    <div class="password-body">
-      <form class="password-form" id="change-password-form">
-        <div class="password-grid">
-          <div class="password-field">
-            <label for="current-password">当前密码</label>
-            <input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required>
-          </div>
-          <div class="password-field">
-            <label for="new-password">新密码</label>
-            <input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" required>
-          </div>
-          <div class="password-field">
-            <label for="confirm-password">确认新密码</label>
-            <input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
-          </div>
-        </div>
-        <div class="password-actions">
-          <button class="password-submit" type="submit">更新密码</button>
-        </div>
-      </form>
-      <form class="password-form" id="reset-password-form" hidden>
-        <div class="password-grid">
-          <div class="password-field">
-            <label for="target-username">目标账号</label>
-            <input id="target-username" name="targetUsername" type="text" autocomplete="off" required>
-          </div>
-          <div class="password-field">
-            <label for="reset-new-password">新密码</label>
-            <input id="reset-new-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" required>
-          </div>
-          <div class="password-field">
-            <label for="reset-confirm-password">确认新密码</label>
-            <input id="reset-confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
-          </div>
-        </div>
-        <div class="password-actions">
-          <button class="password-submit" type="submit">重置密码</button>
-        </div>
-      </form>
-      <div class="password-message" id="password-message" role="status"></div>
-    </div>
+<div class="app-body">
+  <div class="app-topbar">
+    <button class="rail-toggle" type="button" onclick="toggleRail()" aria-label="切换导航"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <div class="topbar-title" id="topbar-title">炉管风险驾驶舱</div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-chip"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></svg><span id="clock">--:--:--</span></div>
+    <div class="topbar-chip"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l6 4V9l6 4V5h6v16H3z"/></svg>1# / 2# 机组</div>
   </div>
-</div>
-
-<nav>
-  <div class="nav-group" aria-label="总览监控">
-    <button class="nav-btn active" data-view="dashboard">◈ 总览</button>
-    <button class="nav-btn ai-btn" data-view="tube-analysis">🔍 管段综合分析</button>
-    <button class="nav-btn" data-view="maintenance-plan">🛠 检修模块</button>
-  </div>
-  <div class="nav-group" aria-label="台账与编码">
-    <button class="nav-btn" data-view="datamgr">📝 数据录入</button>
-    <button class="nav-btn" data-view="generator">⚙ 编码生成</button>
-    <button class="nav-btn" data-view="inventory">📊 全量台账</button>
-  </div>
-  <div class="nav-group" aria-label="设备资料">
-    <button class="nav-btn" data-view="components">▣ 受热面材料库</button>
-    <button class="nav-btn" data-view="headers">⬢ 集箱库</button>
-    <button class="nav-btn" data-view="diagram">◉ 炉管分布图</button>
-  </div>
-</nav>
-
+  <button class="rail-backdrop" type="button" aria-label="关闭导航" onclick="toggleRail()"></button>
 <main id="main-content">
   <!-- 1. DASHBOARD -->
   <section class="view active" id="view-dashboard">
     <div class="section-title"><h2>炉管风险驾驶舱</h2><span class="sub">RISK COMMAND CENTER · 1#/2# 机组 · 全生命周期闭环</span></div>
+
+    <div class="dashboard-status-band">
+      <div class="dashboard-status-item ok">
+        <span class="ds-ico"><svg viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M9 12l2 2 5-5"/></svg></span>
+        <span class="ds-body"><span>生命周期闭环率</span><strong>83%</strong></span>
+      </div>
+      <div class="dashboard-status-item">
+        <span class="ds-ico"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="15" width="7" height="5" rx="1"/><rect x="14" y="15" width="7" height="5" rx="1"/></svg></span>
+        <span class="ds-body"><span>管理单元</span><strong id="dashboard-ledger-count">0</strong></span>
+      </div>
+      <div class="dashboard-status-item">
+        <span class="ds-ico"><svg viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v3l2 2"/></svg></span>
+        <span class="ds-body"><span>检测完整率</span><strong>78%</strong></span>
+      </div>
+      <div class="dashboard-status-item brand">
+        <span class="ds-ico"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M12 14v3M12 14l-2 2M12 14l2 2"/></svg></span>
+        <span class="ds-body"><span>下次检修节点</span><strong id="dashboard-next-overhaul">2027 A修</strong></span>
+      </div>
+    </div>
 
     <div class="dashboard-command-center">
       <aside class="command-column command-left" aria-label="风险处置与快捷操作">
@@ -148,7 +124,7 @@
           </div>
           <div class="health-side-metrics" id="dashboardCoreRightMetrics"></div>
         </div>
-        <div class="trend-chart-wrap"><svg id="dashboardTrendChart" viewBox="0 0 520 174" preserveAspectRatio="none"></svg></div>
+        <div class="trend-chart-wrap"><svg id="dashboardTrendChart" viewBox="0 0 520 284" preserveAspectRatio="none"></svg></div>
       </section>
 
       <aside class="command-column command-right" aria-label="受热面健康排名与最新预警">
@@ -157,25 +133,6 @@
         <div class="command-section-title command-warning-title"><span>最新风险信号</span></div>
         <div id="dashboard-warning-list"></div>
       </aside>
-    </div>
-
-    <div class="dashboard-status-band">
-      <div class="dashboard-status-item ok">
-        <span class="ds-ico"><svg viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M9 12l2 2 5-5"/></svg></span>
-        <span class="ds-body"><span>生命周期闭环率</span><strong>83%</strong></span>
-      </div>
-      <div class="dashboard-status-item">
-        <span class="ds-ico"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="15" width="7" height="5" rx="1"/><rect x="14" y="15" width="7" height="5" rx="1"/></svg></span>
-        <span class="ds-body"><span>管理单元</span><strong id="dashboard-ledger-count">0</strong></span>
-      </div>
-      <div class="dashboard-status-item">
-        <span class="ds-ico"><svg viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v3l2 2"/></svg></span>
-        <span class="ds-body"><span>检测完整率</span><strong>78%</strong></span>
-      </div>
-      <div class="dashboard-status-item brand">
-        <span class="ds-ico"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M12 14v3M12 14l-2 2M12 14l2 2"/></svg></span>
-        <span class="ds-body"><span>下次检修节点</span><strong id="dashboard-next-overhaul">2027 A修</strong></span>
-      </div>
     </div>
 
     <div class="card llm-panel compact-config">
@@ -395,7 +352,7 @@
     <div class="card">
       <div class="card-title">A/C/C 停炉消缺安排</div>
       <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:15px;">
-        <button class="btn btn-outline" onclick="exportMaintenancePlanCSV()">导出A/C/C计划CSV</button>
+        <button class="btn btn-outline" onclick="exportMaintenancePlanCSV()">📋 导出CSV清单（A/C/C检修计划）</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -540,37 +497,285 @@
   <section class="view" id="view-diagram">
     <div class="section-title"><h2>锅炉受热面炉管分布图</h2><span class="sub">Π型设计 · 宝钢湛江 1/2#机组 (点击管排查看运行参数)</span></div>
     <div class="boiler-diagram">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="100%" height="100%" class="boiler-svg" style="background-color: #0c101d; font-family: 'Segoe UI', system-ui, sans-serif;">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 950" width="100%" height="100%" class="boiler-svg" role="img" aria-label="Π型锅炉受热面炉管分布示意图（双烟道平行布置）">
         <defs>
-          <linearGradient id="bg-glow" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#0c101d" /><stop offset="100%" stop-color="#05070c" /></linearGradient>
-          <linearGradient id="fire-glow" x1="0%" y1="100%" x2="0%" y2="0%"><stop offset="0%" stop-color="#ff3300" stop-opacity="0.6" /><stop offset="40%" stop-color="#ff6600" stop-opacity="0.3" /><stop offset="100%" stop-color="#ffaa00" stop-opacity="0" /></linearGradient>
-          <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="4" result="blur" /><feComposite in="SourceGraphic" in2="blur" operator="over" /></filter>
-          <filter id="glow-orange" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="4" result="blur" /><feComposite in="SourceGraphic" in2="blur" operator="over" /></filter>
-          <pattern id="tube-pattern" width="12" height="12" patternUnits="userSpaceOnUse"><path d="M 3,0 L 3,12 M 9,0 L 9,12" stroke="rgba(255,255,255,0.12)" stroke-width="1" /></pattern>
-          <pattern id="tube-pattern-horiz" width="12" height="12" patternUnits="userSpaceOnUse"><path d="M 0,3 L 12,3 M 0,9 L 12,9" stroke="rgba(255,255,255,0.12)" stroke-width="1" /></pattern>
+          <linearGradient id="dgBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0c1220"/><stop offset="100%" stop-color="#060a13"/></linearGradient>
+          <linearGradient id="fireGlow" x1="0" y1="1" x2="0" y2="0"><stop offset="0%" stop-color="#ff5a1f" stop-opacity=".55"/><stop offset="45%" stop-color="#ff8c1a" stop-opacity=".22"/><stop offset="100%" stop-color="#ffb020" stop-opacity="0"/></linearGradient>
+          <linearGradient id="drumSheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2a3d5e"/><stop offset="55%" stop-color="#16233a"/><stop offset="100%" stop-color="#0d1829"/></linearGradient>
+          <pattern id="tubeV" width="11" height="11" patternUnits="userSpaceOnUse"><path d="M 3 0 V 11 M 8.5 0 V 11" stroke="rgba(255,255,255,.16)" stroke-width="1.4"/></pattern>
+          <pattern id="tubeH" width="11" height="11" patternUnits="userSpaceOnUse"><path d="M 0 3 H 11 M 0 8.5 H 11" stroke="rgba(255,255,255,.15)" stroke-width="1.4"/></pattern>
+          <pattern id="wallHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0H8" stroke="#64748b" stroke-width="2"/></pattern>
+          <filter id="glowS" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <marker id="gasArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#fb7185"/></marker>
         </defs>
-        <rect width="1600" height="1000" fill="url(#bg-glow)" />
-        <g stroke="rgba(255, 255, 255, 0.02)" stroke-width="1"><path d="M0,200 L1600,200 M0,400 L1600,400 M0,600 L1600,600 M0,800 L1600,800" /><path d="M200,0 L200,1000 M400,0 L400,1000 M600,0 L600,1000 M800,0 L800,1000 M1000,0 L1000,1000 M1200,0 L1200,1000 M1400,0 L1400,1000" /></g>
-        <g transform="translate(0, 0)"><rect width="1600" height="80" fill="rgba(15, 23, 42, 0.8)" stroke="#1e293b" stroke-width="1"/><text x="60" y="48" font-size="24" font-weight="bold" fill="#00f2fe" filter="url(#glow-cyan)" letter-spacing="2">宝钢湛江自备电厂 1/2#机组</text><text x="800" y="48" font-size="22" font-weight="bold" fill="#ffffff" text-anchor="middle" letter-spacing="4">锅炉受热面炉管分布图 (Π型设计)</text><path d="M 60,65 L 360,65" stroke="#00f2fe" stroke-width="2" /></g>
-        <g id="boiler-shell" fill="none" stroke="#334155" stroke-width="3" stroke-linejoin="round"><path d="M 200,400 L 200,180 L 1350,180 L 1350,800 L 1005,800 L 1005,420 L 695,420 L 695,800 L 450,960 L 200,800 Z" /><path d="M 202,650 L 693,650 L 693,800 L 450,958 L 202,800 Z" fill="url(#fire-glow)" stroke="none" /><text x="450" y="720" font-size="24" fill="#475569" font-weight="bold" text-anchor="middle" letter-spacing="10">炉膛 CORE</text><text x="850" y="220" font-size="16" fill="#475569" font-weight="bold" text-anchor="middle" letter-spacing="4">水平烟道</text><text x="1180" y="620" font-size="18" fill="#475569" font-weight="bold" text-anchor="middle" letter-spacing="6">尾部烟道</text></g>
-        <g id="tube-qdp" class="boiler-zone" onclick="showZone('qdp')" transform="translate(260, 60)"><circle cx="30" cy="60" r="14" fill="#ef4444" filter="url(#glow-orange)" /><circle cx="90" cy="60" r="18" fill="#ef4444" filter="url(#glow-orange)" /><path d="M 30,60 L 30,340 A 30,30 0 0,0 90,340 L 90,60" fill="none" stroke="#ef4444" stroke-width="26" stroke-linecap="round" opacity="0.85" /><path d="M 30,60 L 30,340 A 30,30 0 0,0 90,340 L 90,60" fill="none" stroke="#000" stroke-width="22" stroke-linecap="round" /><path d="M 30,60 L 30,340 A 30,30 0 0,0 90,340 L 90,60" fill="none" stroke="url(#tube-pattern)" stroke-width="20" stroke-linecap="round" /><text x="60" y="390" font-size="14" font-weight="bold" fill="#ef4444" text-anchor="middle">全大屏</text></g>
-        <g id="tube-hp" class="boiler-zone" onclick="showZone('hp')" transform="translate(400, 60)"><circle cx="30" cy="60" r="14" fill="#f97316" filter="url(#glow-orange)" /><circle cx="90" cy="60" r="18" fill="#f97316" filter="url(#glow-orange)" /><path d="M 30,60 L 30,340 A 30,30 0 0,0 90,340 L 90,60" fill="none" stroke="#f97316" stroke-width="26" stroke-linecap="round" opacity="0.85" /><path d="M 30,60 L 30,340 A 30,30 0 0,0 90,340 L 90,60" fill="none" stroke="#000" stroke-width="22" stroke-linecap="round" /><path d="M 30,60 L 30,340 A 30,30 0 0,0 90,340 L 90,60" fill="none" stroke="url(#tube-pattern)" stroke-width="20" stroke-linecap="round" /><text x="60" y="390" font-size="14" font-weight="bold" fill="#f97316" text-anchor="middle">后屏</text></g>
-        <g id="tube-gg" class="boiler-zone" onclick="showZone('gg')" transform="translate(540, 60)"><circle cx="25" cy="60" r="14" fill="#f59e0b" /><circle cx="85" cy="60" r="18" fill="#f59e0b" /><path d="M 25,60 L 25,335 A 30,30 0 0,0 85,335 L 85,60" fill="none" stroke="#f59e0b" stroke-width="26" stroke-linecap="round" /><path d="M 25,60 L 25,335 A 30,30 0 0,0 85,335 L 85,60" fill="none" stroke="#000" stroke-width="22" stroke-linecap="round" /><path d="M 25,60 L 25,335 A 30,30 0 0,0 85,335 L 85,60" fill="none" stroke="url(#tube-pattern)" stroke-width="20" stroke-linecap="round" /><text x="55" y="390" font-size="14" font-weight="bold" fill="#f59e0b" text-anchor="middle">高过</text></g>
-        <g id="tube-gz" class="boiler-zone" onclick="showZone('gz')" transform="translate(680, 60)"><circle cx="20" cy="60" r="14" fill="#a855f7" filter="url(#glow-orange)" /><circle cx="80" cy="60" r="18" fill="#a855f7" filter="url(#glow-orange)" /><path d="M 20,60 L 20,330 A 30,30 0 0,0 80,330 L 80,60" fill="none" stroke="#a855f7" stroke-width="26" stroke-linecap="round" opacity="0.85" /><path d="M 20,60 L 20,330 A 30,30 0 0,0 80,330 L 80,60" fill="none" stroke="#000" stroke-width="22" stroke-linecap="round" /><path d="M 20,60 L 20,330 A 30,30 0 0,0 80,330 L 80,60" fill="none" stroke="url(#tube-pattern)" stroke-width="20" stroke-linecap="round" /><text x="50" y="390" font-size="14" font-weight="bold" fill="#a855f7" text-anchor="middle">高再</text></g>
-        <g id="tube-dwzr" class="boiler-zone" onclick="showZone('dwzr')" transform="translate(1030, 320)"><rect width="130" height="240" fill="rgba(147, 51, 234, 0.15)" stroke="#a855f7" stroke-width="2" rx="4"/><rect width="130" height="240" fill="url(#tube-pattern-horiz)" rx="4"/><path d="M 15,20 L 115,20 M 15,60 L 115,60 M 15,100 L 115,100 M 15,140 L 115,140 M 15,180 L 115,180 M 15,220 L 115,220" stroke="rgba(168, 85, 247, 0.3)" stroke-width="2" /><text x="65" y="110" font-size="16" font-weight="bold" fill="#e9d5ff" text-anchor="middle">低温</text><text x="65" y="140" font-size="16" font-weight="bold" fill="#e9d5ff" text-anchor="middle">再热器</text></g>
-        <g id="tube-dwgr" class="boiler-zone" onclick="showZone('dwgr')" transform="translate(1190, 320)"><rect width="130" height="240" fill="rgba(6, 182, 212, 0.15)" stroke="#06b6d4" stroke-width="2" rx="4" filter="url(#glow-cyan)"/><rect width="130" height="240" fill="url(#tube-pattern-horiz)" rx="4"/><path d="M 15,20 L 115,20 M 15,60 L 115,60 M 15,100 L 115,100 M 15,140 L 115,140 M 15,180 L 115,180 M 15,220 L 115,220" stroke="rgba(6, 114, 212, 0.3)" stroke-width="2" /><text x="65" y="110" font-size="16" font-weight="bold" fill="#a5f3fc" text-anchor="middle">低温</text><text x="65" y="140" font-size="16" font-weight="bold" fill="#a5f3fc" text-anchor="middle">过热器</text></g>
-        <g id="tube-smq" class="boiler-zone" onclick="showZone('smq')" transform="translate(1030, 650)"><rect width="290" height="110" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981" stroke-width="2" rx="4"/><rect width="290" height="110" fill="url(#tube-pattern-horiz)" rx="4"/><path d="M 20,20 L 270,20 M 20,45 L 270,45 M 20,70 L 270,70 M 20,95 L 270,95" stroke="rgba(16, 185, 129, 0.3)" stroke-width="2" /><text x="145" y="62" font-size="18" font-weight="bold" fill="#d1fae5" text-anchor="middle" letter-spacing="4">省 煤 器</text></g>
-        <g id="smoke-flow" fill="none" stroke="#f43f5e" stroke-width="3" stroke-dasharray="8, 12" stroke-linecap="round"><path d="M 450,780 L 450,280 Q 450,230 500,230 L 960,230 Q 1110,230 1110,300 L 1110,590 L 1170,590 L 1170,760" /><path d="M 1250,300 L 1250,590" /></g>
-        <g transform="translate(250, 915)"><rect width="1100" height="50" fill="rgba(30, 41, 59, 0.7)" stroke="#1e293b" rx="25"/><circle cx="40" cy="25" r="8" fill="#ef4444" /> <text x="55" y="29" font-size="14" fill="#cbd5e1">全大屏受热面</text><circle cx="200" cy="25" r="8" fill="#f97316" /> <text x="215" y="29" font-size="14" fill="#cbd5e1">后屏过热器</text><circle cx="360" cy="25" r="8" fill="#f59e0b" /> <text x="375" y="29" font-size="14" fill="#cbd5e1">高温过热器</text><circle cx="540" cy="25" r="8" fill="#a855f7" /> <text x="555" y="29" font-size="14" fill="#cbd5e1">高温再热器</text><circle cx="720" cy="25" r="8" fill="#06b6d4" /> <text x="735" y="29" font-size="14" fill="#cbd5e1">低温过热器</text><circle cx="880" cy="25" r="8" fill="#10b981" /> <text x="895" y="29" font-size="14" fill="#cbd5e1">省煤器</text><path d="M 1020,25 L 1060,25" stroke="#f43f5e" stroke-width="2" stroke-dasharray="4,4"/><text x="1070" y="29" font-size="14" fill="#cbd5e1">烟气流向</text></g>
+
+        <rect width="1600" height="950" fill="url(#dgBg)"/>
+        <g stroke="rgba(126,190,235,.05)" stroke-width="1">
+          <path d="M0,190 H1600 M0,380 H1600 M0,570 H1600 M0,760 H1600"/>
+          <path d="M200,0 V950 M400,0 V950 M600,0 V950 M800,0 V950 M1000,0 V950 M1200,0 V950 M1400,0 V950"/>
+        </g>
+        <text x="52" y="58" font-size="21" font-weight="700" fill="#6ee1f7" letter-spacing="3">宝钢湛江自备电厂 1/2# 机组</text>
+        <text x="52" y="82" font-size="12" fill="#5d7593" letter-spacing="4">Π 型锅炉 · 双烟道平行布置 · 汽水系统</text>
+        <rect x="52" y="94" width="150" height="2" rx="1" fill="rgba(110,225,247,.55)"/>
+
+        <!-- ═══ 炉膛 ═══ -->
+        <polygon points="212,190 212,772 352,886 488,886 618,772 618,190" fill="rgba(10,17,31,.6)" stroke="#33465f" stroke-width="3"/>
+        <polygon points="238,300 238,742 362,846 478,846 592,742 592,300" fill="url(#fireGlow)" opacity=".85"/>
+        <polygon points="224,196 224,762 356,868 374,868 252,752 252,196" fill="url(#tubeV)" opacity=".28"/>
+        <polygon points="606,196 606,762 488,862 470,862 578,752 578,196" fill="url(#tubeV)" opacity=".28"/>
+        <text x="415" y="500" font-size="26" font-weight="800" fill="#3d5471" text-anchor="middle" letter-spacing="14">炉 膛</text>
+
+        <!-- 燃烧器 -->
+        <g fill="#101a2c" stroke="#f97316" stroke-width="1.6">
+          <rect x="330" y="596" width="52" height="20" rx="4"/><rect x="452" y="596" width="52" height="20" rx="4"/>
+          <rect x="330" y="648" width="52" height="20" rx="4"/><rect x="452" y="648" width="52" height="20" rx="4"/>
+          <rect x="330" y="700" width="52" height="20" rx="4"/><rect x="452" y="700" width="52" height="20" rx="4"/>
+        </g>
+        <g fill="#ffb454" opacity=".85">
+          <rect x="340" y="603" width="32" height="6" rx="3"/><rect x="462" y="603" width="32" height="6" rx="3"/>
+          <rect x="340" y="655" width="32" height="6" rx="3"/><rect x="462" y="655" width="32" height="6" rx="3"/>
+          <rect x="340" y="707" width="32" height="6" rx="3"/><rect x="462" y="707" width="32" height="6" rx="3"/>
+        </g>
+        <text x="415" y="748" font-size="12" fill="#7d92ad" text-anchor="middle">燃烧器 · 三层四角切圆</text>
+
+        <!-- 锅筒 -->
+        <rect x="272" y="112" width="256" height="44" rx="22" fill="url(#drumSheen)" stroke="#48cae4" stroke-width="2"/>
+        <text x="400" y="140" font-size="14" font-weight="700" fill="#a5ecff" text-anchor="middle" letter-spacing="4">锅 筒</text>
+        <path d="M 300 156 V 190 M 500 156 V 190" stroke="#3d5471" stroke-width="3"/>
+
+        <!-- 顶棚过热器 -->
+        <rect x="206" y="168" width="1138" height="18" fill="url(#tubeH)" opacity=".5" stroke="rgba(147,197,253,.35)" stroke-width="1.4"/>
+        <text x="240" y="163" font-size="11" fill="#93c5fd">顶棚过热器 RSH</text>
+
+        <!-- 全大屏 PSH -->
+        <g class="boiler-zone" onclick="showZone('qdp')">
+          <title>全大屏过热器 PSH · 点击查看运行参数</title>
+          <rect x="228" y="204" width="188" height="7" fill="#ef4444" opacity=".8"/>
+          <g fill="rgba(239,68,68,.14)" stroke="#ef4444" stroke-width="1.8">
+            <rect x="232" y="211" width="15" height="222" rx="3"/><rect x="260" y="211" width="15" height="222" rx="3"/><rect x="288" y="211" width="15" height="222" rx="3"/>
+            <rect x="316" y="211" width="15" height="222" rx="3"/><rect x="344" y="211" width="15" height="222" rx="3"/><rect x="372" y="211" width="15" height="222" rx="3"/>
+          </g>
+          <circle cx="239" cy="207" r="4" fill="#ef4444"/><circle cx="295" cy="207" r="4" fill="#ef4444"/><circle cx="351" cy="207" r="4" fill="#ef4444"/><circle cx="379" cy="207" r="4" fill="#ef4444"/>
+          <text x="322" y="462" font-size="13" font-weight="700" fill="#fca5a5" text-anchor="middle">全大屏 PSH</text>
+        </g>
+
+        <!-- 屏式(后屏) ISH -->
+        <g class="boiler-zone" onclick="showZone('hp')">
+          <title>屏式过热器 ISH · 点击查看运行参数</title>
+          <rect x="438" y="216" width="158" height="7" fill="#f97316" opacity=".8"/>
+          <g fill="rgba(249,115,22,.13)" stroke="#f97316" stroke-width="1.8">
+            <rect x="442" y="223" width="13" height="192" rx="3"/><rect x="466" y="223" width="13" height="192" rx="3"/><rect x="490" y="223" width="13" height="192" rx="3"/>
+            <rect x="514" y="223" width="13" height="192" rx="3"/><rect x="538" y="223" width="13" height="192" rx="3"/><rect x="562" y="223" width="13" height="192" rx="3"/>
+          </g>
+          <text x="520" y="446" font-size="13" font-weight="700" fill="#fdba74" text-anchor="middle">后屏 ISH</text>
+        </g>
+
+        <!-- ═══ 水平烟道 ═══ -->
+        <path d="M 618 186 H 1040 M 618 356 H 1040 M 1040 186 V 830" stroke="#33465f" stroke-width="3" fill="none"/>
+        <text x="830" y="392" font-size="12" fill="#5d7593" text-anchor="middle" letter-spacing="4">水 平 烟 道</text>
+
+        <!-- 高温过热器 HSH -->
+        <g class="boiler-zone" onclick="showZone('gg')">
+          <title>高温过热器 HSH · 点击查看运行参数</title>
+          <rect x="668" y="196" width="152" height="6" fill="#f59e0b" opacity=".8"/>
+          <g fill="rgba(245,158,11,.13)" stroke="#f59e0b" stroke-width="1.8">
+            <rect x="672" y="202" width="11" height="128" rx="3"/><rect x="691" y="202" width="11" height="128" rx="3"/><rect x="710" y="202" width="11" height="128" rx="3"/><rect x="729" y="202" width="11" height="128" rx="3"/>
+            <rect x="748" y="202" width="11" height="128" rx="3"/><rect x="767" y="202" width="11" height="128" rx="3"/><rect x="786" y="202" width="11" height="128" rx="3"/><rect x="805" y="202" width="11" height="128" rx="3"/>
+          </g>
+          <text x="744" y="348" font-size="13" font-weight="700" fill="#fcd34d" text-anchor="middle">高过 HSH</text>
+        </g>
+
+        <!-- 高温再热器 HRH -->
+        <g class="boiler-zone" onclick="showZone('gz')">
+          <title>高温再热器 HRH · 点击查看运行参数</title>
+          <rect x="852" y="196" width="152" height="6" fill="#a855f7" opacity=".8"/>
+          <g fill="rgba(168,85,247,.13)" stroke="#a855f7" stroke-width="1.8">
+            <rect x="856" y="202" width="11" height="128" rx="3"/><rect x="875" y="202" width="11" height="128" rx="3"/><rect x="894" y="202" width="11" height="128" rx="3"/><rect x="913" y="202" width="11" height="128" rx="3"/>
+            <rect x="932" y="202" width="11" height="128" rx="3"/><rect x="951" y="202" width="11" height="128" rx="3"/><rect x="970" y="202" width="11" height="128" rx="3"/><rect x="989" y="202" width="11" height="128" rx="3"/>
+          </g>
+          <text x="928" y="348" font-size="13" font-weight="700" fill="#d8b4fe" text-anchor="middle">高再 HRH</text>
+        </g>
+
+        <!-- ═══ 尾部竖井（双烟道平行布置）═══ -->
+        <rect x="1064" y="186" width="290" height="650" fill="rgba(10,17,31,.5)" stroke="#33465f" stroke-width="3"/>
+        <text x="1209" y="176" font-size="12" fill="#5d7593" text-anchor="middle" letter-spacing="4">尾 部 竖 井 · 双 烟 道</text>
+
+        <!-- 分隔墙 -->
+        <rect x="1202" y="210" width="14" height="160" fill="url(#wallHatch)" stroke="#475569" stroke-width="1.5"/>
+        <text transform="rotate(90 1209 290)" x="1209" y="294" font-size="11" fill="#94a3b8" text-anchor="middle" letter-spacing="3">分隔墙</text>
+
+        <!-- 低再（靠锅炉侧·左烟道）LRH -->
+        <g class="boiler-zone" onclick="showZone('dwzr')">
+          <title>低温再热器 LRH（锅炉侧烟道，挡板调温）· 点击查看运行参数</title>
+          <rect x="1078" y="222" width="118" height="130" rx="6" fill="rgba(139,92,246,.12)" stroke="#8b5cf6" stroke-width="2"/>
+          <rect x="1078" y="222" width="118" height="130" rx="6" fill="url(#tubeH)"/>
+          <text x="1137" y="278" font-size="13" font-weight="700" fill="#ddd6fe" text-anchor="middle">低温再热器</text>
+          <text x="1137" y="297" font-size="10" fill="#a5b4fc" text-anchor="middle">LRH</text>
+          <text x="1137" y="338" font-size="10" fill="#64748b" text-anchor="middle">◀ 靠锅炉侧</text>
+        </g>
+
+        <!-- 低过（靠尾部侧·右烟道）LSH -->
+        <g class="boiler-zone" onclick="showZone('dwgr')">
+          <title>低温过热器 LSH（尾部侧烟道，挡板调温）· 点击查看运行参数</title>
+          <rect x="1222" y="222" width="118" height="130" rx="6" fill="rgba(6,182,212,.12)" stroke="#06b6d4" stroke-width="2"/>
+          <rect x="1222" y="222" width="118" height="130" rx="6" fill="url(#tubeH)"/>
+          <text x="1281" y="278" font-size="13" font-weight="700" fill="#a5f3fc" text-anchor="middle">低温过热器</text>
+          <text x="1281" y="297" font-size="10" fill="#67e8f9" text-anchor="middle">LSH</text>
+          <text x="1281" y="338" font-size="10" fill="#64748b" text-anchor="middle">靠尾部侧 ▶</text>
+        </g>
+
+        <!-- 烟气调节挡板 -->
+        <g stroke="#64748b" stroke-width="2">
+          <path d="M 1078 372 H 1196 M 1078 404 H 1196"/>
+          <path d="M 1222 372 H 1340 M 1222 404 H 1340"/>
+        </g>
+        <!-- 左：开度较大（叶片近垂直导流） -->
+        <g stroke="#94a3b8" stroke-width="4" stroke-linecap="round">
+          <path d="M 1094 402 L 1094 374"/><path d="M 1116 402 L 1116 374"/><path d="M 1138 402 L 1138 374"/><path d="M 1160 402 L 1160 374"/><path d="M 1182 402 L 1182 374"/>
+        </g>
+        <!-- 右：关小节流（叶片斜置遮挡） -->
+        <g stroke="#cbd5e1" stroke-width="5" stroke-linecap="round">
+          <path d="M 1234 400 L 1262 376"/><path d="M 1268 400 L 1296 376"/><path d="M 1302 400 L 1330 376"/>
+        </g>
+        <circle cx="1078" cy="388" r="3" fill="#64748b"/><circle cx="1196" cy="388" r="3" fill="#64748b"/>
+        <circle cx="1222" cy="388" r="3" fill="#64748b"/><circle cx="1340" cy="388" r="3" fill="#64748b"/>
+        <text x="1360" y="392" font-size="11" fill="#94a3b8">烟气挡板调温</text>
+        <path d="M 1356 388 H 1344" stroke="#64748b" stroke-width="1.4"/>
+
+        <!-- 上级省煤器 -->
+        <g class="boiler-zone" onclick="showZone('smq')">
+          <title>上级省煤器（第二级）· 点击查看运行参数</title>
+          <rect x="1080" y="440" width="258" height="66" rx="6" fill="rgba(16,185,129,.12)" stroke="#10b981" stroke-width="2"/>
+          <rect x="1080" y="440" width="258" height="66" rx="6" fill="url(#tubeH)"/>
+          <text x="1209" y="470" font-size="13" font-weight="700" fill="#a7f3d0" text-anchor="middle">上级省煤器 · 第二级</text>
+          <text x="1209" y="492" font-size="10" fill="#6ee7b7" text-anchor="middle">高温段管组</text>
+        </g>
+
+        <!-- 下级省煤器 -->
+        <g class="boiler-zone" onclick="showZone('smq')">
+          <title>下级省煤器（第一级）· 点击查看运行参数</title>
+          <rect x="1080" y="538" width="258" height="66" rx="6" fill="rgba(16,185,129,.12)" stroke="#10b981" stroke-width="2"/>
+          <rect x="1080" y="538" width="258" height="66" rx="6" fill="url(#tubeH)"/>
+          <text x="1209" y="568" font-size="13" font-weight="700" fill="#a7f3d0" text-anchor="middle">下级省煤器 · 第一级</text>
+          <text x="1209" y="590" font-size="10" fill="#6ee7b7" text-anchor="middle">低温段管组 · 两级分级串联</text>
+        </g>
+
+        <!-- SCR 脱硝 -->
+        <g class="boiler-zone" onclick="showZone('scr')">
+          <title>SCR 脱硝反应器 · 点击查看运行参数</title>
+          <rect x="1080" y="648" width="258" height="124" rx="6" fill="rgba(34,211,238,.07)" stroke="rgba(34,211,238,.65)" stroke-width="2" stroke-dasharray="8 5"/>
+          <path d="M 1094 686 H 1324 M 1094 720 H 1324" stroke="rgba(34,211,238,.4)" stroke-width="2"/>
+          <text x="1209" y="708" font-size="13" font-weight="700" fill="#a5f3fc" text-anchor="middle" opacity=".9">SCR 脱硝反应器</text>
+          <text x="1209" y="750" font-size="10.5" fill="#67e8f9" text-anchor="middle" opacity=".8">催化剂层 · 脱硝效率 99.9%</text>
+        </g>
+
+        <!-- ═══ 烟气流程 ═══ -->
+        <path class="gas-flow" d="M 412 842 V 268 Q 412 232 448 232 H 1148 Q 1186 232 1186 206" fill="none" stroke="#fb7185" stroke-width="3.5" marker-end="url(#gasArrow)"/>
+        <!-- 分流进双烟道 -->
+        <path class="gas-flow" d="M 1120 198 V 216" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1300 198 V 216" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1120 358 V 368" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1300 358 V 368" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <!-- 汇合下行 -->
+        <path class="gas-flow" d="M 1140 412 Q 1170 428 1196 434" fill="none" stroke="#fb7185" stroke-width="2.5"/>
+        <path class="gas-flow" d="M 1280 412 Q 1250 428 1222 434" fill="none" stroke="#fb7185" stroke-width="2.5"/>
+        <path class="gas-flow" d="M 1209 512 V 532" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1209 610 V 642" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <!-- 出口 -->
+        <path class="gas-flow" d="M 1338 716 H 1448 Q 1462 716 1462 702 V 668" fill="none" stroke="#fb7185" stroke-width="3.5" marker-end="url(#gasArrow)"/>
+        <text x="1452" y="654" font-size="11.5" fill="#fda4af" text-anchor="end">至空预器 / 除尘</text>
+
+        <!-- 温度标注 -->
+        <g font-size="11.5" font-weight="700" text-anchor="middle">
+          <g><rect x="452" y="522" width="112" height="24" rx="12" fill="rgba(249,115,22,.14)" stroke="rgba(249,115,22,.5)"/><text x="508" y="538" fill="#fdba74">炉膛 ~1500℃</text></g>
+          <g><rect x="668" y="404" width="130" height="24" rx="12" fill="rgba(245,158,11,.12)" stroke="rgba(245,158,11,.45)"/><text x="733" y="420" fill="#fcd34d">水平烟道 876℃</text></g>
+          <g><rect x="1368" y="574" width="132" height="24" rx="12" fill="rgba(16,185,129,.12)" stroke="rgba(16,185,129,.45)"/><text x="1434" y="590" fill="#6ee7b7">省煤器出口 289℃</text></g>
+        </g>
+
+        <!-- ═══ 图例 ═══ -->
+        <rect x="206" y="888" width="1240" height="46" rx="23" fill="rgba(13,23,41,.85)" stroke="rgba(126,190,235,.22)"/>
+        <g font-size="12.5" fill="#cbd5e1">
+          <circle cx="252" cy="911" r="6" fill="#ef4444"/><text x="264" y="915">全大屏</text>
+          <circle cx="348" cy="911" r="6" fill="#f97316"/><text x="360" y="915">屏式过热器</text>
+          <circle cx="472" cy="911" r="6" fill="#f59e0b"/><text x="484" y="915">高过</text>
+          <circle cx="548" cy="911" r="6" fill="#a855f7"/><text x="560" y="915">高再</text>
+          <circle cx="636" cy="911" r="6" fill="#8b5cf6"/><text x="648" y="915">低再</text>
+          <circle cx="732" cy="911" r="6" fill="#06b6d4"/><text x="744" y="915">低过</text>
+          <circle cx="828" cy="911" r="6" fill="#10b981"/><text x="840" y="915">省煤器×2级</text>
+          <circle cx="956" cy="911" r="6" fill="none" stroke="#22d3ee" stroke-width="2"/><text x="968" y="915">SCR</text>
+          <rect x="1024" y="904" width="13" height="13" rx="2" fill="#334155" stroke="#64748b"/><text x="1044" y="915">分隔墙·挡板</text>
+          <line x1="1146" y1="911" x2="1188" y2="911" stroke="#fb7185" stroke-width="3" stroke-dasharray="8 6"/><text x="1196" y="915">烟气流向</text>
+          <text x="1310" y="915" fill="#5d7593">点击查看参数 →</text>
+        </g>
       </svg>
     </div>
+
     <div class="card" id="zoneDetail" style="margin-top:20px; display:none;"></div>
   </section>
 </main>
 
-<footer>⬢ BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v6.7 · 2026 ⬢</footer>
+<footer>⬢ BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v7.0 · 2026 ⬢</footer>
+</div>
+</div>
+<div class="password-modal" id="password-modal" aria-hidden="true">
+  <div class="password-panel" role="dialog" aria-modal="true" aria-labelledby="password-title">
+    <div class="password-panel-head">
+      <div>
+        <div class="password-kicker">Account Security</div>
+        <h3 id="password-title">密码管理</h3>
+      </div>
+      <button class="password-close" type="button" onclick="closePasswordManager()" aria-label="关闭">×</button>
+    </div>
+    <div class="password-tabs" role="tablist" aria-label="密码管理">
+      <button class="password-tab active" id="password-tab-change" type="button" onclick="switchPasswordTab('change')">修改密码</button>
+      <button class="password-tab" id="password-tab-reset" type="button" onclick="switchPasswordTab('reset')" hidden>管理员重置</button>
+    </div>
+    <div class="password-body">
+      <form class="password-form" id="change-password-form">
+        <div class="password-grid">
+          <div class="password-field">
+            <label for="current-password">当前密码</label>
+            <input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required>
+          </div>
+          <div class="password-field">
+            <label for="new-password">新密码</label>
+            <input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+          <div class="password-field">
+            <label for="confirm-password">确认新密码</label>
+            <input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+        </div>
+        <div class="password-actions">
+          <button class="password-submit" type="submit">更新密码</button>
+        </div>
+      </form>
+      <form class="password-form" id="reset-password-form" hidden>
+        <div class="password-grid">
+          <div class="password-field">
+            <label for="target-username">目标账号</label>
+            <input id="target-username" name="targetUsername" type="text" autocomplete="off" required>
+          </div>
+          <div class="password-field">
+            <label for="reset-new-password">新密码</label>
+            <input id="reset-new-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+          <div class="password-field">
+            <label for="reset-confirm-password">确认新密码</label>
+            <input id="reset-confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+          </div>
+        </div>
+        <div class="password-actions">
+          <button class="password-submit" type="submit">重置密码</button>
+        </div>
+      </form>
+      <div class="password-message" id="password-message" role="status"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast-host" id="toast-host" aria-live="polite"></div>
 
-<script src="assets/app/app.js" defer></script>
+<script src="assets/app/app.js?v=7.9" defer></script>
 </body>
 </html>

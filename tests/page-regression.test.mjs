@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const htmlPath = "C:/Users/DLX/Desktop/炉管全生命周期管理系统.html";
-const html = readFileSync(htmlPath, "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+// v6.7 起样式与脚本拆分为外部文件，改为合并检索 HTML + JS + CSS
+const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
+const html = [
+  readFileOrEmpty(resolve(here, "../炉管全生命周期管理系统.html")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.js")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.css"))
+].join("\n");
 
 const checks = [
   ["AI output uses local evidence and configured LLM rather than old demo inference", () => {
@@ -46,7 +54,8 @@ const checks = [
   ["narrow screens have dedicated responsive rules", () => {
     assert.match(html, /@media \(max-width: 600px\)/);
     assert.match(html, /\.ai-metric-grid\s*\{\s*grid-template-columns: 1fr/);
-    assert.match(html, /header\s*\{\s*flex-direction: column/);
+    assert.match(html, /\.app-topbar\s*\{\s*flex-wrap:\s*wrap/);
+    assert.match(html, /@media \(max-width: 960px\)[\s\S]*\.app-rail\s*\{[^}]*position:\s*fixed/);
   }],
   ["top navigation is grouped by workflow", () => {
     assert.match(html, /<div class="nav-group" aria-label="总览监控">/);

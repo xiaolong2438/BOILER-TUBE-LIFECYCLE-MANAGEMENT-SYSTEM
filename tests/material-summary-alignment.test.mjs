@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const htmlPath = "C:/Users/DLX/Desktop/炉管全生命周期管理系统.html";
-const html = readFileSync(htmlPath, "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+// v6.7 起样式与脚本拆分为外部文件，改为合并检索 HTML + JS + CSS
+const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
+const html = [
+  readFileOrEmpty(resolve(here, "../炉管全生命周期管理系统.html")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.js")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.css"))
+].join("\n");
 
 const expectedBySys = new Map([
   ["ECO", "Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G"],

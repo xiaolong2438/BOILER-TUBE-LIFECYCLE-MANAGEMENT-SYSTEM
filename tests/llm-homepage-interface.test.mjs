@@ -1,14 +1,16 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const desktopPath = "C:/Users/DLX/Desktop";
-const htmlPath = readdirSync(desktopPath)
-  .filter((name) => name.endsWith(".html"))
-  .map((name) => `${desktopPath}/${name}`)
-  .find((path) => readFileSync(path, "utf8").includes("BOILER-TUBE LIFECYCLE SYSTEM"));
-
-assert.ok(htmlPath, "Could not find the boiler lifecycle HTML file on the desktop");
-const html = readFileSync(htmlPath, "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+// v6.7 起样式与脚本拆分为外部文件，改为合并检索 HTML + JS + CSS
+const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
+const html = [
+  readFileOrEmpty(resolve(here, "../炉管全生命周期管理系统.html")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.js")),
+  readFileOrEmpty(resolve(here, "../assets/app/app.css"))
+].join("\n");
 
 const checks = [
   ["dashboard contains standard LLM interface panel", () => {
