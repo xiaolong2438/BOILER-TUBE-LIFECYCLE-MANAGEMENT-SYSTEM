@@ -5,7 +5,7 @@ import { strict as assert } from "node:assert";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(resolve(here, "../炉管全生命周期管理系统.html"), "utf8");
-const externalCss = (() => { try { return readFileSync(resolve(here, "../assets/app/app-v7.9.css"), "utf8"); } catch { return ""; } })();
+const externalCss = (() => { try { return readFileSync(resolve(here, "../assets/app/app-v8.0.css"), "utf8"); } catch { return ""; } })();
 const externalJs = (() => { try { return readFileSync(resolve(here, "../assets/app/app-v7.9.js"), "utf8"); } catch { return ""; } })();
 const styleSource = html + externalCss;
 const scriptSource = html + externalJs;

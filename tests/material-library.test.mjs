@@ -9,7 +9,7 @@ const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch {
 const html = [
   readFileOrEmpty(resolve(here, "../炉管全生命周期管理系统.html")),
   readFileOrEmpty(resolve(here, "../assets/app/app-v7.9.js")),
-  readFileOrEmpty(resolve(here, "../assets/app/app-v7.9.css"))
+  readFileOrEmpty(resolve(here, "../assets/app/app-v8.0.css"))
 ].join("\n");
 const materialRenderStart = html.indexOf("function renderMaterialLibrary(key) {");
 const materialRenderEnd = html.indexOf("\nfunction renderComponent", materialRenderStart);

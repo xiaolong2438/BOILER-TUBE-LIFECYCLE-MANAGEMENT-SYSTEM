@@ -9,7 +9,7 @@ const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch {
 const html = [
   readFileOrEmpty(resolve(here, "../\u7089\u7ba1\u5168\u751f\u547d\u5468\u671f\u7ba1\u7406\u7cfb\u7edf.html")),
   readFileOrEmpty(resolve(here, "../assets/app/app-v7.9.js")),
-  readFileOrEmpty(resolve(here, "../assets/app/app-v7.9.css"))
+  readFileOrEmpty(resolve(here, "../assets/app/app-v8.0.css"))
 ].join("\n");
 
 assert.match(html, /data-view="tube-analysis"/, "unified tube analysis nav should exist");

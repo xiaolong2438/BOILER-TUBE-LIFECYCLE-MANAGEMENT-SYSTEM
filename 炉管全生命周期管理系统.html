@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>锅炉炉管全生命周期管理系统 | v7.0</title>
+<title>锅炉炉管全生命周期管理系统 | v8.0</title>
 <meta name="description" content="锅炉炉管全生命周期管理系统：风险驾驶舱、编码生成、寿命跟踪、AI 综合分析、检修计划、全量台账一体化平台。">
 <meta name="theme-color" content="#03060d">
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='2' width='20' height='20' rx='5' fill='%23001122' stroke='%2300d4ff' stroke-width='1.5'/%3E%3Cpath d='M12 4.5L5.5 8v8L12 19.5 18.5 16V8z' fill='none' stroke='%2300d4ff' stroke-width='1.4'/%3E%3Cpath d='M12 4.5V12l6.5 3M12 12L5.5 8' fill='none' stroke='%2348cae4' stroke-width='1.1'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="assets/app/app-v7.9.css">
+<link rel="stylesheet" href="assets/app/app-v8.0.css">
 </head>
 <body>
 <a class="skip-link" href="#view-dashboard">跳到主要内容</a>
@@ -53,7 +53,7 @@
       <button class="auth-btn" type="button" onclick="openPasswordManager()">密码管理</button>
       <button class="auth-btn" type="button" onclick="logoutUser()">退出</button>
     </div>
-    <div class="rail-version">BOILER-TUBE LCMS · v7.0</div>
+    <div class="rail-version">BOILER-TUBE LCMS · v8.0</div>
   </div>
 </aside>
 
@@ -170,6 +170,7 @@
           <button class="llm-view-tab active" id="llm-report-tab" onclick="setLLMViewMode('report')">结构化报告</button>
           <button class="llm-view-tab" id="llm-raw-tab" onclick="setLLMViewMode('raw')">原文</button>
           <button class="llm-view-tab" onclick="exportLLMReportPDF()">导出PDF</button>
+          <button class="llm-view-tab" onclick="exportLLMReportXLSX()">导出Excel</button>
         </div>
         <div class="llm-report-view" id="llm-report-view"><div class="llm-result">模型返回的深度分析会整理成报告显示在这里。</div></div>
         <div class="llm-result" id="llm-raw-view" style="display:none;">模型返回原文会显示在这里。</div>
@@ -335,6 +336,7 @@
         </div>
         <div class="form-group" style="display:flex; align-items:flex-end;">
           <button class="btn btn-outline" onclick="exportMaintenanceOverdueCSV()">导出超期CSV</button>
+          <button class="btn btn-outline" onclick="exportMaintenanceOverdueXLSX()">导出超期Excel</button>
         </div>
       </div>
       <div id="maintenancePlanSummary" class="alert alert-info" style="margin-top:10px;"></div>
@@ -353,6 +355,7 @@
       <div class="card-title">A/C/C 停炉消缺安排</div>
       <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:15px;">
         <button class="btn btn-outline" onclick="exportMaintenancePlanCSV()">📋 导出CSV清单（A/C/C检修计划）</button>
+        <button class="btn btn-outline" onclick="exportMaintenancePlanToXLSX()">📊 导出Excel报告（多工作表）</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -374,7 +377,7 @@
 
   <!-- 5. COMPONENTS -->
   <section class="view" id="view-components">
-    <div class="section-title"><h2>受热面材料库</h2><span class="sub">MATERIAL DATABASE · CSV 维护更新</span></div>
+    <div class="section-title"><h2>受热面材料库</h2><span class="sub">MATERIAL DATABASE · CSV 维护 / EXCEL 报告</span></div>
     <div class="comp-tabs">
       <button class="comp-tab active" data-comp="ww">水冷壁</button>
       <button class="comp-tab" data-comp="rsh">顶棚过热器</button>
@@ -388,10 +391,11 @@
       <button class="comp-tab" data-comp="eco">省煤器</button>
     </div>
     <div class="card">
-      <div class="card-title">材料库 CSV 维护</div>
+      <div class="card-title">材料库数据维护与报告导出</div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="btn" onclick="downloadMaterialCSVTemplate()">📄 下载材料库 CSV 模板</button>
-        <button class="btn btn-outline" onclick="exportMaterialCSV()">📥 导出材料库</button>
+        <button class="btn btn-outline" onclick="exportMaterialCSV()">📥 导出材料库 CSV</button>
+        <button class="btn btn-outline" onclick="exportMaterialLibraryToXLSX()">📊 导出材料库 Excel</button>
         <label class="btn btn-outline" style="cursor:pointer;">📤 导入材料库 CSV <input type="file" id="materialImportFile" accept=".csv" style="display:none;" onchange="importMaterialCSV(event)"></label>
       </div>
     </div>
@@ -456,6 +460,7 @@
       <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
         <button class="btn" onclick="downloadCSVTemplate()">📄 下载 CSV 录入模板</button>
         <button class="btn btn-outline" onclick="exportCSV()">📥 导出所选机组数据 (CSV)</button>
+        <button class="btn btn-outline" onclick="exportLifecycleDataToXLSX()">📊 导出所选机组 Excel</button>
         <label class="btn btn-outline" style="cursor:pointer;">📤 导入 CSV 数据 <input type="file" id="importFile" accept=".csv" style="display:none;" onchange="importCSV(event)"></label>
         <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="clearLocalData()">🗑 备份并清空本地数据</button>
       </div>
@@ -465,7 +470,7 @@
 
   <!-- 8. INVENTORY -->
   <section class="view" id="view-inventory">
-    <div class="section-title"><h2>全量管段台账</h2><span class="sub">TUBE INVENTORY & CSV EXPORT</span></div>
+    <div class="section-title"><h2>全量管段台账</h2><span class="sub">TUBE INVENTORY · CSV / XLSX EXPORT</span></div>
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">单炉管理单元</div><div class="stat-value" id="invTotal">5,139</div></div>
       <div class="stat-card"><div class="stat-label">水冷壁 (WW)</div><div class="stat-value" style="color:var(--ok)">722</div></div>
@@ -485,6 +490,7 @@
         <button class="btn" onclick="generateCSV(1)">⚡ 生成 1号炉 CSV</button>
         <button class="btn" onclick="generateCSV(2)">⚡ 生成 2号炉 CSV</button>
         <button class="btn btn-outline" onclick="generateCSV(0)">📦 生成 全厂合并 CSV</button>
+        <button class="btn btn-outline" onclick="exportInventoryToXLSX('all')">📊 导出 全厂台账 Excel</button>
       </div>
       <div class="progress-bar" id="invProgBar" style="display:none; margin-top:15px;"><div class="progress-fill" id="invProgFill"></div></div>
       <div class="log-box" id="invLogBox"></div>
@@ -776,6 +782,8 @@
 
 <div class="toast-host" id="toast-host" aria-live="polite"></div>
 
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" defer></script>
 <script src="assets/app/app-v7.9.js" defer></script>
+<script src="assets/app/xlsx-export-v1.js" defer></script>
 </body>
 </html>
