@@ -9,6 +9,7 @@ const readFileOrEmpty = (p) => { try { return readFileSync(p, "utf8"); } catch {
 const html = [
   readFileOrEmpty(resolve(here, "../炉管全生命周期管理系统.html")),
   readFileOrEmpty(resolve(here, "../assets/app/app-v7.9.js")),
+  readFileOrEmpty(resolve(here, "../assets/app/ui-shell-v8.js")),
   readFileOrEmpty(resolve(here, "../assets/app/app-v8.0.css"))
 ].join("\n");
 
@@ -72,6 +73,12 @@ const checks = [
     assert.match(html, /BOILER-TUBE LCMS · v8\.0/);
     assert.match(html, /BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v8\.0 · 2026/);
     assert.doesNotMatch(html, /<footer>[^<]*v7\.0/);
+  }],
+  ["top bar keeps the application title instead of repeating the active view", () => {
+    assert.match(html, /id="topbar-title">锅炉炉管全生命周期管理系统<\/div>/);
+    assert.match(html, /const APP_TITLE = '锅炉炉管全生命周期管理系统'/);
+    assert.match(html, /window\.switchView = function/);
+    assert.match(html, /new MutationObserver\(keepApplicationTitle\)/);
   }],
 ];
 

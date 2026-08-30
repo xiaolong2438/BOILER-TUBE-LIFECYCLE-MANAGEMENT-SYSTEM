@@ -44,9 +44,11 @@ jobs:
 
           test -f dist/assets/app/app-v8.0.css
           test -f dist/assets/app/app-v7.9.js
+          test -f dist/assets/app/ui-shell-v8.js
           test -f dist/assets/app/xlsx-export-v1.js
           grep -q 'assets/app/app-v8.0.css' dist/index.html
           grep -q 'assets/app/app-v7.9.js' dist/index.html
+          grep -q 'assets/app/ui-shell-v8.js' dist/index.html
           grep -q 'assets/app/xlsx-export-v1.js' dist/index.html
           grep -q 'xlsx-0.20.3/package/dist/xlsx.full.min.js' dist/index.html
           test ! -e dist/assets/app/app.css
