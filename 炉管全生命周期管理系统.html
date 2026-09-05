@@ -254,6 +254,9 @@
       <p style="color:#a29bfe; margin-top:20px; letter-spacing:2px; font-size:14px;">正在读取本地测厚、硬度、金相和检修记录，并准备调用大模型综合判断...</p>
     </div>
     <div id="ai-results" style="display:none;">
+      <div id="ai-visibility-status" class="alert alert-info" role="status" aria-live="polite" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+        <strong>预测模型结果</strong><span>等待分析...</span>
+      </div>
       <div class="ai-metric-grid">
         <div class="ai-metric"><div class="val" id="ai-rul">--</div><div class="label">基准触阈估算 (h)</div></div>
         <div class="ai-metric"><div class="val" id="ai-rate">--</div><div class="label">保守减薄速率</div></div>

@@ -1143,7 +1143,7 @@ function buildTubeProfileHTML(rawCode, options = {}) {
       let path = thicknessData.map((d,i) => `${i===0?'M':'L'} ${xS(d.year)} ${yS(d.val)}`).join(' ');
       miniChartSVG = `<svg class="mini-chart" viewBox="0 0 ${w} ${h}"><path d="${path}" fill="none" stroke="#00d4ff" stroke-width="2"/><path d="${path} L ${xS(maxX)} ${h-p} L ${xS(minX)} ${h-p} Z" fill="rgba(0,212,255,0.1)"/>${thicknessData.map(d=>`<circle cx="${xS(d.year)}" cy="${yS(d.val)}" r="3" fill="#00d4ff"/>`).join('')}</svg>`;
       const latestThickness = thicknessData[thicknessData.length - 1];
-      aiTrendEntry = `<div class="alert alert-info" style="margin-top:15px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><strong>已具备AI趋势分析条件</strong><br><span style="font-size:12px;color:var(--text-dim);">本地测厚记录 ${thicknessData.length} 条，最新 ${escapeHTML(latestThickness.dateStr)} / ${latestThickness.val.toFixed(2)}mm</span></div><button class="btn btn-ai" onclick="openAITrendFromLifecycle('${escapeHTML(code)}')">进入AI趋势分析</button></div>`;
+      aiTrendEntry = `<div class="alert alert-info" style="margin-top:15px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><strong>已具备AI趋势分析条件</strong><br><span style="font-size:12px;color:var(--text-dim);">本地测厚记录 ${thicknessData.length} 条，最新 ${escapeHTML(latestThickness.dateStr)} / ${latestThickness.val.toFixed(2)}mm</span></div><button class="btn btn-ai" onclick="analyzeTubeDetails('${escapeHTML(code)}')">查看预测曲线与模型判定</button></div>`;
   }
   const theoryHTML = `<div class="info-grid" style="margin-top:12px"><div class="info-item"><div class="k">名义壁厚</div><div class="v">${thresholdInfo.nominalWall ?? '--'} mm</div></div><div class="info-item"><div class="k">直管理论厚度</div><div class="v">${thresholdInfo.straight ?? '--'} mm</div></div><div class="info-item"><div class="k">弯管外侧理论厚度</div><div class="v">${thresholdInfo.bend ?? '--'} mm</div></div><div class="info-item"><div class="k">最终采用阈值</div><div class="v" style="color:${replacementWarning.level === 'normal' ? 'var(--ok)' : 'var(--danger)'}">${thresholdInfo.matched ? (thresholdInfo.pipeType === 'bend' ? '弯管外侧' : '直管') + ' ' + thresholdInfo.threshold + ' mm' : '未匹配材料库'}</div></div></div><div class="alert ${replacementWarning.level === 'normal' ? 'alert-info' : 'alert-warn'}" style="margin-top:12px"><strong>${replacementWarning.label}</strong>${replacementWarning.margin !== null ? `：当前 ${latestThickness}mm，距理论阈值 ${replacementWarning.margin.toFixed(2)}mm` : '：禁止输出寿命数字或误导性曲线'}</div>`;
   const profileAction = options.context === 'search' ? '' : `<button class="btn btn-outline" onclick="openTubeProfile('${escapeHTML(code)}')">打开一体化档案</button>`;
@@ -2670,13 +2670,26 @@ async function runDeepAIAnalysisFromTrend(data) {
     if(aiLLMBox) aiLLMBox.textContent = text;
     renderLLMResult(text);
     setLLMStatus('AI模块大模型综合分析完成。', 'ok');
+    setAIVisibilityStatus('本地预测与大模型综合分析均已完成。', 'info');
   } catch (err) {
     if(window.__activeTubeAnalysis !== data) return;
     const message = formatLLMError(err, 'AI大模型调用');
     if(aiLLMBox) aiLLMBox.textContent = message;
     renderLLMResult(message);
     setLLMStatus('AI模块大模型调用失败，详情见结果框。', 'error');
+    setAIVisibilityStatus('本地预测已完成，但大模型调用失败；请查看下方错误说明。', 'warn');
   }
+}
+function scrollToAIResults() {
+  const box = document.getElementById('ai-results');
+  if(!box) return;
+  requestAnimationFrame(() => setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40));
+}
+function setAIVisibilityStatus(text, level = 'info') {
+  const box = document.getElementById('ai-visibility-status');
+  if(!box) return;
+  box.className = `alert alert-${level}`;
+  box.innerHTML = `<strong>预测模型结果</strong><span>${escapeHTML(text)}</span>`;
 }
 function analyzeTubeDetails(code) {
   const info = resolveMaterialTheoryThickness(code, selectedTubePipeType(code));
@@ -2703,13 +2716,18 @@ async function runAIAnalysis(explicitTarget, pipeType) {
   const history = extractThicknessData(target, { includeSystem: false });
   const data = predictThicknessTrendFromHistory(target, history, pipeType);
   window.__activeTubeAnalysis = data;
+  setAIVisibilityStatus('本地预测模型已完成：正在展示壁厚/硬度趋势、理论阈值与风险判定。', 'info');
   document.getElementById('ai-pipe-type').value = data.thresholdInfo.pipeType || '';
   renderAIResults(data);
+  scrollToAIResults();
   const report = document.getElementById('ai-llm-report');
   const config = getLLMConfig();
   if(config.baseUrl && config.apiKey && config.model) {
     await runDeepAIAnalysisFromTrend(data);
-  } else if(report) report.textContent = '本地预测模型已完成分析；大模型接口未配置，未发起远程请求。';
+  } else {
+    if(report) report.textContent = '本地预测模型已完成分析；大模型接口未配置，未发起远程请求。';
+    setAIVisibilityStatus('本地预测已完成；远程大模型未配置，当前结果可直接用于现场判定。', 'info');
+  }
   return data;
 }
 
