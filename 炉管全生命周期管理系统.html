@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>锅炉炉管全生命周期管理系统 | v8.0</title>
+<title>锅炉炉管全生命周期管理系统 | v8.3</title>
 <meta name="description" content="锅炉炉管全生命周期管理系统：风险驾驶舱、编码生成、寿命跟踪、AI 综合分析、检修计划、全量台账一体化平台。">
 <meta name="theme-color" content="#03060d">
 <meta name="color-scheme" content="dark">
@@ -231,6 +231,9 @@
           <label>下拉选择本地管段</label>
           <select id="ai-target" onchange="document.getElementById('ai-custom-target').value=''"></select>
         </div>
+        <div class="form-group"><label for="ai-pipe-type">测点管型 / 阈值口径</label>
+           <select id="ai-pipe-type" aria-label="测点管型" onchange="changeAnalysisPipeType(this.value)" title="理论厚度采用口径"><option value="">未指定管型</option><option value="straight">直管理论厚度</option><option value="bend">弯管外侧理论厚度</option></select>
+        </div>
         <div class="form-group">
           <label>手动输入管段编码/测点</label>
           <input type="text" id="ai-custom-target" placeholder="例: 1-WW-FR-015-0042-000" onkeypress="if(event.key==='Enter')runAIAnalysis()" />
@@ -252,21 +255,28 @@
     </div>
     <div id="ai-results" style="display:none;">
       <div class="ai-metric-grid">
-        <div class="ai-metric"><div class="val" id="ai-rul">--</div><div class="label">P90寿命下限 (h)</div></div>
+        <div class="ai-metric"><div class="val" id="ai-rul">--</div><div class="label">基准触阈估算 (h)</div></div>
         <div class="ai-metric"><div class="val" id="ai-rate">--</div><div class="label">保守减薄速率</div></div>
         <div class="ai-metric"><div class="val" id="ai-conf">--</div><div class="label">数据置信度 (%)</div></div>
         <div class="ai-metric"><div class="val" id="ai-status">--</div><div class="label">工程风险评级</div></div>
         <div class="ai-metric"><div class="val" id="ai-composite">--</div><div class="label">综合风险</div></div>
+        <div class="ai-metric"><div class="val" id="ai-replacement-warning" style="font-size:16px;overflow-wrap:anywhere">--</div><div class="label">更换预警</div></div>
+        <div class="ai-metric" style="grid-column:1/-1"><div class="val" id="ai-threshold-detail" style="font-size:14px">--</div><div class="label">材料库理论厚度口径</div></div>
       </div>
       <div class="card">
         <div class="card-title">高级减薄趋势图谱 (实测点 + P50预测 + 寿命下限)</div>
         <div class="ai-chart-container"><svg id="aiChart" viewBox="0 0 980 420" preserveAspectRatio="none" style="width:100%; height:100%;"></svg></div>
+        <div class="card-title" style="margin-top:24px;">硬度变化趋势与短期预测</div>
+        <div class="ai-chart-container hardness-chart-container"><svg id="hardnessChart" viewBox="0 0 980 260" preserveAspectRatio="none" style="width:100%; height:100%;"></svg></div>
+        <div class="ai-chart-legend"><span class="legend-item">趋势：<strong id="hardnessTrendLabel">--</strong></span><span class="legend-item">1年预测：<strong id="hardnessOneYear">--</strong></span><span class="legend-item">3年预测：<strong id="hardnessThreeYear">--</strong></span><span class="legend-item">置信度：<strong id="hardnessConfidence">--</strong></span></div>
         <div class="ai-chart-legend">
           <span class="legend-item"><span class="legend-swatch" style="--legend-color:#00d4ff"></span>实测厚度</span>
           <span class="legend-item"><span class="legend-swatch" style="--legend-color:#22c07e"></span>P50预测</span>
+          <span class="legend-item"><span class="legend-swatch" style="--legend-color:#ffb454"></span>基准情景</span>
+          <span class="legend-item"><span class="legend-swatch" style="--legend-color:#f0574a"></span>加速情景</span>
           <span class="legend-item"><span class="legend-band"></span>不确定性区间</span>
           <span class="legend-item"><span class="legend-swatch" style="--legend-color:#f0574a"></span>规格理论厚度预警值</span>
-          <span class="legend-item">P90寿命下限=90%概率晚于此时触阈</span>
+          <span class="legend-item">基准情景估算，不代表概率保证</span>
         </div>
       </div>
       <div class="card">
