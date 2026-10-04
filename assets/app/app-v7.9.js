@@ -791,40 +791,40 @@ function buildDashboardTrendChart(stats = getDashboardTrendStats()) {
   const area = `${line} L ${points[points.length - 1][0].toFixed(1)} ${pad.top + plotH} L ${points[0][0].toFixed(1)} ${pad.top + plotH} Z`;
   const grid = [50, 60, 70, 80, 90].map(value => {
     const yy = y(value);
-    return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" stroke="rgba(127,179,213,0.12)" /><text x="${pad.left - 9}" y="${yy + 4}" text-anchor="end" fill="#7fb3d5" font-size="10">${value}</text>`;
+    return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" stroke="var(--chart-grid)" stroke-opacity="0.12" /><text x="${pad.left - 9}" y="${yy + 4}" text-anchor="end" fill="var(--chart-label)" font-size="10">${value}</text>`;
   }).join('');
-  const labelEls = labels.map((label, index) => `<text x="${x(index)}" y="${height - 12}" text-anchor="middle" fill="#7fb3d5" font-size="10">${label}</text>`).join('');
+  const labelEls = labels.map((label, index) => `<text x="${x(index)}" y="${height - 12}" text-anchor="middle" fill="var(--chart-label)" font-size="10">${label}</text>`).join('');
   const dots = points.map((point, index) => {
     const isLast = index === points.length - 1;
-    return `<circle cx="${point[0]}" cy="${point[1]}" r="${isLast ? 5 : 3.6}" fill="${isLast ? '#001122' : '#00d4ff'}" stroke="#2fd4e8" stroke-width="${isLast ? 2.5 : 1.6}"${isLast ? ' filter="url(#dashboardTrendGlow)"' : ''}><title>${labels[index]} ${point[2]}%</title></circle>`;
+    return `<circle cx="${point[0]}" cy="${point[1]}" r="${isLast ? 5 : 3.6}" fill="${isLast ? 'var(--chart-dot-fill)' : 'var(--chart-accent)'}" stroke="var(--chart-accent-2)" stroke-width="${isLast ? 2.5 : 1.6}"${isLast ? ' filter="url(#dashboardTrendGlow)"' : ''}><title>${labels[index]} ${point[2]}%</title></circle>`;
   }).join('');
   svg.innerHTML = `<defs>
     <linearGradient id="dashboardTrendFill" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.34" />
-      <stop offset="70%" stop-color="#00d4ff" stop-opacity="0.06" />
-      <stop offset="100%" stop-color="#00d4ff" stop-opacity="0" />
+      <stop offset="0%" style="stop-color:var(--chart-accent)" stop-opacity="0.34" />
+      <stop offset="70%" style="stop-color:var(--chart-accent)" stop-opacity="0.06" />
+      <stop offset="100%" style="stop-color:var(--chart-accent)" stop-opacity="0" />
     </linearGradient>
     <linearGradient id="dashboardTrendLine" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#17a9c4" /><stop offset="100%" stop-color="#2fd4e8" />
+      <stop offset="0%" style="stop-color:var(--chart-accent-2)" /><stop offset="100%" style="stop-color:var(--chart-accent-2)" />
     </linearGradient>
     <filter id="dashboardTrendGlow"><feGaussianBlur stdDeviation="2.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
   <rect x="0" y="0" width="${width}" height="${height}" fill="transparent" />
   ${grid}
-  <line x1="${pad.left}" y1="${pad.top + plotH}" x2="${width - pad.right}" y2="${pad.top + plotH}" stroke="rgba(127,179,213,0.24)" />
+  <line x1="${pad.left}" y1="${pad.top + plotH}" x2="${width - pad.right}" y2="${pad.top + plotH}" stroke="var(--chart-grid)" stroke-opacity="0.24" />
   <path d="${area}" fill="url(#dashboardTrendFill)" />
   <path d="${line}" fill="none" stroke="url(#dashboardTrendLine)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#dashboardTrendGlow)" />
   ${dots}
   ${labelEls}
-  <text x="${pad.left}" y="16" fill="#e6f7ff" font-size="12" font-weight="700">综合健康度趋势</text>
-  <text x="${width - pad.right}" y="16" text-anchor="end" fill="${stats.delta >= 0 ? '#22c07e' : '#f0574a'}" font-size="12" font-weight="700">${stats.delta >= 0 ? '+' : ''}${stats.delta}%</text>
+  <text x="${pad.left}" y="16" fill="var(--chart-title)" font-size="12" font-weight="700">综合健康度趋势</text>
+  <text x="${width - pad.right}" y="16" text-anchor="end" fill="${stats.delta >= 0 ? 'var(--chart-green)' : 'var(--chart-red)'}" font-size="12" font-weight="700">${stats.delta >= 0 ? '+' : ''}${stats.delta}%</text>
   <g id="dashboardTrendHover" opacity="0" pointer-events="none">
-    <line y1="${pad.top}" y2="${pad.top + plotH}" stroke="rgba(47,212,232,0.45)" stroke-width="1" stroke-dasharray="3 3" />
-    <circle r="5" fill="#001122" stroke="#2fd4e8" stroke-width="2" filter="url(#dashboardTrendGlow)" />
+    <line y1="${pad.top}" y2="${pad.top + plotH}" stroke="var(--chart-hover-line)" stroke-width="1" stroke-dasharray="3 3" />
+    <circle r="5" fill="var(--chart-dot-fill)" stroke="var(--chart-accent-2)" stroke-width="2" filter="url(#dashboardTrendGlow)" />
     <g id="dashboardTrendTip">
-      <rect rx="5" ry="5" fill="rgba(4,16,28,0.96)" stroke="rgba(72,202,228,0.4)" stroke-width="1" width="86" height="40" />
-      <text id="dashboardTrendTipVal" x="43" y="18" text-anchor="middle" fill="#8ce6f2" font-size="15" font-weight="700"></text>
-      <text id="dashboardTrendTipLbl" x="43" y="32" text-anchor="middle" fill="#7fb3d5" font-size="10"></text>
+      <rect rx="5" ry="5" fill="var(--chart-tip-bg)" stroke="var(--chart-tip-stroke)" stroke-width="1" width="86" height="40" />
+      <text id="dashboardTrendTipVal" x="43" y="18" text-anchor="middle" fill="var(--chart-tip-val)" font-size="15" font-weight="700"></text>
+      <text id="dashboardTrendTipLbl" x="43" y="32" text-anchor="middle" fill="var(--chart-label)" font-size="10"></text>
     </g>
   </g>
   <rect id="dashboardTrendHit" x="0" y="0" width="${width}" height="${height}" fill="transparent" style="cursor:crosshair" />`;
@@ -1055,7 +1055,7 @@ document.addEventListener('visibilitychange', () => {
 });
 updateClock();
 function animateCounters() { document.querySelectorAll('[data-count]').forEach(el => { const target = parseInt(el.dataset.count); let cur = 0; const step = Math.max(1, Math.floor(target / 40)); const int = setInterval(() => { cur += step; if (cur >= target) { cur = target; clearInterval(int); } el.textContent = cur.toLocaleString(); }, 30); }); }
-function buildBarChart() { const box = document.getElementById('barChart'); if(!box) return; const data = [{l:'水冷壁',sys:'WW',v:722,c:'var(--ok)'},{l:'低过',sys:'LSH',v:1120,c:'var(--accent-3)'},{l:'大屏',sys:'PSH',v:336,c:'var(--accent)'},{l:'屏过',sys:'ISH',v:273,c:'#ff9f43'},{l:'高过',sys:'HSH',v:384,c:'var(--danger)'},{l:'低再',sys:'LRH',v:1344,c:'#a29bfe'},{l:'高再',sys:'HRH',v:448,c:'#fd79a8'},{l:'省煤器',sys:'ECO',v:124,c:'var(--ok)'}]; const max = Math.max(...data.map(d => d.v)); box.innerHTML = data.map(d => `<button type="button" class="bar-item" data-sys="${escapeHTML(d.sys)}" onclick="openComponentLifecycle('${escapeHTML(d.sys)}','${escapeHTML(d.l)}')" title="查看${escapeHTML(d.l)}检修记录"><div class="bar" data-val="${d.v}" style="height:${(d.v/max)*85}%; background:linear-gradient(180deg, ${d.c}, rgba(0,29,61,0.8));"></div><div class="bar-label">${escapeHTML(d.l)}</div></button>`).join(''); }
+function buildBarChart() { const box = document.getElementById('barChart'); if(!box) return; const data = [{l:'水冷壁',sys:'WW',v:722,c:'var(--ok)'},{l:'低过',sys:'LSH',v:1120,c:'var(--accent)'},{l:'大屏',sys:'PSH',v:336,c:'var(--accent)'},{l:'屏过',sys:'ISH',v:273,c:'var(--chart-orange)'},{l:'高过',sys:'HSH',v:384,c:'var(--danger)'},{l:'低再',sys:'LRH',v:1344,c:'var(--chart-violet)'},{l:'高再',sys:'HRH',v:448,c:'var(--chart-pink)'},{l:'省煤器',sys:'ECO',v:124,c:'var(--ok)'}]; const max = Math.max(...data.map(d => d.v)); box.innerHTML = data.map(d => `<button type="button" class="bar-item" data-sys="${escapeHTML(d.sys)}" onclick="openComponentLifecycle('${escapeHTML(d.sys)}','${escapeHTML(d.l)}')" title="查看${escapeHTML(d.l)}检修记录"><div class="bar" data-val="${d.v}" style="height:${(d.v/max)*85}%; background:linear-gradient(180deg, ${d.c}, var(--chart-bar-base));"></div><div class="bar-label">${escapeHTML(d.l)}</div></button>`).join(''); }
 function genCode() { const b=document.getElementById('f-boiler').value, s=document.getElementById('f-system').value, z=document.getElementById('f-zone').value; if(!s || !z) return; const p=String(document.getElementById('f-panel').value).padStart(3,'0'), t=String(document.getElementById('f-tube').value).padStart(4,'0'), g=document.getElementById('f-seg').value; const code = `${b}-${s}-${z}-${p}-${t}-${g}`; document.getElementById('codeOut').innerHTML = `<span class="code-segment">${escapeHTML(b)}</span>-<span class="code-segment">${escapeHTML(s)}</span>-<span class="code-segment">${escapeHTML(z)}</span>-<span class="code-segment">${escapeHTML(p)}</span>-<span class="code-segment">${escapeHTML(t)}</span>-<span class="code-segment">${escapeHTML(g)}</span>`; const matched = validateCodeAgainstMatrix(code); document.getElementById('codeDesc').textContent = matched ? `${matched.row.name} · ${matched.row.spec} · ${matched.row.mat}` : '当前编号超出台账矩阵范围，请核对屏/排与管圈编号。'; window._curCode = code; }
 ['f-boiler','f-zone','f-panel','f-tube','f-seg'].forEach(id => document.getElementById(id).addEventListener('input', genCode));
 function copyCode() { if(window._curCode) { navigator.clipboard?.writeText(window._curCode); showToast(`已复制编码：${window._curCode}`, 'ok'); } }
@@ -1141,7 +1141,7 @@ function buildTubeProfileHTML(rawCode, options = {}) {
       const minX = thicknessData[0].year; const maxX = thicknessData[thicknessData.length-1].year;
       const xS = x => p + ((x-minX)/(maxX-minX || 1)) * (w-2*p); const yS = y => h - p - ((y-minY)/(maxY-minY || 1)) * (h-2*p);
       let path = thicknessData.map((d,i) => `${i===0?'M':'L'} ${xS(d.year)} ${yS(d.val)}`).join(' ');
-      miniChartSVG = `<svg class="mini-chart" viewBox="0 0 ${w} ${h}"><path d="${path}" fill="none" stroke="#00d4ff" stroke-width="2"/><path d="${path} L ${xS(maxX)} ${h-p} L ${xS(minX)} ${h-p} Z" fill="rgba(0,212,255,0.1)"/>${thicknessData.map(d=>`<circle cx="${xS(d.year)}" cy="${yS(d.val)}" r="3" fill="#00d4ff"/>`).join('')}</svg>`;
+      miniChartSVG = `<svg class="mini-chart" viewBox="0 0 ${w} ${h}"><path d="${path}" fill="none" stroke="var(--chart-accent)" stroke-width="2"/><path d="${path} L ${xS(maxX)} ${h-p} L ${xS(minX)} ${h-p} Z" fill="var(--chart-accent-soft)"/>${thicknessData.map(d=>`<circle cx="${xS(d.year)}" cy="${yS(d.val)}" r="3" fill="var(--chart-accent)"/>`).join('')}</svg>`;
       const latestThickness = thicknessData[thicknessData.length - 1];
       aiTrendEntry = `<div class="alert alert-info" style="margin-top:15px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><strong>已具备AI趋势分析条件</strong><br><span style="font-size:12px;color:var(--text-dim);">本地测厚记录 ${thicknessData.length} 条，最新 ${escapeHTML(latestThickness.dateStr)} / ${latestThickness.val.toFixed(2)}mm</span></div><button class="btn btn-ai" onclick="analyzeTubeDetails('${escapeHTML(code)}')">查看预测曲线与模型判定</button></div>`;
   }
@@ -2744,10 +2744,10 @@ function renderHardnessChart(data) {
   if(one) one.textContent = signal.hardnessForecast ? `${signal.hardnessForecast.oneYear} HB` : '--';
   if(three) three.textContent = signal.hardnessForecast ? `${signal.hardnessForecast.threeYear} HB` : '--';
   if(conf) conf.textContent = signal.hardnessForecast ? `${signal.hardnessForecast.confidence}%` : '--';
-  if(points.length < 1) { svg.innerHTML = '<text x="24" y="44" fill="#7fb3d5" font-size="14">暂无硬度数据</text>'; return; }
-  const width=980,height=260,p={top:30,right:28,bottom:42,left:58}; const vals=points.map(x=>x.value).concat(signal.hardnessForecast ? [signal.hardnessForecast.oneYear,signal.hardnessForecast.threeYear] : []); const min=Math.min(...vals)-10,max=Math.max(...vals)+10; const minY=Math.min(...points.map(x=>x.year)), maxY=Math.max(...points.map(x=>x.year), points[points.length-1].year + (signal.hardnessForecast ? 3 : 1), minY+1); const xs=y=>p.left+(y-minY)/Math.max(1,maxY-minY)*(width-p.left-p.right); const ys=v=>p.top+(height-p.top-p.bottom)-((v-min)/Math.max(1,max-min))*(height-p.top-p.bottom); const path=points.map((x,i)=>`${i?'L':'M'} ${xs(x.year)} ${ys(x.value)}`).join(' '); svg.innerHTML=`<rect x="${p.left}" y="${p.top}" width="${width-p.left-p.right}" height="${height-p.top-p.bottom}" rx="6" fill="rgba(0,12,28,.72)" stroke="rgba(127,179,213,.18)"/><text x="${p.left}" y="18" fill="#e6f7ff" font-size="14" font-weight="700">Hardness Forecast · HB</text><path d="${path}" fill="none" stroke="#ffb454" stroke-width="3"/>${points.map(x=>`<circle cx="${xs(x.year)}" cy="${ys(x.value)}" r="5" fill="#001122" stroke="#ffb454" stroke-width="2"><title>${x.date} ${x.value}HB</title></circle>`).join('')}<line x1="${p.left}" y1="${ys(points[points.length-1].value)}" x2="${width-p.right}" y2="${ys(points[points.length-1].value)}" stroke="rgba(255,180,84,.25)" stroke-dasharray="5 5"/><text x="${p.left-8}" y="${p.top+4}" text-anchor="end" fill="#7fb3d5" font-size="11">${max.toFixed(0)}</text><text x="${p.left-8}" y="${height-p.bottom+4}" text-anchor="end" fill="#7fb3d5" font-size="11">${min.toFixed(0)}</text>`;
-  for(let year = Math.ceil(minY); year <= maxY; year++) svg.innerHTML += `<text x="${xs(year)}" y="${height-12}" text-anchor="middle" fill="#7fb3d5" font-size="11">${year}</text>`;
-  if(signal.hardnessForecast) { const y=points[points.length-1].year; svg.innerHTML += `<path d="M ${xs(y)} ${ys(points[points.length-1].value)} L ${xs(y+1)} ${ys(signal.hardnessForecast.oneYear)} L ${xs(y+3)} ${ys(signal.hardnessForecast.threeYear)}" fill="none" stroke="#a78bfa" stroke-width="3" stroke-dasharray="8 5"/><circle cx="${xs(y+1)}" cy="${ys(signal.hardnessForecast.oneYear)}" r="4" fill="#a78bfa"/><circle cx="${xs(y+3)}" cy="${ys(signal.hardnessForecast.threeYear)}" r="4" fill="#a78bfa"/>`; }
+  if(points.length < 1) { svg.innerHTML = '<text x="24" y="44" fill="var(--chart-label)" font-size="14">暂无硬度数据</text>'; return; }
+  const width=980,height=260,p={top:30,right:28,bottom:42,left:58}; const vals=points.map(x=>x.value).concat(signal.hardnessForecast ? [signal.hardnessForecast.oneYear,signal.hardnessForecast.threeYear] : []); const min=Math.min(...vals)-10,max=Math.max(...vals)+10; const minY=Math.min(...points.map(x=>x.year)), maxY=Math.max(...points.map(x=>x.year), points[points.length-1].year + (signal.hardnessForecast ? 3 : 1), minY+1); const xs=y=>p.left+(y-minY)/Math.max(1,maxY-minY)*(width-p.left-p.right); const ys=v=>p.top+(height-p.top-p.bottom)-((v-min)/Math.max(1,max-min))*(height-p.top-p.bottom); const path=points.map((x,i)=>`${i?'L':'M'} ${xs(x.year)} ${ys(x.value)}`).join(' '); svg.innerHTML=`<rect x="${p.left}" y="${p.top}" width="${width-p.left-p.right}" height="${height-p.top-p.bottom}" rx="6" fill="var(--chart-panel)" stroke="var(--chart-panel-stroke)"/><text x="${p.left}" y="18" fill="var(--chart-title)" font-size="14" font-weight="700">Hardness Forecast · HB</text><path d="${path}" fill="none" stroke="var(--chart-orange)" stroke-width="3"/>${points.map(x=>`<circle cx="${xs(x.year)}" cy="${ys(x.value)}" r="5" fill="var(--chart-dot-fill)" stroke="var(--chart-orange)" stroke-width="2"><title>${x.date} ${x.value}HB</title></circle>`).join('')}<line x1="${p.left}" y1="${ys(points[points.length-1].value)}" x2="${width-p.right}" y2="${ys(points[points.length-1].value)}" stroke="var(--chart-orange)" stroke-opacity="0.25" stroke-dasharray="5 5"/><text x="${p.left-8}" y="${p.top+4}" text-anchor="end" fill="var(--chart-label)" font-size="11">${max.toFixed(0)}</text><text x="${p.left-8}" y="${height-p.bottom+4}" text-anchor="end" fill="var(--chart-label)" font-size="11">${min.toFixed(0)}</text>`;
+  for(let year = Math.ceil(minY); year <= maxY; year++) svg.innerHTML += `<text x="${xs(year)}" y="${height-12}" text-anchor="middle" fill="var(--chart-label)" font-size="11">${year}</text>`;
+  if(signal.hardnessForecast) { const y=points[points.length-1].year; svg.innerHTML += `<path d="M ${xs(y)} ${ys(points[points.length-1].value)} L ${xs(y+1)} ${ys(signal.hardnessForecast.oneYear)} L ${xs(y+3)} ${ys(signal.hardnessForecast.threeYear)}" fill="none" stroke="var(--chart-violet)" stroke-width="3" stroke-dasharray="8 5"/><circle cx="${xs(y+1)}" cy="${ys(signal.hardnessForecast.oneYear)}" r="4" fill="var(--chart-violet)"/><circle cx="${xs(y+3)}" cy="${ys(signal.hardnessForecast.threeYear)}" r="4" fill="var(--chart-violet)"/>`; }
 }function renderAIResults(data) {
   document.getElementById('ai-loading').style.display = 'none';
   document.getElementById('ai-results').style.display = 'block';
@@ -2774,11 +2774,11 @@ function renderThicknessHistoryOnly(data) {
   const minYear = points[0].year, span = Math.max(1, points[points.length-1].year - minYear);
   const min = Math.max(0, Math.min(...points.map(p => p.val))-0.4), max = Math.max(...points.map(p => p.val))+0.4;
   const x = y => 76 + (y-minYear)/span*720, y = v => 350-(v-min)/(max-min)*260;
-  svg.innerHTML = `<text x="24" y="30" fill="#ffb454" font-size="14">不可可靠预测 · 仅展示实测历史，不生成临时阈值或预测线</text><path d="${points.map((p,i) => `${i?'L':'M'} ${x(p.year)} ${y(p.val)}`).join(' ')}" fill="none" stroke="#00d4ff" stroke-width="3"/>${points.map(p => `<circle cx="${x(p.year)}" cy="${y(p.val)}" r="5" fill="#00d4ff"><title>${escapeHTML(p.dateStr || p.year)} ${p.val}mm</title></circle><text x="${x(p.year)}" y="380" fill="#7fb3d5" font-size="12">${p.year}</text>`).join('')}`;
+  svg.innerHTML = `<text x="24" y="30" fill="var(--chart-orange)" font-size="14">不可可靠预测 · 仅展示实测历史，不生成临时阈值或预测线</text><path d="${points.map((p,i) => `${i?'L':'M'} ${x(p.year)} ${y(p.val)}`).join(' ')}" fill="none" stroke="var(--chart-accent)" stroke-width="3"/>${points.map(p => `<circle cx="${x(p.year)}" cy="${y(p.val)}" r="5" fill="var(--chart-accent)"><title>${escapeHTML(p.dateStr || p.year)} ${p.val}mm</title></circle><text x="${x(p.year)}" y="380" fill="var(--chart-label)" font-size="12">${p.year}</text>`).join('')}`;
 }
 function renderAIChart(data) {
   if(!document.getElementById('aiChart')) return;
-  if(!data || !Array.isArray(data.history) || data.history.length === 0) { document.getElementById('aiChart').innerHTML = '<text x="24" y="44" fill="#7fb3d5" font-size="14">暂无可绘制的测厚数据</text>'; return; }
+  if(!data || !Array.isArray(data.history) || data.history.length === 0) { document.getElementById('aiChart').innerHTML = '<text x="24" y="44" fill="var(--chart-label)" font-size="14">暂无可绘制的测厚数据</text>'; return; }
   if(!Number.isFinite(data.threshold)) { renderThicknessHistoryOnly(data); return; }
   const svg = document.getElementById('aiChart');
   svg.innerHTML = '';
@@ -2801,57 +2801,57 @@ function renderAIChart(data) {
   const yScale = (val) => padding.top + chartH - ((val - minVal) / Math.max(0.1, maxVal - minVal)) * chartH;
   const plotRight = width - padding.right, plotBottom = height - padding.bottom;
   svg.innerHTML += `<defs>
-    <linearGradient id="aiBand" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="rgba(34,192,126,0.26)"/><stop offset="100%" stop-color="rgba(0,212,255,0.04)"/></linearGradient>
-    <linearGradient id="riskZone" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="rgba(240,87,74,0.04)"/><stop offset="100%" stop-color="rgba(240,87,74,0.18)"/></linearGradient>
-    <linearGradient id="panelFill" x1="0" x2="1"><stop offset="0%" stop-color="rgba(0,29,61,0.72)"/><stop offset="100%" stop-color="rgba(0,6,15,0.88)"/></linearGradient>
+    <linearGradient id="aiBand" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" style="stop-color:var(--chart-green-soft)"/><stop offset="100%" style="stop-color:var(--chart-accent-faint)"/></linearGradient>
+    <linearGradient id="riskZone" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" style="stop-color:var(--chart-red-zone-1)"/><stop offset="100%" style="stop-color:var(--chart-red-zone-2)"/></linearGradient>
+    <linearGradient id="panelFill" x1="0" x2="1"><stop offset="0%" style="stop-color:var(--chart-panel-1)"/><stop offset="100%" style="stop-color:var(--chart-panel-2)"/></linearGradient>
     <filter id="aiGlow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>`;
-  svg.innerHTML += `<rect x="${padding.left}" y="${padding.top}" width="${chartW}" height="${chartH}" rx="6" fill="rgba(0,12,28,0.72)" stroke="rgba(127,179,213,0.18)" />`;
+  svg.innerHTML += `<rect x="${padding.left}" y="${padding.top}" width="${chartW}" height="${chartH}" rx="6" fill="var(--chart-panel)" stroke="var(--chart-panel-stroke)" />`;
   const threshY = yScale(data.threshold);
   svg.innerHTML += `<rect x="${padding.left}" y="${threshY}" width="${chartW}" height="${Math.max(0, plotBottom - threshY)}" fill="url(#riskZone)" />`;
   for(let i=0; i<=5; i++) {
     const y = padding.top + (chartH / 5) * i, val = maxVal - ((maxVal - minVal) / 5) * i;
-    svg.innerHTML += `<line x1="${padding.left}" y1="${y}" x2="${plotRight}" y2="${y}" stroke="rgba(127,179,213,0.14)" stroke-width="1" /><text x="${padding.left-12}" y="${y+4}" fill="#7fb3d5" font-size="11" text-anchor="end">${val.toFixed(1)}</text>`;
+    svg.innerHTML += `<line x1="${padding.left}" y1="${y}" x2="${plotRight}" y2="${y}" stroke="var(--chart-grid)" stroke-opacity="0.14" stroke-width="1" /><text x="${padding.left-12}" y="${y+4}" fill="var(--chart-label)" font-size="11" text-anchor="end">${val.toFixed(1)}</text>`;
   }
   for(let y = minYear; y <= maxYear; y++) {
     const x = xScale(y);
-    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="rgba(127,179,213,0.08)" stroke-width="1" /><text x="${x}" y="${height - 22}" fill="#7fb3d5" font-size="11" text-anchor="middle">${y}</text>`;
+    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-grid)" stroke-opacity="0.08" stroke-width="1" /><text x="${x}" y="${height - 22}" fill="var(--chart-label)" font-size="11" text-anchor="middle">${y}</text>`;
   }
-  svg.innerHTML += `<line x1="${padding.left}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}" stroke="rgba(127,179,213,0.36)" /><line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${plotBottom}" stroke="rgba(127,179,213,0.36)" />`;
-  svg.innerHTML += `<text x="${padding.left}" y="28" fill="#e6f7ff" font-size="15" font-weight="700">Wall Thickness Forecast</text><text x="${padding.left}" y="45" fill="#7fb3d5" font-size="11">unit: mm · threshold by tube specification</text><text x="22" y="${padding.top + 14}" fill="#7fb3d5" font-size="11" transform="rotate(-90 22 ${padding.top + 14})">厚度 / mm</text>`;
+  svg.innerHTML += `<line x1="${padding.left}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}" stroke="var(--chart-grid)" stroke-opacity="0.36" /><line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${plotBottom}" stroke="var(--chart-grid)" stroke-opacity="0.36" />`;
+  svg.innerHTML += `<text x="${padding.left}" y="28" fill="var(--chart-title)" font-size="15" font-weight="700">Wall Thickness Forecast</text><text x="${padding.left}" y="45" fill="var(--chart-label)" font-size="11">unit: mm · threshold by tube specification</text><text x="22" y="${padding.top + 14}" fill="var(--chart-label)" font-size="11" transform="rotate(-90 22 ${padding.top + 14})">厚度 / mm</text>`;
   const bandTop = data.prediction.map(p => `${xScale(p.year)},${yScale(p.high)}`).join(' ');
   const bandBottom = [...data.prediction].reverse().map(p => `${xScale(p.year)},${yScale(p.low)}`).join(' ');
-  if(data.prediction.length > 1) svg.innerHTML += `<polygon points="${bandTop} ${bandBottom}" fill="url(#aiBand)" stroke="rgba(34,192,126,0.24)" stroke-width="1" />`;
-  svg.innerHTML += `<line x1="${padding.left}" y1="${threshY}" x2="${plotRight}" y2="${threshY}" stroke="#f0574a" stroke-width="2.4" stroke-dasharray="10 8" stroke-linecap="butt" />`;
-  svg.innerHTML += `<text x="${padding.left + 8}" y="${Math.max(padding.top + 14, threshY - 8)}" fill="#ffb3c1" font-size="11" font-weight="700">理论阈值 ${data.threshold.toFixed(2)}mm</text>`;
+  if(data.prediction.length > 1) svg.innerHTML += `<polygon points="${bandTop} ${bandBottom}" fill="url(#aiBand)" stroke="var(--chart-green-line)" stroke-width="1" />`;
+  svg.innerHTML += `<line x1="${padding.left}" y1="${threshY}" x2="${plotRight}" y2="${threshY}" stroke="var(--chart-red)" stroke-width="2.4" stroke-dasharray="10 8" stroke-linecap="butt" />`;
+  svg.innerHTML += `<text x="${padding.left + 8}" y="${Math.max(padding.top + 14, threshY - 8)}" fill="var(--chart-red-soft)" font-size="11" font-weight="700">理论阈值 ${data.threshold.toFixed(2)}mm</text>`;
   const histPath = data.history.map((p, i) => `${i===0?'M':'L'} ${xScale(p.year)} ${yScale(p.val)}`).join(' ');
-  svg.innerHTML += `<path d="${histPath}" fill="none" stroke="#00d4ff" stroke-width="3.4" filter="url(#aiGlow)" />`;
+  svg.innerHTML += `<path d="${histPath}" fill="none" stroke="var(--chart-accent)" stroke-width="3.4" filter="url(#aiGlow)" />`;
   data.history.forEach(p => {
     const isOutlier = data.outliers?.some(o => o.dateStr === p.dateStr && o.val === p.val);
-    svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="${isOutlier ? 6.5 : 5.5}" fill="#001122" stroke="${isOutlier ? '#ff9f43' : '#00d4ff'}" stroke-width="2.5" style="cursor:pointer"><title>${p.dateStr} ${p.val}mm ${isOutlier ? '异常候选' : ''}</title></circle>`;
+    svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="${isOutlier ? 6.5 : 5.5}" fill="var(--chart-dot-fill)" stroke="${isOutlier ? 'var(--chart-orange)' : 'var(--chart-accent)'}" stroke-width="2.5" style="cursor:pointer"><title>${p.dateStr} ${p.val}mm ${isOutlier ? '异常候选' : ''}</title></circle>`;
   });
   const lastHist = data.history[data.history.length - 1];
   const predPath = `M ${xScale(lastHist.year)} ${yScale(lastHist.val)} ` + data.prediction.map(p => `L ${xScale(p.year)} ${yScale(p.val)}`).join(' ');
-  svg.innerHTML += `<path d="${predPath}" fill="none" stroke="#22c07e" stroke-width="3.2" stroke-dasharray="10,6" filter="url(#aiGlow)" />`;
-  data.prediction.forEach(p => svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="4.3" fill="#22c07e"><title>${p.year} P50 ${p.val}mm；区间 ${p.low}~${p.high}mm</title></circle>`);
-  for(const [key, color, label] of [['baseline','#ffb454','基准情景'],['accelerated','#f0574a','加速情景']]) {
+  svg.innerHTML += `<path d="${predPath}" fill="none" stroke="var(--chart-green)" stroke-width="3.2" stroke-dasharray="10,6" filter="url(#aiGlow)" />`;
+  data.prediction.forEach(p => svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="4.3" fill="var(--chart-green)"><title>${p.year} P50 ${p.val}mm；区间 ${p.low}~${p.high}mm</title></circle>`);
+  for(const [key, color, label] of [['baseline','var(--chart-orange)','基准情景'],['accelerated','var(--chart-red)','加速情景']]) {
     const points = data.prediction.filter(point => Number.isFinite(point[key]));
     if(points.length) svg.innerHTML += `<path d="M ${xScale(lastHist.year)} ${yScale(lastHist.val)} ${points.map(point => `L ${xScale(point.year)} ${yScale(point[key])}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="4 5"><title>${label}</title></path>`;
   }
   const currentX = xScale(lastHist.year), currentY = yScale(lastHist.val);
-  if(['replace','replace-soon'].includes(data.replacementWarning?.level)) svg.innerHTML += `<circle cx="${currentX}" cy="${currentY}" r="10" fill="none" stroke="#f0574a" stroke-width="3"><title>${escapeHTML(data.replacementWarning.label)}</title></circle>`;
-  svg.innerHTML += `<line x1="${currentX}" y1="${currentY}" x2="${currentX + 54}" y2="${currentY - 34}" stroke="rgba(0,212,255,0.48)" /><rect x="${currentX + 56}" y="${currentY - 52}" width="126" height="34" rx="5" fill="rgba(0,29,61,0.88)" stroke="rgba(0,212,255,0.36)" /><text x="${currentX + 66}" y="${currentY - 31}" fill="#e6f7ff" font-size="11">当前 ${lastHist.val.toFixed(2)}mm</text>`;
+  if(['replace','replace-soon'].includes(data.replacementWarning?.level)) svg.innerHTML += `<circle cx="${currentX}" cy="${currentY}" r="10" fill="none" stroke="var(--chart-red)" stroke-width="3"><title>${escapeHTML(data.replacementWarning.label)}</title></circle>`;
+  svg.innerHTML += `<line x1="${currentX}" y1="${currentY}" x2="${currentX + 54}" y2="${currentY - 34}" stroke="var(--chart-accent)" stroke-opacity="0.48" /><rect x="${currentX + 56}" y="${currentY - 52}" width="126" height="34" rx="5" fill="var(--chart-tip-bg)" stroke="var(--chart-tip-stroke)" /><text x="${currentX + 66}" y="${currentY - 31}" fill="var(--chart-title)" font-size="11">当前 ${lastHist.val.toFixed(2)}mm</text>`;
   if(Number.isFinite(numericP50) && numericP50 <= maxYear) {
     const x = xScale(numericP50);
-    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="rgba(34,192,126,0.38)" stroke-width="1.5" stroke-dasharray="4,5" /><text x="${x+6}" y="${padding.top+16}" fill="#8cf7c5" font-size="11">P50 ${data.p50ThresholdYear}</text>`;
+    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-green)" stroke-opacity="0.38" stroke-width="1.5" stroke-dasharray="4,5" /><text x="${x+6}" y="${padding.top+16}" fill="var(--chart-green)" font-size="11">P50 ${data.p50ThresholdYear}</text>`;
   }
   if(Number.isFinite(numericP90) && numericP90 <= maxYear) {
     const x = xScale(numericP90);
-    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="rgba(255,159,67,0.68)" stroke-width="2" stroke-dasharray="7,5" /><rect x="${Math.min(x + 8, plotRight - 150)}" y="${plotBottom - 36}" width="142" height="26" rx="5" fill="rgba(255,159,67,0.14)" stroke="rgba(255,159,67,0.48)" /><text x="${Math.min(x + 16, plotRight - 142)}" y="${plotBottom - 18}" fill="#ffd29a" font-size="11" font-weight="700">基准触阈估算 ${data.thresholdYear}</text>`;
+    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-orange)" stroke-opacity="0.68" stroke-width="2" stroke-dasharray="7,5" /><rect x="${Math.min(x + 8, plotRight - 150)}" y="${plotBottom - 36}" width="142" height="26" rx="5" fill="var(--chart-accent-soft)" stroke="var(--chart-orange)" stroke-opacity="0.48" /><text x="${Math.min(x + 16, plotRight - 142)}" y="${plotBottom - 18}" fill="var(--chart-orange)" font-size="11" font-weight="700">基准触阈估算 ${data.thresholdYear}</text>`;
   }
   const panelX = plotRight + 22;
-  svg.innerHTML += `<rect x="${panelX}" y="${padding.top}" width="184" height="204" rx="8" fill="url(#panelFill)" stroke="rgba(127,179,213,0.22)" />`;
-  svg.innerHTML += `<text x="${panelX + 14}" y="${padding.top + 26}" fill="#e6f7ff" font-size="13" font-weight="700">ENGINEERING MODEL</text>`;
+  svg.innerHTML += `<rect x="${panelX}" y="${padding.top}" width="184" height="204" rx="8" fill="url(#panelFill)" stroke="var(--chart-panel-stroke)" />`;
+  svg.innerHTML += `<text x="${panelX + 14}" y="${padding.top + 26}" fill="var(--chart-title)" font-size="13" font-weight="700">ENGINEERING MODEL</text>`;
   const panelRows = [
     ['Method', 'Theil-Sen + MAD'],
     ['Risk', data.status],
@@ -2863,7 +2863,7 @@ function renderAIChart(data) {
   ];
   panelRows.forEach((row, index) => {
     const y = padding.top + 52 + index * 20;
-    svg.innerHTML += `<text x="${panelX + 14}" y="${y}" fill="#7fb3d5" font-size="10">${row[0]}</text><text x="${panelX + 92}" y="${y}" fill="#ffffff" font-size="10" font-weight="700">${escapeHTML(row[1])}</text>`;
+    svg.innerHTML += `<text x="${panelX + 14}" y="${y}" fill="var(--chart-label)" font-size="10">${row[0]}</text><text x="${panelX + 92}" y="${y}" fill="var(--chart-title)" font-size="10" font-weight="700">${escapeHTML(row[1])}</text>`;
   });
   const hoverPoints = [
     ...data.history.map(p => ({ year: p.year, val: p.val, label: `${p.dateStr} · 实测 ${p.val}mm` })),
@@ -2871,10 +2871,10 @@ function renderAIChart(data) {
   ];
   const tipW = 158, tipH = 30;
   svg.innerHTML += `<g id="aiChartHover" opacity="0" pointer-events="none">
-    <line y1="${padding.top}" y2="${plotBottom}" stroke="rgba(47,212,232,0.5)" stroke-width="1" stroke-dasharray="3 3" />
-    <circle r="5" fill="#001122" stroke="#2fd4e8" stroke-width="2" filter="url(#aiGlow)" />
-    <rect rx="5" ry="5" width="${tipW}" height="${tipH}" fill="rgba(4,16,28,0.96)" stroke="rgba(72,202,228,0.4)" />
-    <text id="aiChartTipText" fill="#8ce6f2" font-size="11" font-weight="700" text-anchor="middle"></text>
+    <line y1="${padding.top}" y2="${plotBottom}" stroke="var(--chart-hover-line)" stroke-width="1" stroke-dasharray="3 3" />
+    <circle r="5" fill="var(--chart-dot-fill)" stroke="var(--chart-accent-2)" stroke-width="2" filter="url(#aiGlow)" />
+    <rect rx="5" ry="5" width="${tipW}" height="${tipH}" fill="var(--chart-tip-bg)" stroke="var(--chart-tip-stroke)" />
+    <text id="aiChartTipText" fill="var(--chart-tip-val)" font-size="11" font-weight="700" text-anchor="middle"></text>
   </g>
   <rect id="aiChartHit" x="${padding.left}" y="${padding.top}" width="${chartW}" height="${chartH}" fill="transparent" style="cursor:crosshair" />`;
   const hover = svg.querySelector('#aiChartHover');

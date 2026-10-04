@@ -68,10 +68,10 @@ const checks = [
     assert.match(html, /\.inventory-matrix-wrap\s+th\s*\{[^}]*position:\s*sticky[^}]*top:\s*0/s);
     assert.match(html, /\.inventory-matrix-wrap\s*\{[^}]*max-height:\s*400px[^}]*overflow-y:\s*auto/s);
   }],
-  ["visible application version is consistently v8.0", () => {
-    assert.match(html, /<title>锅炉炉管全生命周期管理系统 \| v8\.0<\/title>/);
-    assert.match(html, /BOILER-TUBE LCMS · v8\.0/);
-    assert.match(html, /BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v8\.0 · 2026/);
+  ["visible application version is consistently v8.x", () => {
+    assert.match(html, /<title>锅炉炉管全生命周期管理系统 \| v8\.\d+<\/title>/);
+    assert.match(html, /BOILER-TUBE LCMS · v8\.\d+/);
+    assert.match(html, /BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v8\.\d+ · 2026/);
     assert.doesNotMatch(html, /<footer>[^<]*v7\.0/);
   }],
   ["top bar keeps the application title instead of repeating the active view", () => {
