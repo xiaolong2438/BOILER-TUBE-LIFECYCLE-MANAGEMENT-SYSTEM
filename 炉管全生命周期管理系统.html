@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="assets/app/app-v8.0.css">
 </head>
 <body>
+<script>try{if(localStorage.getItem('blcms-rail-collapsed')==='1')document.body.classList.add('rail-collapsed');}catch(e){}</script>
 <a class="skip-link" href="#view-dashboard">跳到主要内容</a>
 <div class="bg-grid" aria-hidden="true"></div>
 <div class="bg-glow" aria-hidden="true"></div>
@@ -31,6 +32,9 @@
       <h1>锅炉炉管<br>全生命周期管理系统</h1>
       <p>BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM</p>
     </div>
+    <button class="rail-collapse" id="rail-collapse" type="button" onclick="toggleRailCollapse()" aria-label="收起侧边栏" aria-expanded="true" title="收起侧边栏">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/><path d="M17.5 9.5 15 12l2.5 2.5"/></svg>
+    </button>
   </div>
 
 <nav>

@@ -4291,3 +4291,50 @@ html[data-theme="light"] .aging-bucket:hover {
   background: #f0f8fa;
   box-shadow: var(--shadow-sm), inset 0 2px 4px rgba(23, 48, 60, 0.04);
 }
+
+/* ---- v8.4.2 侧边栏折叠：logo 行按钮（桌面端收起 / 顶栏汉堡恢复） ---- */
+.rail-logo { position: relative; }
+.rail-collapse {
+  position: absolute; right: 8px; top: 14px;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: .75;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.rail-collapse svg { width: 16px; height: 16px; }
+.rail-collapse:hover {
+  opacity: 1;
+  color: var(--accent);
+  background: rgba(127, 170, 200, 0.12);
+}
+@media (max-width: 960px) {
+  .rail-collapse { display: none; }
+}
+
+@media (min-width: 961px) {
+  .app-rail { transition: margin-left var(--dur-med) var(--ease-out); }
+  body.rail-collapsed .app-rail {
+    margin-left: -248px;
+    visibility: hidden;
+    transition: margin-left var(--dur-med) var(--ease-out), visibility 0s var(--dur-med);
+  }
+  body.rail-collapsed .rail-toggle { display: inline-flex; }
+}
+
+/* ---- v8.4.3 对齐修正：取消任务/预警列表的常驻滚动条占位，
+       使其与所在列的指标卡、按钮、标题左右边缘对齐（滚轮滚动不受影响） ---- */
+.hero-task-list,
+#dashboard-warning-list {
+  overflow-y: auto;
+  padding-right: 0;
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+.hero-task-list::-webkit-scrollbar,
+#dashboard-warning-list::-webkit-scrollbar { display: none; }

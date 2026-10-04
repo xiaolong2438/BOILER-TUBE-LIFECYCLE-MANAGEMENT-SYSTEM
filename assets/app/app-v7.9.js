@@ -1036,7 +1036,13 @@ function initNav() {
   const fromHash = (location.hash || '').replace('#view-', '');
   if(fromHash && document.getElementById('view-' + fromHash)) switchView(fromHash, { updateHash: false });
 }
-function toggleRail() { document.body.classList.toggle('rail-open'); }
+function toggleRail() {
+  if (window.matchMedia('(min-width: 961px)').matches && document.body.classList.contains('rail-collapsed') && typeof window.toggleRailCollapse === 'function') {
+    window.toggleRailCollapse();
+    return;
+  }
+  document.body.classList.toggle('rail-open');
+}
 
 // 数字键 1-9 快速切换模块（焦点不在输入控件时生效）
 document.addEventListener('keydown', (e) => {
