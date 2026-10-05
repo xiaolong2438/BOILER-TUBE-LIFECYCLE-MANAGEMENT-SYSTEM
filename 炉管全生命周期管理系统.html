@@ -534,34 +534,34 @@
     <div class="boiler-diagram">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 950" width="100%" height="100%" class="boiler-svg" role="img" aria-label="Π型锅炉受热面炉管分布示意图（双烟道平行布置）">
         <defs>
-          <linearGradient id="dgBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0c1220"/><stop offset="100%" stop-color="#060a13"/></linearGradient>
-          <linearGradient id="fireGlow" x1="0" y1="1" x2="0" y2="0"><stop offset="0%" stop-color="#ff5a1f" stop-opacity=".55"/><stop offset="45%" stop-color="#ff8c1a" stop-opacity=".22"/><stop offset="100%" stop-color="#ffb020" stop-opacity="0"/></linearGradient>
-          <linearGradient id="drumSheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2a3d5e"/><stop offset="55%" stop-color="#16233a"/><stop offset="100%" stop-color="#0d1829"/></linearGradient>
-          <pattern id="tubeV" width="11" height="11" patternUnits="userSpaceOnUse"><path d="M 3 0 V 11 M 8.5 0 V 11" stroke="rgba(255,255,255,.16)" stroke-width="1.4"/></pattern>
-          <pattern id="tubeH" width="11" height="11" patternUnits="userSpaceOnUse"><path d="M 0 3 H 11 M 0 8.5 H 11" stroke="rgba(255,255,255,.15)" stroke-width="1.4"/></pattern>
+          <linearGradient id="dgBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" style="stop-color:var(--dg-bg-1)"/><stop offset="100%" style="stop-color:var(--dg-bg-2)"/></linearGradient>
+          <linearGradient id="fireGlow" x1="0" y1="1" x2="0" y2="0"><stop offset="0%" style="stop-color:var(--dg-fire-1)" stop-opacity=".55"/><stop offset="45%" style="stop-color:var(--dg-fire-2)" stop-opacity=".22"/><stop offset="100%" style="stop-color:var(--dg-fire-3)" stop-opacity="0"/></linearGradient>
+          <linearGradient id="drumSheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" style="stop-color:var(--dg-drum-1)"/><stop offset="55%" style="stop-color:var(--dg-drum-2)"/><stop offset="100%" style="stop-color:var(--dg-drum-3)"/></linearGradient>
+          <pattern id="tubeV" width="11" height="11" patternUnits="userSpaceOnUse"><path d="M 3 0 V 11 M 8.5 0 V 11" stroke="var(--dg-tube-line)" stroke-width="1.4"/></pattern>
+          <pattern id="tubeH" width="11" height="11" patternUnits="userSpaceOnUse"><path d="M 0 3 H 11 M 0 8.5 H 11" stroke="var(--dg-tube-line)" stroke-width="1.4"/></pattern>
           <pattern id="wallHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0H8" stroke="#64748b" stroke-width="2"/></pattern>
           <filter id="glowS" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          <marker id="gasArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#fb7185"/></marker>
+          <marker id="gasArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--dg-gas)"/></marker>
         </defs>
 
         <rect width="1600" height="950" fill="url(#dgBg)"/>
-        <g stroke="rgba(126,190,235,.05)" stroke-width="1">
+        <g stroke="var(--dg-grid)" stroke-width="1">
           <path d="M0,190 H1600 M0,380 H1600 M0,570 H1600 M0,760 H1600"/>
           <path d="M200,0 V950 M400,0 V950 M600,0 V950 M800,0 V950 M1000,0 V950 M1200,0 V950 M1400,0 V950"/>
         </g>
-        <text x="52" y="58" font-size="21" font-weight="700" fill="#6ee1f7" letter-spacing="3">宝钢湛江自备电厂 1/2# 机组</text>
+        <text x="52" y="58" font-size="21" font-weight="700" fill="var(--dg-title)" letter-spacing="3">宝钢湛江自备电厂 1/2# 机组</text>
         <text x="52" y="82" font-size="12" fill="#5d7593" letter-spacing="4">Π 型锅炉 · 双烟道平行布置 · 汽水系统</text>
-        <rect x="52" y="94" width="150" height="2" rx="1" fill="rgba(110,225,247,.55)"/>
+        <rect x="52" y="94" width="150" height="2" rx="1" fill="var(--dg-title-line)"/>
 
         <!-- ═══ 炉膛 ═══ -->
-        <polygon points="212,190 212,772 352,886 488,886 618,772 618,190" fill="rgba(10,17,31,.6)" stroke="#33465f" stroke-width="3"/>
+        <polygon points="212,190 212,772 352,886 488,886 618,772 618,190" fill="var(--dg-furnace-fill)" stroke="var(--dg-structure)" stroke-width="3"/>
         <polygon points="238,300 238,742 362,846 478,846 592,742 592,300" fill="url(#fireGlow)" opacity=".85"/>
         <polygon points="224,196 224,762 356,868 374,868 252,752 252,196" fill="url(#tubeV)" opacity=".28"/>
         <polygon points="606,196 606,762 488,862 470,862 578,752 578,196" fill="url(#tubeV)" opacity=".28"/>
-        <text x="415" y="500" font-size="26" font-weight="800" fill="#3d5471" text-anchor="middle" letter-spacing="14">炉 膛</text>
+        <text x="415" y="500" font-size="26" font-weight="800" fill="var(--dg-watermark)" text-anchor="middle" letter-spacing="14">炉 膛</text>
 
         <!-- 燃烧器 -->
-        <g fill="#101a2c" stroke="#f97316" stroke-width="1.6">
+        <g fill="var(--dg-burner)" stroke="#f97316" stroke-width="1.6">
           <rect x="330" y="596" width="52" height="20" rx="4"/><rect x="452" y="596" width="52" height="20" rx="4"/>
           <rect x="330" y="648" width="52" height="20" rx="4"/><rect x="452" y="648" width="52" height="20" rx="4"/>
           <rect x="330" y="700" width="52" height="20" rx="4"/><rect x="452" y="700" width="52" height="20" rx="4"/>
@@ -571,16 +571,16 @@
           <rect x="340" y="655" width="32" height="6" rx="3"/><rect x="462" y="655" width="32" height="6" rx="3"/>
           <rect x="340" y="707" width="32" height="6" rx="3"/><rect x="462" y="707" width="32" height="6" rx="3"/>
         </g>
-        <text x="415" y="748" font-size="12" fill="#7d92ad" text-anchor="middle">燃烧器 · 三层四角切圆</text>
+        <text x="415" y="748" font-size="12" fill="var(--dg-annot)" text-anchor="middle">燃烧器 · 三层四角切圆</text>
 
         <!-- 锅筒 -->
-        <rect x="272" y="112" width="256" height="44" rx="22" fill="url(#drumSheen)" stroke="#48cae4" stroke-width="2"/>
-        <text x="400" y="140" font-size="14" font-weight="700" fill="#a5ecff" text-anchor="middle" letter-spacing="4">锅 筒</text>
-        <path d="M 300 156 V 190 M 500 156 V 190" stroke="#3d5471" stroke-width="3"/>
+        <rect x="272" y="112" width="256" height="44" rx="22" fill="url(#drumSheen)" stroke="var(--dg-drum-stroke)" stroke-width="2"/>
+        <text x="400" y="140" font-size="14" font-weight="700" fill="var(--dg-drum-text)" text-anchor="middle" letter-spacing="4">锅 筒</text>
+        <path d="M 300 156 V 190 M 500 156 V 190" stroke="var(--dg-structure-2)" stroke-width="3"/>
 
         <!-- 顶棚过热器 -->
-        <rect x="206" y="168" width="1138" height="18" fill="url(#tubeH)" opacity=".5" stroke="rgba(147,197,253,.35)" stroke-width="1.4"/>
-        <text x="240" y="163" font-size="11" fill="#93c5fd">顶棚过热器 RSH</text>
+        <rect x="206" y="168" width="1138" height="18" fill="url(#tubeH)" opacity=".5" stroke="var(--dg-ceil-stroke)" stroke-width="1.4"/>
+        <text x="240" y="163" font-size="11" fill="var(--dg-ceil-text)">顶棚过热器 RSH</text>
 
         <!-- 全大屏 PSH -->
         <g class="boiler-zone" onclick="showZone('qdp')">
@@ -591,7 +591,7 @@
             <rect x="316" y="211" width="15" height="222" rx="3"/><rect x="344" y="211" width="15" height="222" rx="3"/><rect x="372" y="211" width="15" height="222" rx="3"/>
           </g>
           <circle cx="239" cy="207" r="4" fill="#ef4444"/><circle cx="295" cy="207" r="4" fill="#ef4444"/><circle cx="351" cy="207" r="4" fill="#ef4444"/><circle cx="379" cy="207" r="4" fill="#ef4444"/>
-          <text x="322" y="462" font-size="13" font-weight="700" fill="#fca5a5" text-anchor="middle">全大屏 PSH</text>
+          <text x="322" y="462" font-size="13" font-weight="700" fill="var(--dg-psh-text)" text-anchor="middle">全大屏 PSH</text>
         </g>
 
         <!-- 屏式(后屏) ISH -->
@@ -602,11 +602,11 @@
             <rect x="442" y="223" width="13" height="192" rx="3"/><rect x="466" y="223" width="13" height="192" rx="3"/><rect x="490" y="223" width="13" height="192" rx="3"/>
             <rect x="514" y="223" width="13" height="192" rx="3"/><rect x="538" y="223" width="13" height="192" rx="3"/><rect x="562" y="223" width="13" height="192" rx="3"/>
           </g>
-          <text x="520" y="446" font-size="13" font-weight="700" fill="#fdba74" text-anchor="middle">后屏 ISH</text>
+          <text x="520" y="446" font-size="13" font-weight="700" fill="var(--dg-ish-text)" text-anchor="middle">后屏 ISH</text>
         </g>
 
         <!-- ═══ 水平烟道 ═══ -->
-        <path d="M 618 186 H 1040 M 618 356 H 1040 M 1040 186 V 830" stroke="#33465f" stroke-width="3" fill="none"/>
+        <path d="M 618 186 H 1040 M 618 356 H 1040 M 1040 186 V 830" stroke="var(--dg-structure)" stroke-width="3" fill="none"/>
         <text x="830" y="392" font-size="12" fill="#5d7593" text-anchor="middle" letter-spacing="4">水 平 烟 道</text>
 
         <!-- 高温过热器 HSH -->
@@ -617,7 +617,7 @@
             <rect x="672" y="202" width="11" height="128" rx="3"/><rect x="691" y="202" width="11" height="128" rx="3"/><rect x="710" y="202" width="11" height="128" rx="3"/><rect x="729" y="202" width="11" height="128" rx="3"/>
             <rect x="748" y="202" width="11" height="128" rx="3"/><rect x="767" y="202" width="11" height="128" rx="3"/><rect x="786" y="202" width="11" height="128" rx="3"/><rect x="805" y="202" width="11" height="128" rx="3"/>
           </g>
-          <text x="744" y="348" font-size="13" font-weight="700" fill="#fcd34d" text-anchor="middle">高过 HSH</text>
+          <text x="744" y="348" font-size="13" font-weight="700" fill="var(--dg-hsh-text)" text-anchor="middle">高过 HSH</text>
         </g>
 
         <!-- 高温再热器 HRH -->
@@ -628,24 +628,24 @@
             <rect x="856" y="202" width="11" height="128" rx="3"/><rect x="875" y="202" width="11" height="128" rx="3"/><rect x="894" y="202" width="11" height="128" rx="3"/><rect x="913" y="202" width="11" height="128" rx="3"/>
             <rect x="932" y="202" width="11" height="128" rx="3"/><rect x="951" y="202" width="11" height="128" rx="3"/><rect x="970" y="202" width="11" height="128" rx="3"/><rect x="989" y="202" width="11" height="128" rx="3"/>
           </g>
-          <text x="928" y="348" font-size="13" font-weight="700" fill="#d8b4fe" text-anchor="middle">高再 HRH</text>
+          <text x="928" y="348" font-size="13" font-weight="700" fill="var(--dg-hrh-text)" text-anchor="middle">高再 HRH</text>
         </g>
 
         <!-- ═══ 尾部竖井（双烟道平行布置）═══ -->
-        <rect x="1064" y="186" width="290" height="650" fill="rgba(10,17,31,.5)" stroke="#33465f" stroke-width="3"/>
+        <rect x="1064" y="186" width="290" height="650" fill="var(--dg-shaft-fill)" stroke="var(--dg-structure)" stroke-width="3"/>
         <text x="1209" y="176" font-size="12" fill="#5d7593" text-anchor="middle" letter-spacing="4">尾 部 竖 井 · 双 烟 道</text>
 
         <!-- 分隔墙 -->
         <rect x="1202" y="210" width="14" height="160" fill="url(#wallHatch)" stroke="#475569" stroke-width="1.5"/>
-        <text transform="rotate(90 1209 290)" x="1209" y="294" font-size="11" fill="#94a3b8" text-anchor="middle" letter-spacing="3">分隔墙</text>
+        <text transform="rotate(90 1209 290)" x="1209" y="294" font-size="11" fill="var(--dg-annot)" text-anchor="middle" letter-spacing="3">分隔墙</text>
 
         <!-- 低再（靠锅炉侧·左烟道）LRH -->
         <g class="boiler-zone" onclick="showZone('dwzr')">
           <title>低温再热器 LRH（锅炉侧烟道，挡板调温）· 点击查看运行参数</title>
           <rect x="1078" y="222" width="118" height="130" rx="6" fill="rgba(139,92,246,.12)" stroke="#8b5cf6" stroke-width="2"/>
           <rect x="1078" y="222" width="118" height="130" rx="6" fill="url(#tubeH)"/>
-          <text x="1137" y="278" font-size="13" font-weight="700" fill="#ddd6fe" text-anchor="middle">低温再热器</text>
-          <text x="1137" y="297" font-size="10" fill="#a5b4fc" text-anchor="middle">LRH</text>
+          <text x="1137" y="278" font-size="13" font-weight="700" fill="var(--dg-lrh-text)" text-anchor="middle">低温再热器</text>
+          <text x="1137" y="297" font-size="10" fill="var(--dg-lrh-sub)" text-anchor="middle">LRH</text>
           <text x="1137" y="338" font-size="10" fill="#64748b" text-anchor="middle">◀ 靠锅炉侧</text>
         </g>
 
@@ -654,8 +654,8 @@
           <title>低温过热器 LSH（尾部侧烟道，挡板调温）· 点击查看运行参数</title>
           <rect x="1222" y="222" width="118" height="130" rx="6" fill="rgba(6,182,212,.12)" stroke="#06b6d4" stroke-width="2"/>
           <rect x="1222" y="222" width="118" height="130" rx="6" fill="url(#tubeH)"/>
-          <text x="1281" y="278" font-size="13" font-weight="700" fill="#a5f3fc" text-anchor="middle">低温过热器</text>
-          <text x="1281" y="297" font-size="10" fill="#67e8f9" text-anchor="middle">LSH</text>
+          <text x="1281" y="278" font-size="13" font-weight="700" fill="var(--dg-cyan-text)" text-anchor="middle">低温过热器</text>
+          <text x="1281" y="297" font-size="10" fill="var(--dg-cyan-sub)" text-anchor="middle">LSH</text>
           <text x="1281" y="338" font-size="10" fill="#64748b" text-anchor="middle">靠尾部侧 ▶</text>
         </g>
 
@@ -665,16 +665,16 @@
           <path d="M 1222 372 H 1340 M 1222 404 H 1340"/>
         </g>
         <!-- 左：开度较大（叶片近垂直导流） -->
-        <g stroke="#94a3b8" stroke-width="4" stroke-linecap="round">
+        <g stroke="var(--dg-annot)" stroke-width="4" stroke-linecap="round">
           <path d="M 1094 402 L 1094 374"/><path d="M 1116 402 L 1116 374"/><path d="M 1138 402 L 1138 374"/><path d="M 1160 402 L 1160 374"/><path d="M 1182 402 L 1182 374"/>
         </g>
         <!-- 右：关小节流（叶片斜置遮挡） -->
-        <g stroke="#cbd5e1" stroke-width="5" stroke-linecap="round">
+        <g stroke="var(--dg-annot-strong)" stroke-width="5" stroke-linecap="round">
           <path d="M 1234 400 L 1262 376"/><path d="M 1268 400 L 1296 376"/><path d="M 1302 400 L 1330 376"/>
         </g>
         <circle cx="1078" cy="388" r="3" fill="#64748b"/><circle cx="1196" cy="388" r="3" fill="#64748b"/>
         <circle cx="1222" cy="388" r="3" fill="#64748b"/><circle cx="1340" cy="388" r="3" fill="#64748b"/>
-        <text x="1360" y="392" font-size="11" fill="#94a3b8">烟气挡板调温</text>
+        <text x="1360" y="392" font-size="11" fill="var(--dg-annot)">烟气挡板调温</text>
         <path d="M 1356 388 H 1344" stroke="#64748b" stroke-width="1.4"/>
 
         <!-- 上级省煤器 -->
@@ -682,8 +682,8 @@
           <title>上级省煤器（第二级）· 点击查看运行参数</title>
           <rect x="1080" y="440" width="258" height="66" rx="6" fill="rgba(16,185,129,.12)" stroke="#10b981" stroke-width="2"/>
           <rect x="1080" y="440" width="258" height="66" rx="6" fill="url(#tubeH)"/>
-          <text x="1209" y="470" font-size="13" font-weight="700" fill="#a7f3d0" text-anchor="middle">上级省煤器 · 第二级</text>
-          <text x="1209" y="492" font-size="10" fill="#6ee7b7" text-anchor="middle">高温段管组</text>
+          <text x="1209" y="470" font-size="13" font-weight="700" fill="var(--dg-green-text)" text-anchor="middle">上级省煤器 · 第二级</text>
+          <text x="1209" y="492" font-size="10" fill="var(--dg-green-sub)" text-anchor="middle">高温段管组</text>
         </g>
 
         <!-- 下级省煤器 -->
@@ -691,8 +691,8 @@
           <title>下级省煤器（第一级）· 点击查看运行参数</title>
           <rect x="1080" y="538" width="258" height="66" rx="6" fill="rgba(16,185,129,.12)" stroke="#10b981" stroke-width="2"/>
           <rect x="1080" y="538" width="258" height="66" rx="6" fill="url(#tubeH)"/>
-          <text x="1209" y="568" font-size="13" font-weight="700" fill="#a7f3d0" text-anchor="middle">下级省煤器 · 第一级</text>
-          <text x="1209" y="590" font-size="10" fill="#6ee7b7" text-anchor="middle">低温段管组 · 两级分级串联</text>
+          <text x="1209" y="568" font-size="13" font-weight="700" fill="var(--dg-green-text)" text-anchor="middle">下级省煤器 · 第一级</text>
+          <text x="1209" y="590" font-size="10" fill="var(--dg-green-sub)" text-anchor="middle">低温段管组 · 两级分级串联</text>
         </g>
 
         <!-- SCR 脱硝 -->
@@ -700,36 +700,36 @@
           <title>SCR 脱硝反应器 · 点击查看运行参数</title>
           <rect x="1080" y="648" width="258" height="124" rx="6" fill="rgba(34,211,238,.07)" stroke="rgba(34,211,238,.65)" stroke-width="2" stroke-dasharray="8 5"/>
           <path d="M 1094 686 H 1324 M 1094 720 H 1324" stroke="rgba(34,211,238,.4)" stroke-width="2"/>
-          <text x="1209" y="708" font-size="13" font-weight="700" fill="#a5f3fc" text-anchor="middle" opacity=".9">SCR 脱硝反应器</text>
-          <text x="1209" y="750" font-size="10.5" fill="#67e8f9" text-anchor="middle" opacity=".8">催化剂层 · 脱硝效率 99.9%</text>
+          <text x="1209" y="708" font-size="13" font-weight="700" fill="var(--dg-cyan-text)" text-anchor="middle" opacity=".9">SCR 脱硝反应器</text>
+          <text x="1209" y="750" font-size="10.5" fill="var(--dg-cyan-sub)" text-anchor="middle" opacity=".8">催化剂层 · 脱硝效率 99.9%</text>
         </g>
 
         <!-- ═══ 烟气流程 ═══ -->
-        <path class="gas-flow" d="M 412 842 V 268 Q 412 232 448 232 H 1148 Q 1186 232 1186 206" fill="none" stroke="#fb7185" stroke-width="3.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 412 842 V 268 Q 412 232 448 232 H 1148 Q 1186 232 1186 206" fill="none" stroke="var(--dg-gas)" stroke-width="3.5" marker-end="url(#gasArrow)"/>
         <!-- 分流进双烟道 -->
-        <path class="gas-flow" d="M 1120 198 V 216" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
-        <path class="gas-flow" d="M 1300 198 V 216" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
-        <path class="gas-flow" d="M 1120 358 V 368" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
-        <path class="gas-flow" d="M 1300 358 V 368" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1120 198 V 216" fill="none" stroke="var(--dg-gas)" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1300 198 V 216" fill="none" stroke="var(--dg-gas)" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1120 358 V 368" fill="none" stroke="var(--dg-gas)" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1300 358 V 368" fill="none" stroke="var(--dg-gas)" stroke-width="2.5" marker-end="url(#gasArrow)"/>
         <!-- 汇合下行 -->
-        <path class="gas-flow" d="M 1140 412 Q 1170 428 1196 434" fill="none" stroke="#fb7185" stroke-width="2.5"/>
-        <path class="gas-flow" d="M 1280 412 Q 1250 428 1222 434" fill="none" stroke="#fb7185" stroke-width="2.5"/>
-        <path class="gas-flow" d="M 1209 512 V 532" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
-        <path class="gas-flow" d="M 1209 610 V 642" fill="none" stroke="#fb7185" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1140 412 Q 1170 428 1196 434" fill="none" stroke="var(--dg-gas)" stroke-width="2.5"/>
+        <path class="gas-flow" d="M 1280 412 Q 1250 428 1222 434" fill="none" stroke="var(--dg-gas)" stroke-width="2.5"/>
+        <path class="gas-flow" d="M 1209 512 V 532" fill="none" stroke="var(--dg-gas)" stroke-width="2.5" marker-end="url(#gasArrow)"/>
+        <path class="gas-flow" d="M 1209 610 V 642" fill="none" stroke="var(--dg-gas)" stroke-width="2.5" marker-end="url(#gasArrow)"/>
         <!-- 出口 -->
-        <path class="gas-flow" d="M 1338 716 H 1448 Q 1462 716 1462 702 V 668" fill="none" stroke="#fb7185" stroke-width="3.5" marker-end="url(#gasArrow)"/>
-        <text x="1452" y="654" font-size="11.5" fill="#fda4af" text-anchor="end">至空预器 / 除尘</text>
+        <path class="gas-flow" d="M 1338 716 H 1448 Q 1462 716 1462 702 V 668" fill="none" stroke="var(--dg-gas)" stroke-width="3.5" marker-end="url(#gasArrow)"/>
+        <text x="1452" y="654" font-size="11.5" fill="var(--dg-gas-text)" text-anchor="end">至空预器 / 除尘</text>
 
         <!-- 温度标注 -->
         <g font-size="11.5" font-weight="700" text-anchor="middle">
-          <g><rect x="452" y="522" width="112" height="24" rx="12" fill="rgba(249,115,22,.14)" stroke="rgba(249,115,22,.5)"/><text x="508" y="538" fill="#fdba74">炉膛 ~1500℃</text></g>
-          <g><rect x="668" y="404" width="130" height="24" rx="12" fill="rgba(245,158,11,.12)" stroke="rgba(245,158,11,.45)"/><text x="733" y="420" fill="#fcd34d">水平烟道 876℃</text></g>
-          <g><rect x="1368" y="574" width="132" height="24" rx="12" fill="rgba(16,185,129,.12)" stroke="rgba(16,185,129,.45)"/><text x="1434" y="590" fill="#6ee7b7">省煤器出口 289℃</text></g>
+          <g><rect x="452" y="522" width="112" height="24" rx="12" fill="rgba(249,115,22,.14)" stroke="rgba(249,115,22,.5)"/><text x="508" y="538" fill="var(--dg-ish-text)">炉膛 ~1500℃</text></g>
+          <g><rect x="668" y="404" width="130" height="24" rx="12" fill="rgba(245,158,11,.12)" stroke="rgba(245,158,11,.45)"/><text x="733" y="420" fill="var(--dg-hsh-text)">水平烟道 876℃</text></g>
+          <g><rect x="1368" y="574" width="132" height="24" rx="12" fill="rgba(16,185,129,.12)" stroke="rgba(16,185,129,.45)"/><text x="1434" y="590" fill="var(--dg-green-sub)">省煤器出口 289℃</text></g>
         </g>
 
         <!-- ═══ 图例 ═══ -->
-        <rect x="206" y="888" width="1240" height="46" rx="23" fill="rgba(13,23,41,.85)" stroke="rgba(126,190,235,.22)"/>
-        <g font-size="12.5" fill="#cbd5e1">
+        <rect x="206" y="888" width="1240" height="46" rx="23" fill="var(--dg-legend-bg)" stroke="var(--dg-legend-stroke)"/>
+        <g font-size="12.5" fill="var(--dg-legend)">
           <circle cx="252" cy="911" r="6" fill="#ef4444"/><text x="264" y="915">全大屏</text>
           <circle cx="348" cy="911" r="6" fill="#f97316"/><text x="360" y="915">屏式过热器</text>
           <circle cx="472" cy="911" r="6" fill="#f59e0b"/><text x="484" y="915">高过</text>
@@ -738,8 +738,8 @@
           <circle cx="732" cy="911" r="6" fill="#06b6d4"/><text x="744" y="915">低过</text>
           <circle cx="828" cy="911" r="6" fill="#10b981"/><text x="840" y="915">省煤器×2级</text>
           <circle cx="956" cy="911" r="6" fill="none" stroke="#22d3ee" stroke-width="2"/><text x="968" y="915">SCR</text>
-          <rect x="1024" y="904" width="13" height="13" rx="2" fill="#334155" stroke="#64748b"/><text x="1044" y="915">分隔墙·挡板</text>
-          <line x1="1146" y1="911" x2="1188" y2="911" stroke="#fb7185" stroke-width="3" stroke-dasharray="8 6"/><text x="1196" y="915">烟气流向</text>
+          <rect x="1024" y="904" width="13" height="13" rx="2" fill="var(--dg-swatch)" stroke="#64748b"/><text x="1044" y="915">分隔墙·挡板</text>
+          <line x1="1146" y1="911" x2="1188" y2="911" stroke="var(--dg-gas)" stroke-width="3" stroke-dasharray="8 6"/><text x="1196" y="915">烟气流向</text>
           <text x="1310" y="915" fill="#5d7593">点击查看参数 →</text>
         </g>
       </svg>

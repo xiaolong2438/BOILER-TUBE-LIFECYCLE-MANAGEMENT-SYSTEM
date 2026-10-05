@@ -4338,3 +4338,98 @@ html[data-theme="light"] .aging-bucket:hover {
 }
 .hero-task-list::-webkit-scrollbar,
 #dashboard-warning-list::-webkit-scrollbar { display: none; }
+
+/* ---- v8.4.4 炉管分布图配色：SVG 内联图形全部读 --dg-* 变量，随主题切换 ---- */
+:root {
+  --dg-bg-1: #0c1220;
+  --dg-bg-2: #060a13;
+  --dg-fire-1: #ff5a1f;
+  --dg-fire-2: #ff8c1a;
+  --dg-fire-3: #ffb020;
+  --dg-drum-1: #2a3d5e;
+  --dg-drum-2: #16233a;
+  --dg-drum-3: #0d1829;
+  --dg-tube-line: rgba(255, 255, 255, 0.16);
+  --dg-grid: rgba(126, 190, 235, 0.05);
+  --dg-title: #6ee1f7;
+  --dg-title-line: rgba(110, 225, 247, 0.55);
+  --dg-meta: #5d7593;
+  --dg-annot: #94a3b8;
+  --dg-annot-strong: #cbd5e1;
+  --dg-structure: #33465f;
+  --dg-structure-2: #3d5471;
+  --dg-furnace-fill: rgba(10, 17, 31, 0.6);
+  --dg-shaft-fill: rgba(10, 17, 31, 0.5);
+  --dg-watermark: #3d5471;
+  --dg-burner: #101a2c;
+  --dg-drum-stroke: #48cae4;
+  --dg-drum-text: #a5ecff;
+  --dg-ceil-stroke: rgba(147, 197, 253, 0.35);
+  --dg-ceil-text: #93c5fd;
+  --dg-psh-text: #fca5a5;
+  --dg-ish-text: #fdba74;
+  --dg-hsh-text: #fcd34d;
+  --dg-hrh-text: #d8b4fe;
+  --dg-lrh-text: #ddd6fe;
+  --dg-lrh-sub: #a5b4fc;
+  --dg-cyan-text: #a5f3fc;
+  --dg-cyan-sub: #67e8f9;
+  --dg-green-text: #a7f3d0;
+  --dg-green-sub: #6ee7b7;
+  --dg-gas: #fb7185;
+  --dg-gas-text: #fda4af;
+  --dg-legend-bg: rgba(13, 23, 41, 0.85);
+  --dg-legend-stroke: rgba(126, 190, 235, 0.22);
+  --dg-legend: #cbd5e1;
+  --dg-swatch: #334155;
+}
+html[data-theme="light"] {
+  --dg-bg-1: #f8fbfd;
+  --dg-bg-2: #e9f0f5;
+  --dg-fire-1: #ff9a4d;
+  --dg-fire-2: #ffb066;
+  --dg-fire-3: #ffc680;
+  --dg-drum-1: #e6eef4;
+  --dg-drum-2: #d2e1ea;
+  --dg-drum-3: #bfd3e0;
+  --dg-tube-line: rgba(71, 105, 128, 0.4);
+  --dg-grid: rgba(14, 124, 155, 0.07);
+  --dg-title: #0e6e8c;
+  --dg-title-line: rgba(14, 140, 176, 0.55);
+  --dg-meta: #5c7484;
+  --dg-annot: #6b7f8c;
+  --dg-annot-strong: #64748b;
+  --dg-structure: #a5bac9;
+  --dg-structure-2: #8fa9bc;
+  --dg-furnace-fill: rgba(240, 246, 250, 0.72);
+  --dg-shaft-fill: rgba(238, 245, 249, 0.7);
+  --dg-watermark: #c5d5de;
+  --dg-burner: #ffffff;
+  --dg-drum-stroke: #0ea5c9;
+  --dg-drum-text: #0e7490;
+  --dg-ceil-stroke: rgba(37, 99, 235, 0.4);
+  --dg-ceil-text: #3568b0;
+  --dg-psh-text: #c2352b;
+  --dg-ish-text: #c2410c;
+  --dg-hsh-text: #a16207;
+  --dg-hrh-text: #7e22ce;
+  --dg-lrh-text: #6d28d9;
+  --dg-lrh-sub: #4f46e5;
+  --dg-cyan-text: #0e7490;
+  --dg-cyan-sub: #0891b2;
+  --dg-green-text: #047857;
+  --dg-green-sub: #059669;
+  --dg-gas: #e11d48;
+  --dg-gas-text: #be123c;
+  --dg-legend-bg: rgba(255, 255, 255, 0.92);
+  --dg-legend-stroke: rgba(14, 124, 155, 0.25);
+  --dg-legend: #475569;
+  --dg-swatch: #cbd5e1;
+}
+html[data-theme="light"] .boiler-diagram {
+  background: linear-gradient(135deg, var(--dg-bg-1), var(--dg-bg-2));
+  box-shadow: var(--shadow-card);
+}
+html[data-theme="light"] .boiler-zone:hover {
+  filter: saturate(1.35) brightness(0.96) drop-shadow(0 0 12px rgba(14, 124, 155, 0.3));
+}
