@@ -28,7 +28,7 @@ assert.match(html, /function openTubeProfile\s*\(/, "search-to-profile bridge sh
 assert.match(searchBlock, /buildTubeProfileHTML\(q,\s*\{\s*context:\s*'search'\s*\}\)/, "exact search should render the integrated profile inline");
 assert.match(searchBlock, /打开一体化档案/, "search match cards should expose the integrated profile action");
 assert.match(lifecycleBlock, /buildTubeProfileHTML\(code,\s*\{\s*context:\s*'lifecycle'\s*\}\)/, "lifecycle should reuse the integrated profile renderer");
-assert.match(html, /进入AI趋势分析/, "integrated profile should retain the AI trend entry");
+assert.match(html, /查看预测曲线与模型判定/, "integrated profile should retain the AI trend entry");
 assert.match(html, /全寿命事件时间线/, "integrated profile should retain the lifecycle timeline");
 
 console.log("ok - integrated tube profile links search, lifecycle, and AI analysis");

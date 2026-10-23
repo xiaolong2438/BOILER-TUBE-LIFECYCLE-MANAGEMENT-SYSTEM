@@ -8,9 +8,10 @@ const js = readFileSync(resolve(here, "../assets/app/app-v7.9.js"), "utf8");
 const html = readFileSync(resolve(here, "../炉管全生命周期管理系统.html"), "utf8");
 
 assert.doesNotMatch(js, /临时保护阈值\s*1mm/);
-assert.match(js, /threshold:\s*null/);
-assert.match(js, /matched:Boolean\(selected && valid\)/);
-assert.match(js, /if\(!thresholdInfo\.rule \|\| !Number\.isFinite\(threshold\)\)/);
+// 当前实现：未指定测点管型时阈值必须为 null，不得凭空给出数字
+assert.match(js, /const threshold = normalizedType === 'straight' \? straight : normalizedType === 'bend' \? bend : null/);
+assert.match(js, /matched:\s*Boolean\(selected && threshold !== null\)/);
+assert.match(js, /!thresholdInfo\?\.matched \|\| threshold <= 0 \|\| !Number\.isFinite\(threshold\)/);
 assert.match(js, /rul:\s*null[\s\S]*rulText:/);
 assert.match(js, /renderAIChart\(data\);\s*renderHardnessChart\(data\);/);
 assert.match(js, /function renderHardnessChart\(data\)/);
