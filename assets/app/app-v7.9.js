@@ -320,6 +320,98 @@ function exportCSV() {
 }
 
 // ========== 核心修复：防重复导入逻辑 ==========
+function importLifecycleRows(rawRows, options = {}) {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  const stats = { importedEvents: 0, importedReplacements: 0, skippedDuplicates: 0, skippedMismatch: 0, addedEventTs: [], addedReplacementTs: [], errors: [] };
+  if(rows.length < 2) { stats.errors.push('CSV 文件为空'); return stats; }
+  const headers = (rows[0] || []).map(item => String(item ?? '').replace(/^\uFEFF/, '').trim());
+  const hasNewColumns = headers.includes('炉号') && headers.includes('厚度(mm)');
+  const batchFilter = options.batchFilter || 'all';
+  let importEvents = 0, importReplacements = 0, skipDuplicates = 0, skipBoilerMismatch = 0;
+
+  // 查重辅助函数
+  const isEventExist = (event) => {
+      return userDB.events.some(e =>
+        e.code === event.code &&
+        e.type === event.type &&
+        e.date === event.date &&
+        e.desc === event.desc &&
+        String(e.spec || '') === String(event.spec || '') &&
+        String(e.material || '') === String(event.material || '') &&
+        String(e.thickness || '') === String(event.thickness || '') &&
+        String(e.hardness || '') === String(event.hardness || '')
+      );
+  };
+  const isReplacementExist = (boiler, oldCode, newCode, date, reason) => {
+      return userDB.replacements.some(r => (r.boiler || getBoilerFromCode(r.oldCode)) === boiler && r.oldCode === oldCode && r.newCode === newCode && r.date === date && r.reason === reason);
+  };
+
+  for(let i = 1; i < rows.length; i++) {
+    const cols = (Array.isArray(rows[i]) ? rows[i] : []).map(item => String(item ?? ''));
+    if(cols.every(cell => cell.trim() === '')) continue;
+    if(cols.length < 5) continue;
+
+    const category = cols[0].trim();
+    const boiler = normalizeBoiler(hasNewColumns ? cols[1] : getBoilerFromCode(cols[2] || ''));
+    const date = (hasNewColumns ? cols[2] : cols[1] || '').trim();
+    const code = (hasNewColumns ? cols[3] : cols[2] || '').trim().toUpperCase();
+    const spec = hasNewColumns ? (cols[4] || '').trim() : '';
+    const material = hasNewColumns ? (cols[5] || '').trim() : '';
+    const thickness = hasNewColumns ? (cols[6] || '').trim() : '';
+    const hardness = hasNewColumns ? (cols[7] || '').trim() : '';
+    const typeOrReason = (hasNewColumns ? cols[8] : cols[3] || '').trim();
+    const relatedCode = (hasNewColumns ? cols[9] : cols[4] || '').trim().toUpperCase();
+    const desc = hasNewColumns ? ((cols[10] || '').trim()) : (cols[5] ? cols[5].trim() : '');
+    const ts = Date.now() + i;
+    const rowBoiler = boiler || getBoilerFromCode(code) || getBoilerFromCode(relatedCode);
+    const codeMismatch = (getBoilerFromCode(code) && rowBoiler && getBoilerFromCode(code) !== rowBoiler) || (relatedCode && getBoilerFromCode(relatedCode) && rowBoiler && getBoilerFromCode(relatedCode) !== rowBoiler);
+    const filterMismatch = batchFilter !== 'all' && rowBoiler !== batchFilter;
+    if(!rowBoiler || codeMismatch || filterMismatch) {
+      skipBoilerMismatch++;
+      continue;
+    }
+
+    if (category === '事件' || category === 'event') {
+      const eventRecord = { boiler: rowBoiler, code, spec, material, thickness, hardness, type: typeOrReason, date, desc, ts };
+      if (!isEventExist(eventRecord)) {
+          userDB.events.push(eventRecord);
+          stats.addedEventTs.push(eventRecord.ts);
+          importEvents++;
+      } else {
+          skipDuplicates++;
+      }
+    } else if (category === '更换' || category === 'replacement') {
+      const replacementBoiler = rowBoiler;
+      if (!isReplacementExist(replacementBoiler, code, relatedCode, date, typeOrReason)) {
+          userDB.replacements.push({ boiler: replacementBoiler, oldCode: code, newCode: relatedCode, reason: typeOrReason, date, ts });
+          stats.addedReplacementTs.push(ts);
+
+          const 报废desc = `更换为新管 ${relatedCode}，原因：${typeOrReason}`;
+          const 报废event = { boiler: replacementBoiler, code: code, type: '报废更换', date, desc: 报废desc, ts: ts + 0.1 };
+          if(!isEventExist(报废event)) {
+              userDB.events.push(报废event);
+              stats.addedEventTs.push(报废event.ts);
+          }
+          const 投运desc = `替换旧管 ${code}，继承历史数据`;
+          const 投运event = { boiler: replacementBoiler, code: relatedCode, type: '安装投运', date, desc: 投运desc, ts: ts + 0.2 };
+          if(!isEventExist(投运event)) {
+              userDB.events.push(投运event);
+              stats.addedEventTs.push(投运event.ts);
+          }
+          importReplacements++;
+      } else {
+          skipDuplicates++;
+      }
+    }
+  }
+  saveDB();
+  stats.importedEvents = importEvents;
+  stats.importedReplacements = importReplacements;
+  stats.skippedDuplicates = skipDuplicates;
+  stats.skippedMismatch = skipBoilerMismatch;
+  return stats;
+}
+
 function importCSV(event) {
   const file = event.target.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -328,98 +420,9 @@ function importCSV(event) {
       const text = e.target.result;
       const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
       if (lines.length < 2) { showToast('CSV 文件为空', 'warn'); return; }
-      
-      function parseCSVLine(line) {
-        const result = []; let current = ''; let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (char === '"') {
-            if (inQuotes && line[i+1] === '"') { current += '"'; i++; }
-            else { inQuotes = !inQuotes; }
-          } else if (char === ',' && !inQuotes) {
-            result.push(current); current = '';
-          } else { current += char; }
-        }
-        result.push(current); return result;
-      }
-
-      const headers = parseCSVLine(lines[0]).map(item => item.replace(/^\uFEFF/, '').trim());
-      const hasNewColumns = headers.includes('炉号') && headers.includes('厚度(mm)');
-      const batchFilter = getBatchBoilerFilter();
-      let importEvents = 0, importReplacements = 0, skipDuplicates = 0, skipBoilerMismatch = 0;
-      
-      // 查重辅助函数
-      const isEventExist = (event) => {
-          return userDB.events.some(e =>
-            e.code === event.code &&
-            e.type === event.type &&
-            e.date === event.date &&
-            e.desc === event.desc &&
-            String(e.spec || '') === String(event.spec || '') &&
-            String(e.material || '') === String(event.material || '') &&
-            String(e.thickness || '') === String(event.thickness || '') &&
-            String(e.hardness || '') === String(event.hardness || '')
-          );
-      };
-      const isReplacementExist = (boiler, oldCode, newCode, date, reason) => {
-          return userDB.replacements.some(r => (r.boiler || getBoilerFromCode(r.oldCode)) === boiler && r.oldCode === oldCode && r.newCode === newCode && r.date === date && r.reason === reason);
-      };
-
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCSVLine(lines[i]);
-        if (cols.length < 5) continue;
-        
-        const category = cols[0].trim();
-        const boiler = normalizeBoiler(hasNewColumns ? cols[1] : getBoilerFromCode(cols[2] || ''));
-        const date = (hasNewColumns ? cols[2] : cols[1] || '').trim();
-        const code = (hasNewColumns ? cols[3] : cols[2] || '').trim().toUpperCase();
-        const spec = hasNewColumns ? (cols[4] || '').trim() : '';
-        const material = hasNewColumns ? (cols[5] || '').trim() : '';
-        const thickness = hasNewColumns ? (cols[6] || '').trim() : '';
-        const hardness = hasNewColumns ? (cols[7] || '').trim() : '';
-        const typeOrReason = (hasNewColumns ? cols[8] : cols[3] || '').trim();
-        const relatedCode = (hasNewColumns ? cols[9] : cols[4] || '').trim().toUpperCase();
-        const desc = hasNewColumns ? ((cols[10] || '').trim()) : (cols[5] ? cols[5].trim() : '');
-        const ts = Date.now() + i; 
-        const rowBoiler = boiler || getBoilerFromCode(code) || getBoilerFromCode(relatedCode);
-        const codeMismatch = (getBoilerFromCode(code) && rowBoiler && getBoilerFromCode(code) !== rowBoiler) || (relatedCode && getBoilerFromCode(relatedCode) && rowBoiler && getBoilerFromCode(relatedCode) !== rowBoiler);
-        const filterMismatch = batchFilter !== 'all' && rowBoiler !== batchFilter;
-        if(!rowBoiler || codeMismatch || filterMismatch) {
-          skipBoilerMismatch++;
-          continue;
-        }
-
-        if (category === '事件' || category === 'event') {
-          const eventRecord = { boiler: rowBoiler, code, spec, material, thickness, hardness, type: typeOrReason, date, desc, ts };
-          if (!isEventExist(eventRecord)) {
-              userDB.events.push(eventRecord);
-              importEvents++;
-          } else {
-              skipDuplicates++;
-          }
-        } else if (category === '更换' || category === 'replacement') {
-          const replacementBoiler = rowBoiler;
-          if (!isReplacementExist(replacementBoiler, code, relatedCode, date, typeOrReason)) {
-              userDB.replacements.push({ boiler: replacementBoiler, oldCode: code, newCode: relatedCode, reason: typeOrReason, date, ts });
-              
-              const 报废desc = `更换为新管 ${relatedCode}，原因：${typeOrReason}`;
-              const 报废event = { boiler: replacementBoiler, code: code, type: '报废更换', date, desc: 报废desc, ts: ts + 0.1 };
-              if(!isEventExist(报废event)) {
-                  userDB.events.push(报废event);
-              }
-              const 投运desc = `替换旧管 ${code}，继承历史数据`;
-              const 投运event = { boiler: replacementBoiler, code: relatedCode, type: '安装投运', date, desc: 投运desc, ts: ts + 0.2 };
-              if(!isEventExist(投运event)) {
-                  userDB.events.push(投运event);
-              }
-              importReplacements++;
-          } else {
-              skipDuplicates++;
-          }
-        }
-      }
-      saveDB();
-      showToast(`导入完成：新增事件 ${importEvents} 条、更换 ${importReplacements} 条，跳过重复 ${skipDuplicates} 条${skipBoilerMismatch ? `、机组不匹配 ${skipBoilerMismatch} 条` : ''}`, 'ok', 6000);
+      const rawRows = lines.map(parseCSVLine);
+      const result = importLifecycleRows(rawRows, { batchFilter: getBatchBoilerFilter() });
+      showToast(`导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}`, 'ok', 6000);
     } catch (err) {
       console.error(err);
       showToast('CSV 解析失败，请检查文件格式是否正确。', 'error');
@@ -427,7 +430,6 @@ function importCSV(event) {
   };
   reader.readAsText(file, 'UTF-8'); event.target.value = '';
 }
-
 function backupLocalData() { const backup = JSON.stringify({ version: 'v6.7-local-backup', exportedAt: new Date().toISOString(), data: userDB }, null, 2); downloadBlob(`锅炉本地数据备份_${new Date().toISOString().slice(0,10)}.json`, backup, 'application/json;charset=utf-8;'); }
 function clearLocalData() { const total = userDB.events.length + userDB.replacements.length; if(total === 0) { showToast('当前没有可清空的本地数据', 'info'); return; } if(confirm(`即将清空 ${total} 条本地数据。清空前将自动导出备份，是否继续？`) && confirm('请再次确认：备份下载后将清空浏览器本地数据。')) { backupLocalData(); userDB = {events:[], replacements:[]}; saveDB(); showToast(`已备份并清空 ${total} 条本地数据`, 'ok'); } }
 
@@ -1481,6 +1483,23 @@ function exportMaterialCSV() {
   const rows = getMaterialLibrary().map(materialRowToCSV).join('\n');
   downloadBlob(`受热面材料库_${new Date().toISOString().slice(0,10)}.csv`, `${header}\n${rows}`, 'text/csv;charset=utf-8;');
 }
+function importMaterialRows(rawRows) {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  const stats = { imported: 0, errors: [] };
+  if(rows.length < 2) { stats.errors.push('材料库 CSV 文件为空'); return stats; }
+  const merged = new Map(getMaterialLibrary().map(item => [materialKey(item), item]));
+  for(let i = 1; i < rows.length; i++) {
+    const cols = (Array.isArray(rows[i]) ? rows[i] : []).map(item => String(item ?? ''));
+    if(cols.every(cell => cell.trim() === '')) continue;
+    const item = materialCSVToItem(cols);
+    if(!item.component || !item.spec || !item.material) continue;
+    merged.set(materialKey(item), item);
+    stats.imported++;
+  }
+  saveMaterialLibrary([...merged.values()]);
+  return stats;
+}
+
 function importMaterialCSV(event) {
   const file = event.target.files[0]; if(!file) return;
   const reader = new FileReader();
@@ -1488,16 +1507,8 @@ function importMaterialCSV(event) {
     try {
       const lines = e.target.result.split(/\r?\n/).filter(line => line.trim() !== '');
       if(lines.length < 2) { showToast('材料库 CSV 文件为空', 'warn'); return; }
-      const merged = new Map(getMaterialLibrary().map(item => [materialKey(item), item]));
-      let imported = 0;
-      for(let i = 1; i < lines.length; i++) {
-        const item = materialCSVToItem(parseCSVLine(lines[i]));
-        if(!item.component || !item.spec || !item.material) continue;
-        merged.set(materialKey(item), item);
-        imported++;
-      }
-      saveMaterialLibrary([...merged.values()]);
-      showToast(`材料库导入完成，更新/新增 ${imported} 条记录`, 'ok');
+      const result = importMaterialRows(lines.map(parseCSVLine));
+      showToast(`材料库导入完成，更新/新增 ${result.imported} 条记录`, 'ok');
     } catch (err) {
       console.error(err);
       showToast('材料库 CSV 解析失败，请检查文件格式。', 'error');
@@ -2348,24 +2359,48 @@ async function ensureLLMModelSelected() {
   if(!config.model) throw new Error('未选择可用模型，请先识别模型并选择。');
   return config;
 }
-async function callLLMChatCompletions(promptText, maxTokens = 1800) {
+async function sendLLMMessages(messages, maxTokens = 1800, options = {}) {
   const config = await ensureLLMModelSelected();
   if(!config.baseUrl) throw new Error('请填写 API Base URL。');
   if(!config.apiKey) throw new Error('请填写 API Key。');
   if(!config.model) throw new Error('未识别到可用模型。');
   localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(config));
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, messages: buildLLMMessages(promptText), temperature: config.temperature, max_tokens: maxTokens })
-  });
-  const raw = await response.text();
-  let data;
-  try { data = raw ? JSON.parse(raw) : {}; } catch (err) { throw new Error(`接口返回非JSON内容：${raw.slice(0, 240)}`); }
-  if(!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message || raw.slice(0, 240) || '接口请求失败'}`);
-  const text = extractLLMResponseText(data);
-  if(!text) throw new Error('接口返回成功，但未找到 choices[0].message.content。');
-  return text;
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 0);
+  const controller = timeoutMs && typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, messages, temperature: config.temperature, max_tokens: maxTokens }),
+      signal: controller ? controller.signal : undefined
+    });
+    const raw = await response.text();
+    let data;
+    try { data = raw ? JSON.parse(raw) : {}; } catch (err) { throw new Error(`接口返回非JSON内容：${raw.slice(0, 240)}`); }
+    if(!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message || raw.slice(0, 240) || '接口请求失败'}`);
+    const text = extractLLMResponseText(data);
+    if(!text) throw new Error('接口返回成功，但未找到 choices[0].message.content。');
+    return text;
+  } catch (err) {
+    if(controller && controller.signal.aborted) {
+      const timeoutError = new Error(`模型调用超时（${Math.round(timeoutMs / 1000)} 秒）`);
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw err;
+  } finally {
+    if(timer) clearTimeout(timer);
+  }
+}
+
+async function callLLMChatCompletions(promptText, maxTokens = 1800) {
+  const payload = { messages: buildLLMMessages(promptText) };
+  return sendLLMMessages(payload.messages, maxTokens);
+}
+
+async function callAssistantChatCompletions(messages, maxTokens = 600) {
+  return sendLLMMessages(messages, maxTokens, { timeoutMs: 8000 });
 }
 async function testLLMConnection() {
   setLLMStatus('正在测试连接...', 'info');
@@ -2921,6 +2956,101 @@ function generateMockAIData(target, model) { if (model === 'thickness') { return
 
 const ZONES = { qdp: {title:'全大屏过热器', sys:'PSH', spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', count:'6片×4小屏', desc:'位于炉膛上方，全辐射式受热面。工作条件极为恶劣，屏底外圈采用 SA-213T91 耐热钢。', params:'吸收炉膛高温辐射热 | 烟气侧易结渣 | 需重点监控夹持管状态'}, hp: {title:'后屏/屏式过热器', sys:'ISH', spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', count:'21屏', desc:'布置于炉膛出口处，辐射对流式受热面。最外圈及包扎管底部采用奥氏体不锈钢 TP347H。', params:'承受炉膛出口高温烟气冲刷 | 易发生高温腐蚀 | 节距 S1=685.8'}, gg: {title:'高温过热器 (高过)', sys:'HSH', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', count:'32片', desc:'悬吊于水平烟道内，顺列顺流布置。12管圈U形绕制，暴露在最外侧的管子采用 TP304H。', params:'蒸汽温度最高区 | 烟气流向转折区 | 需防范管排晃动磨损'}, gz: {title:'高温再热器 (高再)', sys:'HRH', spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', count:'64片', desc:'位于水平烟道后部，7根管圈绕制。入口设有喷水减温器，控制再热汽温。', params:'带喷水减温控制 | 烟气温度开始下降 | 管间由带状机械管夹定位'}, dwgr: {title:'低温过热器 (低过)', sys:'LSH', spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', count:'112排', desc:'布置于尾部竖井前烟道，顺列逆流布置。水平段分4组，留有检修空间。', params:'入口烟温 876.6℃ | 出口烟温 382.7℃ | 压降 -0.3kPa | 易积灰'}, dwzr: {title:'低温再热器 (低再)', sys:'LRH', spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', count:'112片+56片', desc:'布置于尾部竖井后烟道，与低过并列。水平段5组，垂直段每2排并1排。', params:'入口烟温 840.3℃ | 出口烟温 349.4℃ | 压降 -0.2kPa | 支撑块承重'}, scr: {title:'SCR 脱硝反应器', sys:'SCR', spec:'氨注射栅格 + 催化剂', count:'A/B侧', desc:'位于尾部烟道下方，喷氨格栅将氨气与烟气均匀混合，通过催化剂还原 NOx。', params:'入口NOx ~278 mg/Nm³ | 出口NOx 25.1 mg/Nm³ | 脱硝效率 99.9% | 氨逃逸 <3ppm'}, smq: {title:'省煤器', sys:'ECO', spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', count:'124管', desc:'分上、下两级串联布置于烟气挡板之后的下行竖井内，利用尾部烟气余热加热锅炉给水，降低排烟温度。', params:'上/下两级分级串联 | 烟温 287.5℃ → 289.0℃ | 易发生低温腐蚀与飞灰磨损'} };
 function showZone(z) { const info = ZONES[z]; const el = document.getElementById('zoneDetail'); el.style.display = 'block'; el.innerHTML = `<div class="card-title"><span class="badge badge-ww">${info.sys}</span> ${info.title}</div><div class="info-grid"><div class="info-item"><div class="k">规格/材质</div><div class="v">${info.spec}</div></div><div class="info-item"><div class="k">数量/规模</div><div class="v">${info.count}</div></div><div class="info-item" style="grid-column:span 2;"><div class="k">湛江#1机组 实时运行参数</div><div class="v" style="font-size:13px; color:var(--warn);">${info.params}</div></div><div class="info-item" style="grid-column:span 2;"><div class="k">工艺与防磨防爆描述</div><div class="v" style="font-size:12px;">${info.desc}</div></div></div>`; el.scrollIntoView({behavior:'smooth', block:'nearest'}); }
+
+// ========== AI 数据助手桥接（assistant-v1.js 复用，不得改变既有行为） ==========
+const ASSISTANT_EDIT_FIELDS = ['date', 'code', 'type', 'desc', 'thickness', 'hardness', 'spec', 'material'];
+const ASSISTANT_EDIT_FIELD_LABELS = { date: '日期', code: '管段编码', type: '事件类型', desc: '描述', thickness: '厚度', hardness: '硬度', spec: '规格', material: '材质' };
+
+function normalizeAssistantDateText(value) {
+  const text = String(value ?? '').trim();
+  if(!text) return null;
+  const match = text.match(/^(\d{4})\s*[-/年.]\s*(\d{1,2})\s*[-/月.]\s*(\d{1,2})\s*日?$/);
+  if(!match) return null;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  if(!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  if(month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(year, month - 1, day);
+  if(date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function updateEventRecord(ts, field, value) {
+  const key = String(field ?? '').trim();
+  if(ASSISTANT_EDIT_FIELDS.indexOf(key) < 0) return { ok: false, error: `不支持的字段：${field || '空'}` };
+  const target = userDB.events.find(record => Number(record.ts) === Number(ts));
+  if(!target) return { ok: false, error: '没有找到这条记录，可能已被删除，请重新查询。' };
+  let next = String(value ?? '').trim();
+  if(key === 'date') {
+    const normalized = normalizeAssistantDateText(next);
+    if(!normalized) return { ok: false, error: '日期无法识别，请使用 YYYY-MM-DD 格式。' };
+    next = normalized;
+  } else if(key === 'thickness') {
+    const num = Number(next);
+    if(!Number.isFinite(num) || num < 0.1 || num > 100) return { ok: false, error: '厚度必须是 0.1 ~ 100 之间的数字（mm）。' };
+    next = String(num);
+  } else if(key === 'hardness') {
+    const num = Number(next);
+    if(!Number.isFinite(num) || num < 1 || num > 600) return { ok: false, error: '硬度必须是 1 ~ 600 之间的数字（HB）。' };
+    next = String(num);
+  } else if(key === 'code') {
+    next = next.toUpperCase();
+    if(!/^[12]-[A-Z]{2,3}-[A-Z]{1,3}-\d{3}-\d{4}-[A-Z0-9]{3}(?:-R\d+)?$/.test(next)) return { ok: false, error: '管段编码格式不正确，示例：1-WW-FR-008-0003-000。' };
+    const boiler = getBoilerFromCode(next);
+    if(boiler) target.boiler = boiler;
+  } else if(!next) {
+    return { ok: false, error: `${ASSISTANT_EDIT_FIELD_LABELS[key]}不能为空。` };
+  }
+  const before = String(target[key] ?? '');
+  if(before === next) return { ok: true, unchanged: true, before, after: next, record: target };
+  target[key] = next;
+  saveDB();
+  return { ok: true, unchanged: false, before, after: next, record: target };
+}
+
+function collectAssistantSnapshot(options = {}) {
+  const events = Array.isArray(userDB.events) ? userDB.events : [];
+  const replacements = Array.isArray(userDB.replacements) ? userDB.replacements : [];
+  let materialLibrary = [];
+  try { materialLibrary = getMaterialLibrary() || []; } catch (err) { materialLibrary = []; }
+  let warnings = [];
+  try { warnings = collectDashboardWarnings({ limit: 500 }) || []; } catch (err) { warnings = []; }
+  let overdueRows = [];
+  try {
+    const year = Number(document.getElementById('maintenanceCycleStart')?.value) || new Date().getFullYear();
+    overdueRows = buildMaintenanceOverdueRows(year, 'all') || [];
+  } catch (err) { overdueRows = []; }
+  let retiredCodes = [];
+  try { retiredCodes = [...collectRetiredTubeCodes()]; } catch (err) { retiredCodes = []; }
+  const snapshot = {
+    events,
+    replacements,
+    materialLibrary,
+    matrix: Array.isArray(matrix) ? matrix : [],
+    retiredCodes,
+    warnings,
+    overdueRows,
+    ledgerRows: [],
+    role: getAssistantRole(),
+    session: currentAuthSession || null,
+    now: new Date().toISOString()
+  };
+  if(options.withLedger) {
+    try { snapshot.ledgerRows = getGeneratedTubeLedgerRows(options.boiler || 'all') || []; } catch (err) { snapshot.ledgerRows = []; }
+  }
+  return snapshot;
+}
+
+function getAssistantRole() {
+  try {
+    const forced = new URLSearchParams(location.search || '').get('assistantRole');
+    if(forced === 'viewer' || forced === 'editor' || forced === 'admin') return forced;
+  } catch (err) { /* 非标准环境忽略 */ }
+  const role = currentAuthSession && currentAuthSession.role;
+  if(role === 'admin') return 'admin';
+  if(role === 'viewer') return 'viewer';
+  // 已登录的普通账号或本地离线模式：数据都在本机，按编辑权限处理
+  return 'editor';
+}
 
 // ========== INIT ==========
 initNav();

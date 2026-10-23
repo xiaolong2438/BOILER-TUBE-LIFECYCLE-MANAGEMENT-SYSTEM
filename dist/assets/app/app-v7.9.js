@@ -320,6 +320,98 @@ function exportCSV() {
 }
 
 // ========== 核心修复：防重复导入逻辑 ==========
+function importLifecycleRows(rawRows, options = {}) {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  const stats = { importedEvents: 0, importedReplacements: 0, skippedDuplicates: 0, skippedMismatch: 0, addedEventTs: [], addedReplacementTs: [], errors: [] };
+  if(rows.length < 2) { stats.errors.push('CSV 文件为空'); return stats; }
+  const headers = (rows[0] || []).map(item => String(item ?? '').replace(/^\uFEFF/, '').trim());
+  const hasNewColumns = headers.includes('炉号') && headers.includes('厚度(mm)');
+  const batchFilter = options.batchFilter || 'all';
+  let importEvents = 0, importReplacements = 0, skipDuplicates = 0, skipBoilerMismatch = 0;
+
+  // 查重辅助函数
+  const isEventExist = (event) => {
+      return userDB.events.some(e =>
+        e.code === event.code &&
+        e.type === event.type &&
+        e.date === event.date &&
+        e.desc === event.desc &&
+        String(e.spec || '') === String(event.spec || '') &&
+        String(e.material || '') === String(event.material || '') &&
+        String(e.thickness || '') === String(event.thickness || '') &&
+        String(e.hardness || '') === String(event.hardness || '')
+      );
+  };
+  const isReplacementExist = (boiler, oldCode, newCode, date, reason) => {
+      return userDB.replacements.some(r => (r.boiler || getBoilerFromCode(r.oldCode)) === boiler && r.oldCode === oldCode && r.newCode === newCode && r.date === date && r.reason === reason);
+  };
+
+  for(let i = 1; i < rows.length; i++) {
+    const cols = (Array.isArray(rows[i]) ? rows[i] : []).map(item => String(item ?? ''));
+    if(cols.every(cell => cell.trim() === '')) continue;
+    if(cols.length < 5) continue;
+
+    const category = cols[0].trim();
+    const boiler = normalizeBoiler(hasNewColumns ? cols[1] : getBoilerFromCode(cols[2] || ''));
+    const date = (hasNewColumns ? cols[2] : cols[1] || '').trim();
+    const code = (hasNewColumns ? cols[3] : cols[2] || '').trim().toUpperCase();
+    const spec = hasNewColumns ? (cols[4] || '').trim() : '';
+    const material = hasNewColumns ? (cols[5] || '').trim() : '';
+    const thickness = hasNewColumns ? (cols[6] || '').trim() : '';
+    const hardness = hasNewColumns ? (cols[7] || '').trim() : '';
+    const typeOrReason = (hasNewColumns ? cols[8] : cols[3] || '').trim();
+    const relatedCode = (hasNewColumns ? cols[9] : cols[4] || '').trim().toUpperCase();
+    const desc = hasNewColumns ? ((cols[10] || '').trim()) : (cols[5] ? cols[5].trim() : '');
+    const ts = Date.now() + i;
+    const rowBoiler = boiler || getBoilerFromCode(code) || getBoilerFromCode(relatedCode);
+    const codeMismatch = (getBoilerFromCode(code) && rowBoiler && getBoilerFromCode(code) !== rowBoiler) || (relatedCode && getBoilerFromCode(relatedCode) && rowBoiler && getBoilerFromCode(relatedCode) !== rowBoiler);
+    const filterMismatch = batchFilter !== 'all' && rowBoiler !== batchFilter;
+    if(!rowBoiler || codeMismatch || filterMismatch) {
+      skipBoilerMismatch++;
+      continue;
+    }
+
+    if (category === '事件' || category === 'event') {
+      const eventRecord = { boiler: rowBoiler, code, spec, material, thickness, hardness, type: typeOrReason, date, desc, ts };
+      if (!isEventExist(eventRecord)) {
+          userDB.events.push(eventRecord);
+          stats.addedEventTs.push(eventRecord.ts);
+          importEvents++;
+      } else {
+          skipDuplicates++;
+      }
+    } else if (category === '更换' || category === 'replacement') {
+      const replacementBoiler = rowBoiler;
+      if (!isReplacementExist(replacementBoiler, code, relatedCode, date, typeOrReason)) {
+          userDB.replacements.push({ boiler: replacementBoiler, oldCode: code, newCode: relatedCode, reason: typeOrReason, date, ts });
+          stats.addedReplacementTs.push(ts);
+
+          const 报废desc = `更换为新管 ${relatedCode}，原因：${typeOrReason}`;
+          const 报废event = { boiler: replacementBoiler, code: code, type: '报废更换', date, desc: 报废desc, ts: ts + 0.1 };
+          if(!isEventExist(报废event)) {
+              userDB.events.push(报废event);
+              stats.addedEventTs.push(报废event.ts);
+          }
+          const 投运desc = `替换旧管 ${code}，继承历史数据`;
+          const 投运event = { boiler: replacementBoiler, code: relatedCode, type: '安装投运', date, desc: 投运desc, ts: ts + 0.2 };
+          if(!isEventExist(投运event)) {
+              userDB.events.push(投运event);
+              stats.addedEventTs.push(投运event.ts);
+          }
+          importReplacements++;
+      } else {
+          skipDuplicates++;
+      }
+    }
+  }
+  saveDB();
+  stats.importedEvents = importEvents;
+  stats.importedReplacements = importReplacements;
+  stats.skippedDuplicates = skipDuplicates;
+  stats.skippedMismatch = skipBoilerMismatch;
+  return stats;
+}
+
 function importCSV(event) {
   const file = event.target.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -328,98 +420,9 @@ function importCSV(event) {
       const text = e.target.result;
       const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
       if (lines.length < 2) { showToast('CSV 文件为空', 'warn'); return; }
-      
-      function parseCSVLine(line) {
-        const result = []; let current = ''; let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (char === '"') {
-            if (inQuotes && line[i+1] === '"') { current += '"'; i++; }
-            else { inQuotes = !inQuotes; }
-          } else if (char === ',' && !inQuotes) {
-            result.push(current); current = '';
-          } else { current += char; }
-        }
-        result.push(current); return result;
-      }
-
-      const headers = parseCSVLine(lines[0]).map(item => item.replace(/^\uFEFF/, '').trim());
-      const hasNewColumns = headers.includes('炉号') && headers.includes('厚度(mm)');
-      const batchFilter = getBatchBoilerFilter();
-      let importEvents = 0, importReplacements = 0, skipDuplicates = 0, skipBoilerMismatch = 0;
-      
-      // 查重辅助函数
-      const isEventExist = (event) => {
-          return userDB.events.some(e =>
-            e.code === event.code &&
-            e.type === event.type &&
-            e.date === event.date &&
-            e.desc === event.desc &&
-            String(e.spec || '') === String(event.spec || '') &&
-            String(e.material || '') === String(event.material || '') &&
-            String(e.thickness || '') === String(event.thickness || '') &&
-            String(e.hardness || '') === String(event.hardness || '')
-          );
-      };
-      const isReplacementExist = (boiler, oldCode, newCode, date, reason) => {
-          return userDB.replacements.some(r => (r.boiler || getBoilerFromCode(r.oldCode)) === boiler && r.oldCode === oldCode && r.newCode === newCode && r.date === date && r.reason === reason);
-      };
-
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCSVLine(lines[i]);
-        if (cols.length < 5) continue;
-        
-        const category = cols[0].trim();
-        const boiler = normalizeBoiler(hasNewColumns ? cols[1] : getBoilerFromCode(cols[2] || ''));
-        const date = (hasNewColumns ? cols[2] : cols[1] || '').trim();
-        const code = (hasNewColumns ? cols[3] : cols[2] || '').trim().toUpperCase();
-        const spec = hasNewColumns ? (cols[4] || '').trim() : '';
-        const material = hasNewColumns ? (cols[5] || '').trim() : '';
-        const thickness = hasNewColumns ? (cols[6] || '').trim() : '';
-        const hardness = hasNewColumns ? (cols[7] || '').trim() : '';
-        const typeOrReason = (hasNewColumns ? cols[8] : cols[3] || '').trim();
-        const relatedCode = (hasNewColumns ? cols[9] : cols[4] || '').trim().toUpperCase();
-        const desc = hasNewColumns ? ((cols[10] || '').trim()) : (cols[5] ? cols[5].trim() : '');
-        const ts = Date.now() + i; 
-        const rowBoiler = boiler || getBoilerFromCode(code) || getBoilerFromCode(relatedCode);
-        const codeMismatch = (getBoilerFromCode(code) && rowBoiler && getBoilerFromCode(code) !== rowBoiler) || (relatedCode && getBoilerFromCode(relatedCode) && rowBoiler && getBoilerFromCode(relatedCode) !== rowBoiler);
-        const filterMismatch = batchFilter !== 'all' && rowBoiler !== batchFilter;
-        if(!rowBoiler || codeMismatch || filterMismatch) {
-          skipBoilerMismatch++;
-          continue;
-        }
-
-        if (category === '事件' || category === 'event') {
-          const eventRecord = { boiler: rowBoiler, code, spec, material, thickness, hardness, type: typeOrReason, date, desc, ts };
-          if (!isEventExist(eventRecord)) {
-              userDB.events.push(eventRecord);
-              importEvents++;
-          } else {
-              skipDuplicates++;
-          }
-        } else if (category === '更换' || category === 'replacement') {
-          const replacementBoiler = rowBoiler;
-          if (!isReplacementExist(replacementBoiler, code, relatedCode, date, typeOrReason)) {
-              userDB.replacements.push({ boiler: replacementBoiler, oldCode: code, newCode: relatedCode, reason: typeOrReason, date, ts });
-              
-              const 报废desc = `更换为新管 ${relatedCode}，原因：${typeOrReason}`;
-              const 报废event = { boiler: replacementBoiler, code: code, type: '报废更换', date, desc: 报废desc, ts: ts + 0.1 };
-              if(!isEventExist(报废event)) {
-                  userDB.events.push(报废event);
-              }
-              const 投运desc = `替换旧管 ${code}，继承历史数据`;
-              const 投运event = { boiler: replacementBoiler, code: relatedCode, type: '安装投运', date, desc: 投运desc, ts: ts + 0.2 };
-              if(!isEventExist(投运event)) {
-                  userDB.events.push(投运event);
-              }
-              importReplacements++;
-          } else {
-              skipDuplicates++;
-          }
-        }
-      }
-      saveDB();
-      showToast(`导入完成：新增事件 ${importEvents} 条、更换 ${importReplacements} 条，跳过重复 ${skipDuplicates} 条${skipBoilerMismatch ? `、机组不匹配 ${skipBoilerMismatch} 条` : ''}`, 'ok', 6000);
+      const rawRows = lines.map(parseCSVLine);
+      const result = importLifecycleRows(rawRows, { batchFilter: getBatchBoilerFilter() });
+      showToast(`导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}`, 'ok', 6000);
     } catch (err) {
       console.error(err);
       showToast('CSV 解析失败，请检查文件格式是否正确。', 'error');
@@ -427,7 +430,6 @@ function importCSV(event) {
   };
   reader.readAsText(file, 'UTF-8'); event.target.value = '';
 }
-
 function backupLocalData() { const backup = JSON.stringify({ version: 'v6.7-local-backup', exportedAt: new Date().toISOString(), data: userDB }, null, 2); downloadBlob(`锅炉本地数据备份_${new Date().toISOString().slice(0,10)}.json`, backup, 'application/json;charset=utf-8;'); }
 function clearLocalData() { const total = userDB.events.length + userDB.replacements.length; if(total === 0) { showToast('当前没有可清空的本地数据', 'info'); return; } if(confirm(`即将清空 ${total} 条本地数据。清空前将自动导出备份，是否继续？`) && confirm('请再次确认：备份下载后将清空浏览器本地数据。')) { backupLocalData(); userDB = {events:[], replacements:[]}; saveDB(); showToast(`已备份并清空 ${total} 条本地数据`, 'ok'); } }
 
@@ -630,10 +632,7 @@ function formatWallThicknessWarning(meta) {
   return values.length === 1 ? values[0] : `${values[0]}~${values[values.length - 1]}`;
 }
 function materialRuleForRow(item) {
-  const matches = collectWallWarningMatches(item);
-  if(matches.length === 0) return {};
-  const sampleNo = Number(item.sampleNo || materialSampleNo(item));
-  return matches.find(rule => Number(rule.no) === sampleNo) || matches[0];
+  return Object.hasOwn(item, 'theoryMatched') ? item : materialTheoryForItem(item);
 }
 function extractAdditionalThickness(remark, kind) {
   const match = String(remark || '').match(new RegExp(`${kind}附加壁厚\\s*(/|\\d+(?:\\.\\d+)?)\\s*mm?`, 'i'));
@@ -739,7 +738,22 @@ function collectDashboardWarnings(options = {}) {
       return { code: event.code, level, source: '本地录入', text: `${event.date} ${event.type} · ${event.desc}`, sort: level === 'HIGH' ? 0 : level === 'MEDIUM' ? 1 : 2, ts: event.ts || 0 };
     })
     .filter(item => item.level !== 'INFO' || /测厚|检验|评估|金相|蠕变|腐蚀|减薄/.test(item.text));
-  return [...systemWarnings, ...localWarnings].sort((a, b) => a.sort - b.sort || (b.ts || 0) - (a.ts || 0)).slice(0, limit);
+  const measuredWarnings = [...new Set(userDB.events.map(event => event.code))]
+    .filter(code => !isRetiredTubeCode(code, retiredCodes))
+    .map(code => {
+      const history = extractThicknessData(code, { includeSystem: false });
+      const current = history[history.length - 1];
+      if(!current) return null;
+      const info = resolveMaterialTheoryThickness(code, selectedTubePipeType(code));
+      const warning = assessReplacementWarning(current.val, info);
+      if(warning.level === 'normal') return null;
+      const level = warning.level === 'replace' ? 'HIGH' : 'MEDIUM';
+      return { code, level, source: '材料库理论厚度判定', sort: warning.level === 'replace' ? -2 : -1,
+        text: `${warning.label} · 实测 ${current.val}mm · ${info.threshold === null ? info.reason : `采用${info.pipeType === 'bend' ? '弯管外侧' : '直管'} ${info.threshold}mm；裕量 ${warning.margin.toFixed(2)}mm`}` };
+    }).filter(Boolean);
+  const measuredCodes = new Set(measuredWarnings.map(item => item.code));
+  return [...measuredWarnings, ...systemWarnings.filter(item => !measuredCodes.has(item.code)), ...localWarnings.filter(item => !measuredCodes.has(item.code))]
+    .sort((a, b) => a.sort - b.sort || (b.ts || 0) - (a.ts || 0)).slice(0, limit);
 }
 function getDashboardSurfaceHealth(unit = dashboardUnit) {
   return DASHBOARD_SURFACE_HEALTH.map(item => {
@@ -767,7 +781,7 @@ function buildDashboardTrendChart(stats = getDashboardTrendStats()) {
   if(!svg) return;
   const values = stats.series;
   const labels = stats.labels || ['2018', '2020', '2022', '当前'];
-  const width = 520, height = 174;
+  const width = 520, height = 284;
   const pad = { left: 38, right: 18, top: 22, bottom: 32 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
@@ -779,40 +793,40 @@ function buildDashboardTrendChart(stats = getDashboardTrendStats()) {
   const area = `${line} L ${points[points.length - 1][0].toFixed(1)} ${pad.top + plotH} L ${points[0][0].toFixed(1)} ${pad.top + plotH} Z`;
   const grid = [50, 60, 70, 80, 90].map(value => {
     const yy = y(value);
-    return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" stroke="rgba(127,179,213,0.12)" /><text x="${pad.left - 9}" y="${yy + 4}" text-anchor="end" fill="#7fb3d5" font-size="10">${value}</text>`;
+    return `<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" stroke="var(--chart-grid)" stroke-opacity="0.12" /><text x="${pad.left - 9}" y="${yy + 4}" text-anchor="end" fill="var(--chart-label)" font-size="10">${value}</text>`;
   }).join('');
-  const labelEls = labels.map((label, index) => `<text x="${x(index)}" y="${height - 12}" text-anchor="middle" fill="#7fb3d5" font-size="10">${label}</text>`).join('');
+  const labelEls = labels.map((label, index) => `<text x="${x(index)}" y="${height - 12}" text-anchor="middle" fill="var(--chart-label)" font-size="10">${label}</text>`).join('');
   const dots = points.map((point, index) => {
     const isLast = index === points.length - 1;
-    return `<circle cx="${point[0]}" cy="${point[1]}" r="${isLast ? 5 : 3.6}" fill="${isLast ? '#001122' : '#00d4ff'}" stroke="#2fd4e8" stroke-width="${isLast ? 2.5 : 1.6}"${isLast ? ' filter="url(#dashboardTrendGlow)"' : ''}><title>${labels[index]} ${point[2]}%</title></circle>`;
+    return `<circle cx="${point[0]}" cy="${point[1]}" r="${isLast ? 5 : 3.6}" fill="${isLast ? 'var(--chart-dot-fill)' : 'var(--chart-accent)'}" stroke="var(--chart-accent-2)" stroke-width="${isLast ? 2.5 : 1.6}"${isLast ? ' filter="url(#dashboardTrendGlow)"' : ''}><title>${labels[index]} ${point[2]}%</title></circle>`;
   }).join('');
   svg.innerHTML = `<defs>
     <linearGradient id="dashboardTrendFill" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.34" />
-      <stop offset="70%" stop-color="#00d4ff" stop-opacity="0.06" />
-      <stop offset="100%" stop-color="#00d4ff" stop-opacity="0" />
+      <stop offset="0%" style="stop-color:var(--chart-accent)" stop-opacity="0.34" />
+      <stop offset="70%" style="stop-color:var(--chart-accent)" stop-opacity="0.06" />
+      <stop offset="100%" style="stop-color:var(--chart-accent)" stop-opacity="0" />
     </linearGradient>
     <linearGradient id="dashboardTrendLine" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#17a9c4" /><stop offset="100%" stop-color="#2fd4e8" />
+      <stop offset="0%" style="stop-color:var(--chart-accent-2)" /><stop offset="100%" style="stop-color:var(--chart-accent-2)" />
     </linearGradient>
     <filter id="dashboardTrendGlow"><feGaussianBlur stdDeviation="2.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
   <rect x="0" y="0" width="${width}" height="${height}" fill="transparent" />
   ${grid}
-  <line x1="${pad.left}" y1="${pad.top + plotH}" x2="${width - pad.right}" y2="${pad.top + plotH}" stroke="rgba(127,179,213,0.24)" />
+  <line x1="${pad.left}" y1="${pad.top + plotH}" x2="${width - pad.right}" y2="${pad.top + plotH}" stroke="var(--chart-grid)" stroke-opacity="0.24" />
   <path d="${area}" fill="url(#dashboardTrendFill)" />
   <path d="${line}" fill="none" stroke="url(#dashboardTrendLine)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#dashboardTrendGlow)" />
   ${dots}
   ${labelEls}
-  <text x="${pad.left}" y="16" fill="#e6f7ff" font-size="12" font-weight="700">综合健康度趋势</text>
-  <text x="${width - pad.right}" y="16" text-anchor="end" fill="${stats.delta >= 0 ? '#22c07e' : '#f0574a'}" font-size="12" font-weight="700">${stats.delta >= 0 ? '+' : ''}${stats.delta}%</text>
+  <text x="${pad.left}" y="16" fill="var(--chart-title)" font-size="12" font-weight="700">综合健康度趋势</text>
+  <text x="${width - pad.right}" y="16" text-anchor="end" fill="${stats.delta >= 0 ? 'var(--chart-green)' : 'var(--chart-red)'}" font-size="12" font-weight="700">${stats.delta >= 0 ? '+' : ''}${stats.delta}%</text>
   <g id="dashboardTrendHover" opacity="0" pointer-events="none">
-    <line y1="${pad.top}" y2="${pad.top + plotH}" stroke="rgba(47,212,232,0.45)" stroke-width="1" stroke-dasharray="3 3" />
-    <circle r="5" fill="#001122" stroke="#2fd4e8" stroke-width="2" filter="url(#dashboardTrendGlow)" />
+    <line y1="${pad.top}" y2="${pad.top + plotH}" stroke="var(--chart-hover-line)" stroke-width="1" stroke-dasharray="3 3" />
+    <circle r="5" fill="var(--chart-dot-fill)" stroke="var(--chart-accent-2)" stroke-width="2" filter="url(#dashboardTrendGlow)" />
     <g id="dashboardTrendTip">
-      <rect rx="5" ry="5" fill="rgba(4,16,28,0.96)" stroke="rgba(72,202,228,0.4)" stroke-width="1" width="86" height="40" />
-      <text id="dashboardTrendTipVal" x="43" y="18" text-anchor="middle" fill="#8ce6f2" font-size="15" font-weight="700"></text>
-      <text id="dashboardTrendTipLbl" x="43" y="32" text-anchor="middle" fill="#7fb3d5" font-size="10"></text>
+      <rect rx="5" ry="5" fill="var(--chart-tip-bg)" stroke="var(--chart-tip-stroke)" stroke-width="1" width="86" height="40" />
+      <text id="dashboardTrendTipVal" x="43" y="18" text-anchor="middle" fill="var(--chart-tip-val)" font-size="15" font-weight="700"></text>
+      <text id="dashboardTrendTipLbl" x="43" y="32" text-anchor="middle" fill="var(--chart-label)" font-size="10"></text>
     </g>
   </g>
   <rect id="dashboardTrendHit" x="0" y="0" width="${width}" height="${height}" fill="transparent" style="cursor:crosshair" />`;
@@ -899,7 +913,8 @@ function renderDashboardHealthCore(stats) {
     };
     window.__healthRaf = requestAnimationFrame(step);
   }
-  right.innerHTML = `<div class="health-side-metric" style="--metric-color:${stats.delta >= 0 ? 'var(--ok)' : 'var(--danger)'}"><span>较上次检修</span><strong>${stats.delta >= 0 ? '+' : ''}${stats.delta}%</strong></div><div class="health-side-metric" style="--metric-color:var(--ok)"><span>闭环率</span><strong>83%</strong></div>`;
+  right.style.display = 'contents';
+  right.innerHTML = `<div class="health-side-metric hl" style="--metric-color:${stats.delta >= 0 ? 'var(--ok)' : 'var(--danger)'};grid-column:1;grid-row:1;align-self:center"><span>较上次检修</span><strong>${stats.delta >= 0 ? '+' : '-'}${stats.delta}%</strong></div><div class="health-side-metric" style="--metric-color:var(--ok);grid-column:3;grid-row:1;align-self:center"><span>生命周期闭环率</span><strong>83%</strong></div>`;
 }
 function syncDashboardSnapshot() {
   const updateTime = document.getElementById('dashboard-update-time');
@@ -977,18 +992,20 @@ function extractThicknessData(code, options = {}) {
   const localEvents = userDB.events.filter(e => e.code === code).map(e => ({ ...e, source: '本地录入' }));
   const data = [];
   [...timelineEvents, ...localEvents]
-    .filter(e => e.code === code && (String(e.type).includes('测厚') || String(e.desc).includes('壁厚') || String(e.desc).includes('减薄')))
+    .filter(e => e.code === code && (positiveThickness(e.thickness) !== null || String(e.type).includes('测厚') || String(e.desc).includes('壁厚') || String(e.desc).includes('减薄')))
     .forEach(e => {
       const typedThickness = parseFloat(e.thickness);
       const match = String(e.desc).match(/(?:壁厚|减薄至|厚度)\s*[:：]?\s*(\d+\.?\d*)/i);
       const value = Number.isFinite(typedThickness) ? typedThickness : (match ? parseFloat(match[1]) : NaN);
-      if (Number.isFinite(value)) {
+      if (Number.isFinite(value) && value > 0 && Number.isFinite(new Date(e.date).getTime())) {
         const d = new Date(e.date);
         const year = d.getFullYear() + (d.getMonth() / 12);
         data.push({ year: parseFloat(year.toFixed(2)), val: value, dateStr: e.date, source: e.source });
       }
     });
-  return data.sort((a, b) => a.year - b.year);
+  const byTime = new Map();
+  data.forEach(point => { if(!byTime.has(point.year) || byTime.get(point.year).val > point.val) byTime.set(point.year, point); });
+  return [...byTime.values()].sort((a,b) => a.year - b.year);
 }
 
 function switchView(viewId, { updateHash = true } = {}) {
@@ -997,6 +1014,11 @@ function switchView(viewId, { updateHash = true } = {}) {
   const btn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b === btn));
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === target));
+  const titleEl = document.getElementById('topbar-title');
+  const VIEW_TITLES = { dashboard: '炉管风险驾驶舱', 'tube-analysis': '管段综合分析', 'maintenance-plan': '检修计划指挥', datamgr: '数据录入与管理', generator: '编码生成器', inventory: '全量管段台账', components: '受热面材料库', headers: '集箱库', diagram: '炉管分布图' };
+  if(titleEl) titleEl.textContent = VIEW_TITLES[viewId] || (btn ? btn.querySelector('span')?.textContent : '') || titleEl.textContent;
+  if(window.scrollY > 8) window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.body.classList.remove('rail-open');
   if(btn) btn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   if(updateHash && location.hash !== '#view-' + viewId) history.replaceState(null, '', '#view-' + viewId);
 }
@@ -1016,15 +1038,32 @@ function initNav() {
   const fromHash = (location.hash || '').replace('#view-', '');
   if(fromHash && document.getElementById('view-' + fromHash)) switchView(fromHash, { updateHash: false });
 }
+function toggleRail() {
+  if (window.matchMedia('(min-width: 961px)').matches && document.body.classList.contains('rail-collapsed') && typeof window.toggleRailCollapse === 'function') {
+    window.toggleRailCollapse();
+    return;
+  }
+  document.body.classList.toggle('rail-open');
+}
+
+// 数字键 1-9 快速切换模块（焦点不在输入控件时生效）
+document.addEventListener('keydown', (e) => {
+  if(!/^[1-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if(tag === 'input' || tag === 'select' || tag === 'textarea' || e.target.isContentEditable) return;
+  const btns = [...document.querySelectorAll('.nav-btn')];
+  const idx = Number(e.key) - 1;
+  if(idx < btns.length && !btns[idx].classList.contains('active')) switchView(btns[idx].dataset.view);
+});
 function updateClock() { document.getElementById('clock').textContent = new Date().toLocaleTimeString('zh-CN', {hour12: false}); }
 let clockTimer = setInterval(updateClock, 1000);
 document.addEventListener('visibilitychange', () => {
   if(document.hidden) { clearInterval(clockTimer); clockTimer = null; }
   else if(!clockTimer) { updateClock(); clockTimer = setInterval(updateClock, 1000); }
 });
-updateClock(); syncDashboardSnapshot();
+updateClock();
 function animateCounters() { document.querySelectorAll('[data-count]').forEach(el => { const target = parseInt(el.dataset.count); let cur = 0; const step = Math.max(1, Math.floor(target / 40)); const int = setInterval(() => { cur += step; if (cur >= target) { cur = target; clearInterval(int); } el.textContent = cur.toLocaleString(); }, 30); }); }
-function buildBarChart() { const box = document.getElementById('barChart'); if(!box) return; const data = [{l:'水冷壁',sys:'WW',v:722,c:'var(--ok)'},{l:'低过',sys:'LSH',v:1120,c:'var(--accent-3)'},{l:'大屏',sys:'PSH',v:336,c:'var(--accent)'},{l:'屏过',sys:'ISH',v:273,c:'#ff9f43'},{l:'高过',sys:'HSH',v:384,c:'var(--danger)'},{l:'低再',sys:'LRH',v:1344,c:'#a29bfe'},{l:'高再',sys:'HRH',v:448,c:'#fd79a8'},{l:'省煤器',sys:'ECO',v:124,c:'var(--ok)'}]; const max = Math.max(...data.map(d => d.v)); box.innerHTML = data.map(d => `<button type="button" class="bar-item" data-sys="${escapeHTML(d.sys)}" onclick="openComponentLifecycle('${escapeHTML(d.sys)}','${escapeHTML(d.l)}')" title="查看${escapeHTML(d.l)}检修记录"><div class="bar" data-val="${d.v}" style="height:${(d.v/max)*85}%; background:linear-gradient(180deg, ${d.c}, rgba(0,29,61,0.8));"></div><div class="bar-label">${escapeHTML(d.l)}</div></button>`).join(''); }
+function buildBarChart() { const box = document.getElementById('barChart'); if(!box) return; const data = [{l:'水冷壁',sys:'WW',v:722,c:'var(--ok)'},{l:'低过',sys:'LSH',v:1120,c:'var(--accent)'},{l:'大屏',sys:'PSH',v:336,c:'var(--accent)'},{l:'屏过',sys:'ISH',v:273,c:'var(--chart-orange)'},{l:'高过',sys:'HSH',v:384,c:'var(--danger)'},{l:'低再',sys:'LRH',v:1344,c:'var(--chart-violet)'},{l:'高再',sys:'HRH',v:448,c:'var(--chart-pink)'},{l:'省煤器',sys:'ECO',v:124,c:'var(--ok)'}]; const max = Math.max(...data.map(d => d.v)); box.innerHTML = data.map(d => `<button type="button" class="bar-item" data-sys="${escapeHTML(d.sys)}" onclick="openComponentLifecycle('${escapeHTML(d.sys)}','${escapeHTML(d.l)}')" title="查看${escapeHTML(d.l)}检修记录"><div class="bar" data-val="${d.v}" style="height:${(d.v/max)*85}%; background:linear-gradient(180deg, ${d.c}, var(--chart-bar-base));"></div><div class="bar-label">${escapeHTML(d.l)}</div></button>`).join(''); }
 function genCode() { const b=document.getElementById('f-boiler').value, s=document.getElementById('f-system').value, z=document.getElementById('f-zone').value; if(!s || !z) return; const p=String(document.getElementById('f-panel').value).padStart(3,'0'), t=String(document.getElementById('f-tube').value).padStart(4,'0'), g=document.getElementById('f-seg').value; const code = `${b}-${s}-${z}-${p}-${t}-${g}`; document.getElementById('codeOut').innerHTML = `<span class="code-segment">${escapeHTML(b)}</span>-<span class="code-segment">${escapeHTML(s)}</span>-<span class="code-segment">${escapeHTML(z)}</span>-<span class="code-segment">${escapeHTML(p)}</span>-<span class="code-segment">${escapeHTML(t)}</span>-<span class="code-segment">${escapeHTML(g)}</span>`; const matched = validateCodeAgainstMatrix(code); document.getElementById('codeDesc').textContent = matched ? `${matched.row.name} · ${matched.row.spec} · ${matched.row.mat}` : '当前编号超出台账矩阵范围，请核对屏/排与管圈编号。'; window._curCode = code; }
 ['f-boiler','f-zone','f-panel','f-tube','f-seg'].forEach(id => document.getElementById(id).addEventListener('input', genCode));
 function copyCode() { if(window._curCode) { navigator.clipboard?.writeText(window._curCode); showToast(`已复制编码：${window._curCode}`, 'ok'); } }
@@ -1096,7 +1135,11 @@ function buildTubeProfileHTML(rawCode, options = {}) {
   const profile = getTubeProfileData(rawCode);
   if(!profile) return `<div class="alert alert-warn">未找到 ${escapeHTML(rawCode)} 的任何数据。</div>`;
   const { code, data: d, source, badge, timeline, thicknessData } = profile;
-  const statusColor = d.status==='ok'?'var(--ok)':d.status==='warn'?'var(--warn)':'var(--danger)';
+  const pipeType = options.pipeType ?? selectedTubePipeType(code);
+  const thresholdInfo = resolveTubeTheoryThreshold(code, pipeType);
+  const latestThickness = thicknessData[thicknessData.length - 1]?.val ?? null;
+  const replacementWarning = assessReplacementWarning(latestThickness, thresholdInfo);
+  const statusColor = replacementWarning.level === 'replace' ? 'var(--danger)' : replacementWarning.level === 'replace-soon' ? 'var(--warn)' : d.status==='ok'?'var(--ok)':d.status==='warn'?'var(--warn)':'var(--danger)';
   const sourceLabel = source === 'local' ? '本地录入' : source === 'inventory' ? '台账规则' : source === 'rule' ? '编码规则' : '系统演示';
   let miniChartSVG = '';
   let aiTrendEntry = `<div class="alert alert-info" style="margin-top:15px;"><div><strong>AI趋势分析待补充测厚数据</strong><br><span style="font-size:12px;color:var(--text-dim);">本地测厚记录不足 2 条，当前仅展示基础档案与寿命事件。</span></div></div>`;
@@ -1106,22 +1149,24 @@ function buildTubeProfileHTML(rawCode, options = {}) {
       const minX = thicknessData[0].year; const maxX = thicknessData[thicknessData.length-1].year;
       const xS = x => p + ((x-minX)/(maxX-minX || 1)) * (w-2*p); const yS = y => h - p - ((y-minY)/(maxY-minY || 1)) * (h-2*p);
       let path = thicknessData.map((d,i) => `${i===0?'M':'L'} ${xS(d.year)} ${yS(d.val)}`).join(' ');
-      miniChartSVG = `<svg class="mini-chart" viewBox="0 0 ${w} ${h}"><path d="${path}" fill="none" stroke="#00d4ff" stroke-width="2"/><path d="${path} L ${xS(maxX)} ${h-p} L ${xS(minX)} ${h-p} Z" fill="rgba(0,212,255,0.1)"/>${thicknessData.map(d=>`<circle cx="${xS(d.year)}" cy="${yS(d.val)}" r="3" fill="#00d4ff"/>`).join('')}</svg>`;
+      miniChartSVG = `<svg class="mini-chart" viewBox="0 0 ${w} ${h}"><path d="${path}" fill="none" stroke="var(--chart-accent)" stroke-width="2"/><path d="${path} L ${xS(maxX)} ${h-p} L ${xS(minX)} ${h-p} Z" fill="var(--chart-accent-soft)"/>${thicknessData.map(d=>`<circle cx="${xS(d.year)}" cy="${yS(d.val)}" r="3" fill="var(--chart-accent)"/>`).join('')}</svg>`;
       const latestThickness = thicknessData[thicknessData.length - 1];
-      aiTrendEntry = `<div class="alert alert-info" style="margin-top:15px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><strong>已具备AI趋势分析条件</strong><br><span style="font-size:12px;color:var(--text-dim);">本地测厚记录 ${thicknessData.length} 条，最新 ${escapeHTML(latestThickness.dateStr)} / ${latestThickness.val.toFixed(2)}mm</span></div><button class="btn btn-ai" onclick="openAITrendFromLifecycle('${escapeHTML(code)}')">进入AI趋势分析</button></div>`;
+      aiTrendEntry = `<div class="alert alert-info" style="margin-top:15px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><strong>已具备AI趋势分析条件</strong><br><span style="font-size:12px;color:var(--text-dim);">本地测厚记录 ${thicknessData.length} 条，最新 ${escapeHTML(latestThickness.dateStr)} / ${latestThickness.val.toFixed(2)}mm</span></div><button class="btn btn-ai" onclick="analyzeTubeDetails('${escapeHTML(code)}')">查看预测曲线与模型判定</button></div>`;
   }
+  const theoryHTML = `<div class="info-grid" style="margin-top:12px"><div class="info-item"><div class="k">名义壁厚</div><div class="v">${thresholdInfo.nominalWall ?? '--'} mm</div></div><div class="info-item"><div class="k">直管理论厚度</div><div class="v">${thresholdInfo.straight ?? '--'} mm</div></div><div class="info-item"><div class="k">弯管外侧理论厚度</div><div class="v">${thresholdInfo.bend ?? '--'} mm</div></div><div class="info-item"><div class="k">最终采用阈值</div><div class="v" style="color:${replacementWarning.level === 'normal' ? 'var(--ok)' : 'var(--danger)'}">${thresholdInfo.matched ? (thresholdInfo.pipeType === 'bend' ? '弯管外侧' : '直管') + ' ' + thresholdInfo.threshold + ' mm' : '未匹配材料库'}</div></div></div><div class="alert ${replacementWarning.level === 'normal' ? 'alert-info' : 'alert-warn'}" style="margin-top:12px"><strong>${replacementWarning.label}</strong>${replacementWarning.margin !== null ? `：当前 ${latestThickness}mm，距理论阈值 ${replacementWarning.margin.toFixed(2)}mm` : '：禁止输出寿命数字或误导性曲线'}</div>`;
   const profileAction = options.context === 'search' ? '' : `<button class="btn btn-outline" onclick="openTubeProfile('${escapeHTML(code)}')">打开一体化档案</button>`;
   const lifecycleAction = options.context === 'lifecycle' ? '' : `<button class="btn btn-outline" onclick="jumpLifecycle('${escapeHTML(code)}')">在寿命跟踪页打开</button>`;
   const actions = profileAction || lifecycleAction ? `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:15px;">${profileAction}${lifecycleAction}</div>` : '';
   const timelineHTML = timeline.length
     ? timeline.map(t => `<div class="tl-item"><div class="tl-date">${escapeHTML(t.date)}</div><div class="tl-title">${escapeHTML(t.t)}</div><div class="tl-desc">${t.d}</div></div>`).join('')
     : '<div class="alert alert-info">暂无寿命事件记录。可在“数据录入”补充测厚、检修或更换信息后形成完整趋势。</div>';
-  return `<div class="tube-detail"><h3>${escapeHTML(code)} <span class="badge ${badge}" style="margin-left:10px;">${sourceLabel}</span></h3><div class="info-grid"><div class="info-item"><div class="k">名称/部件</div><div class="v">${escapeHTML(d.name)}</div></div><div class="info-item"><div class="k">规格材质</div><div class="v">${escapeHTML(d.spec)}</div></div><div class="info-item"><div class="k">首次记录/投运</div><div class="v">${escapeHTML(d.install)}</div></div><div class="info-item"><div class="k">状态/风险</div><div class="v" style="color:${statusColor}; font-size:12px;">${escapeHTML(d.risk)}</div></div></div>${miniChartSVG}${aiTrendEntry}${actions}</div><div class="card"><div class="card-title">全寿命事件时间线 (共 ${timeline.length} 条)</div><div class="timeline">${timelineHTML}</div></div>`;
+  return `<div class="tube-detail"><h3>${escapeHTML(code)} <span class="badge ${badge}" style="margin-left:10px;">${sourceLabel}</span></h3><div class="info-grid"><div class="info-item"><div class="k">名称/部件</div><div class="v">${escapeHTML(d.name)}</div></div><div class="info-item"><div class="k">规格材质</div><div class="v">${escapeHTML(d.spec)}</div></div><div class="info-item"><div class="k">首次记录/投运</div><div class="v">${escapeHTML(d.install)}</div></div><div class="info-item"><div class="k">状态/风险</div><div class="v" style="color:${statusColor}; font-size:12px;">${escapeHTML(d.risk)}</div></div></div>${theoryHTML}${miniChartSVG}${aiTrendEntry}${actions}</div><div class="card"><div class="card-title">全寿命事件时间线 (共 ${timeline.length} 条)</div><div class="timeline">${timelineHTML}</div></div>`;
 }
 function openTubeProfile(code) {
   document.querySelector('[data-view="tube-analysis"]').click();
   document.getElementById('lcCustomCode').value = code;
   document.getElementById('searchResult').innerHTML = buildTubeProfileHTML(code, { context: 'search' });
+  analyzeTubeDetails(code);
 }
 function doSearch() {
   const q = document.getElementById('lcCustomCode').value.trim().toUpperCase();
@@ -1138,12 +1183,14 @@ function doSearch() {
   });
   if(matches.length === 1 && matches[0].code === q) {
       res.innerHTML = buildTubeProfileHTML(q, { context: 'search' });
+      analyzeTubeDetails(q);
       return;
   }
   if(matches.length === 0) {
       const profile = getTubeProfileData(q);
       if(profile) {
         res.innerHTML = buildTubeProfileHTML(q, { context: 'search' });
+        analyzeTubeDetails(q);
         return;
       }
       let compInfo = matchComponentFromCode(q);
@@ -1357,6 +1404,24 @@ function isLegacyMaterialRow(item) {
     '省煤器|省煤器管束|蛇形管'
   ].includes(key);
 }
+function positiveThickness(value) {
+  if(value === null || value === undefined || String(value).trim() === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+function materialTheoryForItem(item) {
+  const size = parseSpecSize(item.spec);
+  const diameter = positiveThickness(item.diameter || size.diameter);
+  const nominalWall = positiveThickness(item.wallThickness || size.wallThickness);
+  const materials = materialAliases(item.material);
+  const matches = WALL_THICKNESS_WARNING_RULES.filter(rule =>
+    rule.sys === item.sys && Number(rule.diameter) === diameter && Number(rule.wall) === nominalWall &&
+    materials.length === 1 && materialAliases(rule.material).includes(materials[0]));
+  const rule = matches.length === 1 ? matches[0] : null;
+  return { ...item, nominalWall, straight: positiveThickness(rule?.straight), bend: positiveThickness(rule?.bend),
+    theoryMatched: Boolean(rule), theoryRule: rule, theoryZone: rule?.zone || '',
+    pressure: rule?.pressure ?? null, temperature: rule?.temperature ?? null, bendRadius: rule?.bendRadius ?? null };
+}
 function getMaterialLibrary() {
   const saved = JSON.parse(localStorage.getItem(MATERIAL_LIBRARY_KEY) || '[]');
   const merged = new Map();
@@ -1375,7 +1440,7 @@ function getMaterialLibrary() {
     }
     merged.set(materialKey(item), { stockQty:'', totalLengthM:'', reserveLocation:'', remark:'', ...item });
   });
-  return splitMaterialSpecRows([...merged.values()]);
+  return splitMaterialSpecRows([...merged.values()]).map(materialTheoryForItem);
 }
 function saveMaterialLibrary(items) {
   localStorage.setItem(MATERIAL_LIBRARY_KEY, JSON.stringify(items));
@@ -1418,6 +1483,23 @@ function exportMaterialCSV() {
   const rows = getMaterialLibrary().map(materialRowToCSV).join('\n');
   downloadBlob(`受热面材料库_${new Date().toISOString().slice(0,10)}.csv`, `${header}\n${rows}`, 'text/csv;charset=utf-8;');
 }
+function importMaterialRows(rawRows) {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  const stats = { imported: 0, errors: [] };
+  if(rows.length < 2) { stats.errors.push('材料库 CSV 文件为空'); return stats; }
+  const merged = new Map(getMaterialLibrary().map(item => [materialKey(item), item]));
+  for(let i = 1; i < rows.length; i++) {
+    const cols = (Array.isArray(rows[i]) ? rows[i] : []).map(item => String(item ?? ''));
+    if(cols.every(cell => cell.trim() === '')) continue;
+    const item = materialCSVToItem(cols);
+    if(!item.component || !item.spec || !item.material) continue;
+    merged.set(materialKey(item), item);
+    stats.imported++;
+  }
+  saveMaterialLibrary([...merged.values()]);
+  return stats;
+}
+
 function importMaterialCSV(event) {
   const file = event.target.files[0]; if(!file) return;
   const reader = new FileReader();
@@ -1425,16 +1507,8 @@ function importMaterialCSV(event) {
     try {
       const lines = e.target.result.split(/\r?\n/).filter(line => line.trim() !== '');
       if(lines.length < 2) { showToast('材料库 CSV 文件为空', 'warn'); return; }
-      const merged = new Map(getMaterialLibrary().map(item => [materialKey(item), item]));
-      let imported = 0;
-      for(let i = 1; i < lines.length; i++) {
-        const item = materialCSVToItem(parseCSVLine(lines[i]));
-        if(!item.component || !item.spec || !item.material) continue;
-        merged.set(materialKey(item), item);
-        imported++;
-      }
-      saveMaterialLibrary([...merged.values()]);
-      showToast(`材料库导入完成，更新/新增 ${imported} 条记录`, 'ok');
+      const result = importMaterialRows(lines.map(parseCSVLine));
+      showToast(`材料库导入完成，更新/新增 ${result.imported} 条记录`, 'ok');
     } catch (err) {
       console.error(err);
       showToast('材料库 CSV 解析失败，请检查文件格式。', 'error');
@@ -1492,6 +1566,7 @@ function loadLifecycle(customCode) {
   const profile = getTubeProfileData(code);
   if(!profile) { document.getElementById('lcContent').innerHTML = `<div class="alert alert-warn">未找到 ${escapeHTML(code)} 的任何数据。</div>`; return; }
   document.getElementById('lcContent').innerHTML = buildTubeProfileHTML(code, { context: 'lifecycle' });
+  analyzeTubeDetails(code);
 }
 
 function renderMatrix() { const tbody = document.getElementById('matrixBody'); let total = 0; tbody.innerHTML = matrix.map(m => { const count = (m.pMax - m.pMin + 1) * (m.tMax - m.tMin + 1); total += count; return `<tr><td style="font-family:inherit">${m.name}</td><td><span class="badge ${m.badge}">${m.sys}</span></td><td>${m.zone}</td><td>${m.pMin}~${m.pMax}</td><td>${m.tMin}~${m.tMax}</td><td style="color:var(--accent)">${count}</td><td>${m.spec}</td><td style="font-family:inherit;font-size:11px">${m.mat}</td></tr>`; }).join(''); document.getElementById('invTotal').textContent = total.toLocaleString(); }
@@ -2284,24 +2359,48 @@ async function ensureLLMModelSelected() {
   if(!config.model) throw new Error('未选择可用模型，请先识别模型并选择。');
   return config;
 }
-async function callLLMChatCompletions(promptText, maxTokens = 1800) {
+async function sendLLMMessages(messages, maxTokens = 1800, options = {}) {
   const config = await ensureLLMModelSelected();
   if(!config.baseUrl) throw new Error('请填写 API Base URL。');
   if(!config.apiKey) throw new Error('请填写 API Key。');
   if(!config.model) throw new Error('未识别到可用模型。');
   localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(config));
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, messages: buildLLMMessages(promptText), temperature: config.temperature, max_tokens: maxTokens })
-  });
-  const raw = await response.text();
-  let data;
-  try { data = raw ? JSON.parse(raw) : {}; } catch (err) { throw new Error(`接口返回非JSON内容：${raw.slice(0, 240)}`); }
-  if(!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message || raw.slice(0, 240) || '接口请求失败'}`);
-  const text = extractLLMResponseText(data);
-  if(!text) throw new Error('接口返回成功，但未找到 choices[0].message.content。');
-  return text;
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 0);
+  const controller = timeoutMs && typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, messages, temperature: config.temperature, max_tokens: maxTokens }),
+      signal: controller ? controller.signal : undefined
+    });
+    const raw = await response.text();
+    let data;
+    try { data = raw ? JSON.parse(raw) : {}; } catch (err) { throw new Error(`接口返回非JSON内容：${raw.slice(0, 240)}`); }
+    if(!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message || raw.slice(0, 240) || '接口请求失败'}`);
+    const text = extractLLMResponseText(data);
+    if(!text) throw new Error('接口返回成功，但未找到 choices[0].message.content。');
+    return text;
+  } catch (err) {
+    if(controller && controller.signal.aborted) {
+      const timeoutError = new Error(`模型调用超时（${Math.round(timeoutMs / 1000)} 秒）`);
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw err;
+  } finally {
+    if(timer) clearTimeout(timer);
+  }
+}
+
+async function callLLMChatCompletions(promptText, maxTokens = 1800) {
+  const payload = { messages: buildLLMMessages(promptText) };
+  return sendLLMMessages(payload.messages, maxTokens);
+}
+
+async function callAssistantChatCompletions(messages, maxTokens = 600) {
+  return sendLLMMessages(messages, maxTokens, { timeoutMs: 8000 });
 }
 async function testLLMConnection() {
   setLLMStatus('正在测试连接...', 'info');
@@ -2392,38 +2491,69 @@ function extractMaterialHint(value) {
   ];
   return patterns.find(pattern => text.replace(/\s/g, '').includes(pattern.replace(/\s/g, ''))) || '';
 }
-function resolveTubeTheoryThreshold(code) {
-  const inventory = validateCodeAgainstMatrix(code);
+function resolveMaterialTheoryThickness(code, pipeType) {
+  code = String(code || '').trim().toUpperCase();
+  const inventory = validateCodeAgainstMatrix(code)?.row;
   const component = matchComponentFromCode(code);
   const lifecycle = LIFECYCLE_DATA[code];
-  const localEvents = userDB.events.filter(event => event.code === code);
-  const latestMeta = [...localEvents].reverse().find(event => event.spec || event.material) || {};
-  const preciseMaterial = latestMeta.material || extractMaterialHint(latestMeta.spec) || extractMaterialHint(lifecycle?.spec);
-  const fallbackMaterial = [inventory?.row?.mat, component?.mat].filter(Boolean).join(' ');
-  const meta = {
-    sys: getCodeSystem(code),
-    zone: code.split('-')[2],
-    name: [lifecycle?.name, inventory?.row?.name, component?.name].filter(Boolean).join(' '),
-    position: [inventory?.row?.name, component?.name].filter(Boolean).join(' '),
-    spec: [latestMeta.spec, lifecycle?.spec, inventory?.row?.spec, component?.spec].filter(Boolean).join(' '),
-    material: preciseMaterial || fallbackMaterial
-  };
-  const resolved = resolveWallThicknessWarning(meta);
-  if(!resolved) {
-    return { threshold: 1, straight: null, bend: null, source: '未匹配到规格理论厚度，使用临时保护阈值 1mm', rule: null };
-  }
-  return {
-    threshold: parseFloat(resolved.value.toFixed(2)),
-    straight: resolved.straight,
-    bend: resolved.bend,
-    source: resolved.thresholdSource,
-    rule: resolved.rule,
-    meta
-  };
+  const events = userDB.events.filter(event => event.code === code)
+    .sort((a,b) => new Date(b.date) - new Date(a.date));
+  const localSpec = events.find(event => event.spec)?.spec;
+  const localMaterial = events.find(event => event.material)?.material;
+  const spec = localSpec || lifecycle?.spec || inventory?.spec || component?.spec || '';
+  // Explicit tube metadata takes precedence over multi-spec component descriptions.
+  const material = localMaterial || extractMaterialHint(localSpec || lifecycle?.spec) || inventory?.mat || component?.mat || '';
+  const pairs = specPairs(spec);
+  const sizes = [...new Map(pairs.map(pair => [`${Number(pair.diameter)}x${Number(pair.wall)}`, pair])).values()];
+  const materials = materialAliases(material);
+  const sys = getCodeSystem(code), zone = code.split('-')[2];
+  const meta = { sys, zone, spec, material };
+  const candidates = sizes.length === 1 && materials.length === 1 ? getMaterialLibrary().filter(item =>
+    item.sys === sys && (!item.theoryZone || item.theoryZone === zone) &&
+    Number(item.diameter) === Number(sizes[0].diameter) && Number(item.wallThickness) === Number(sizes[0].wall) &&
+    materialAliases(item.material).length === 1 && materialAliases(item.material)[0] === materials[0]) : [];
+  const selected = candidates.length === 1 ? candidates[0] : null;
+  const requestedType = pipeType ?? events.find(event => event.pipeType)?.pipeType ?? lifecycle?.pipeType ?? (selected?.shape === '直管' ? 'straight' : '');
+  const normalizedType = ['straight', '直管'].includes(requestedType) ? 'straight' : ['bend', '弯管外侧'].includes(requestedType) ? 'bend' : null;
+  const straight = positiveThickness(selected?.straight), bend = positiveThickness(selected?.bend);
+  const threshold = normalizedType === 'straight' ? straight : normalizedType === 'bend' ? bend : null;
+  const reason = !selected ? '材料库未唯一匹配，请补全材质、外径及名义壁厚' : !normalizedType ? '未指定测点管型' : threshold === null ? '材料库缺少所选管型理论厚度' : '';
+  return { matched: Boolean(selected && threshold !== null), pipeType: normalizedType, threshold,
+    nominalWall: selected?.nominalWall ?? (sizes.length === 1 ? positiveThickness(sizes[0].wall) : null), straight, bend,
+    source: selected ? `材料库：${selected.sampleName || selected.position} · ${selected.spec} · ${selected.material}` : reason,
+    reason, material: selected?.material || material, spec: selected?.spec || spec, rule: selected || false, meta };
+}
+function resolveTubeTheoryThreshold(code, pipeType) { return resolveMaterialTheoryThickness(code, pipeType); }
+function selectedTubePipeType(code) { return window.__tubePipeTypes?.[code]; }
+function formatTheoryDetails(info) {
+  const mm = value => value === null || value === undefined ? '未提供' : `${value.toFixed(2)}mm`;
+  return `名义壁厚 ${mm(info.nominalWall)} · 直管理论厚度 ${mm(info.straight)} · 弯管外侧理论厚度 ${mm(info.bend)} · 最终采用 ${info.pipeType === 'straight' ? '直管' : info.pipeType === 'bend' ? '弯管外侧' : '管型未指定'} ${mm(info.threshold)}。${info.reason || info.source}`;
 }
 function yearWhenCrosses(currentYear, currentValue, threshold, rate) {
   if(rate <= 0 || currentValue <= threshold) return currentValue <= threshold ? currentYear : Infinity;
   return currentYear + ((currentValue - threshold) / rate);
+}
+function robustLinearTrend(points) {
+  const sorted = points.filter(p => Number.isFinite(Number(p.value ?? p.val)) && Number.isFinite(Number(p.year))).map(p => ({ ...p, year: Number(p.year), value: Number(p.value ?? p.val) })).sort((a,b) => a.year - b.year);
+  if(sorted.length < 2) return { slope: 0, intercept: sorted[0]?.value || 0, residualMad: 0, points: sorted };
+  const slopes = [];
+  for(let i = 0; i < sorted.length; i += 1) for(let j = i + 1; j < sorted.length; j += 1) {
+    const dt = sorted[j].year - sorted[i].year;
+    if(dt > 0) slopes.push((sorted[j].value - sorted[i].value) / dt);
+  }
+  slopes.sort((a,b) => a - b);
+  const slope = slopes[Math.floor(slopes.length / 2)] || 0;
+  const intercepts = sorted.map(p => p.value - slope * p.year).sort((a,b) => a - b);
+  const intercept = intercepts[Math.floor(intercepts.length / 2)] || 0;
+  const residuals = sorted.map(p => p.value - (intercept + slope * p.year)).sort((a,b) => a - b);
+  const med = residuals[Math.floor(residuals.length / 2)] || 0;
+  const deviations = residuals.map(r => Math.abs(r - med)).sort((a,b) => a - b);
+  return { slope, intercept, residualMad: deviations[Math.floor(deviations.length / 2)] || 0, points: sorted };
+}
+function assessPredictionQuality(history, outliers = 0) {
+  const span = history.length >= 2 ? history[history.length - 1].year - history[0].year : 0;
+  const score = Math.max(0, Math.min(100, Math.round(35 + Math.min(history.length, 8) * 6 + Math.min(span, 6) * 5 - outliers * 8)));
+  return { points: history.length, span, score, reliable: history.length >= 3 && span >= 1 && score >= 55 };
 }
 function collectAICompositeSignals(code, history = []) {
   const events = userDB.events
@@ -2431,7 +2561,7 @@ function collectAICompositeSignals(code, history = []) {
     .sort((a, b) => new Date(a.date) - new Date(b.date));
   const hardnessHistory = events
     .map(event => ({ date: event.date, value: parseFloat(event.hardness), source: event.type || '记录', desc: event.desc || '' }))
-    .filter(point => Number.isFinite(point.value));
+    .filter(point => point.value > 0 && Number.isFinite(point.value) && Number.isFinite(new Date(point.date).getTime()));
   const metallographyPattern = /金相|组织|晶粒|碳化物|球化|晶界|蠕变|脱碳|裂纹|氧化|过热|珠光体|贝氏体|马氏体/i;
   const adversePattern = /裂纹|晶界|球化|蠕变|脱碳|过热|氧化皮|腐蚀|异常|劣化|超标|疏松/i;
   const inspectionPattern = /无损|UT|PT|MT|RT|超声|射线|磁粉|渗透|割管|取样|复检|检修|更换/i;
@@ -2440,9 +2570,16 @@ function collectAICompositeSignals(code, history = []) {
   const latestHardness = hardnessHistory[hardnessHistory.length - 1] || null;
   const firstHardness = hardnessHistory[0] || null;
   const hardnessDelta = latestHardness && firstHardness ? latestHardness.value - firstHardness.value : 0;
+  const hardnessPoints = hardnessHistory.map(point => ({ ...point, year: new Date(point.date).getFullYear() + new Date(point.date).getMonth() / 12 }));
+  const hardnessModel = robustLinearTrend(hardnessPoints);
+  const hardnessRate = hardnessModel.slope;
+  const hardnessQuality = assessPredictionQuality(hardnessPoints);
   const hardnessTrend = hardnessHistory.length < 2
     ? (latestHardness ? `单点硬度 ${latestHardness.value}HB，需后续复测形成趋势` : '暂无硬度数据')
-    : `硬度 ${firstHardness.value}HB → ${latestHardness.value}HB，变化 ${hardnessDelta >= 0 ? '+' : ''}${hardnessDelta.toFixed(0)}HB`;
+    : `硬度 ${firstHardness.value}HB → ${latestHardness.value}HB，变化 ${hardnessDelta >= 0 ? '+' : ''}${hardnessDelta.toFixed(0)}HB，变化率 ${hardnessRate >= 0 ? '+' : ''}${hardnessRate.toFixed(1)} HB/年`;
+  const hardnessForecast = latestHardness && hardnessHistory.length >= 3 && hardnessQuality.reliable
+    ? { oneYear: Math.round(latestHardness.value + hardnessRate), threeYear: Math.round(latestHardness.value + hardnessRate * 3), direction: Math.abs(hardnessRate) < 1 ? '稳定' : hardnessRate < 0 ? '软化' : '硬化', confidence: hardnessQuality.reliable ? hardnessQuality.score : Math.min(54, hardnessQuality.score) }
+    : null;
   const metallographyKeywords = [...new Set(metallography.flatMap(event => {
     const text = `${event.type || ''} ${event.desc || ''}`;
     return ['金相','组织','晶粒','碳化物','球化','晶界','蠕变','脱碳','裂纹','氧化','过热','腐蚀']
@@ -2456,6 +2593,9 @@ function collectAICompositeSignals(code, history = []) {
     events,
     hardnessHistory,
     hardnessTrend,
+    hardnessRate,
+    hardnessForecast,
+    hardnessQuality,
     latestHardness,
     metallography,
     metallographyKeywords,
@@ -2470,7 +2610,7 @@ function collectAICompositeSignals(code, history = []) {
   };
 }
 function buildCompositeAIReport(trendData, composite) {
-  const rank = { '正常': 1, '关注': 2, '预警': 3, '高危': 4 };
+  const rank = { '正常': 1, '关注': 2, '预警': 3, '高危': 4, '立即更换预警': 4, '接近理论厚度·提前更换预警': 4 };
   const score = Math.min(4, (rank[trendData.status] || 2) + composite.riskAdditions);
   const compositeRisk = score >= 4 ? '高危' : score >= 3 ? '预警' : score >= 2 ? '关注' : '正常';
   const hardnessText = composite.hardnessHistory.length
@@ -2483,78 +2623,81 @@ function buildCompositeAIReport(trendData, composite) {
     ? composite.inspectionEvents.map(e => `${e.date}：${e.type}，${e.desc}`).join('\n')
     : '暂无无损/割管/检修结论';
   const evidenceText = composite.evidenceSummary.map(item => `- ${item}`).join('\n');
-  const report = `【AI综合分析判断】\n综合风险：${compositeRisk}\n综合证据：\n${evidenceText}\n\n硬度历史：\n${hardnessText}\n\n金相组织/材料劣化证据：\n${metallographyText}\n\n无损检测与检修结论：\n${inspectionText}\n\n综合判断逻辑：减薄趋势给出寿命下限，当前厚度与理论阈值决定承压裕量；硬度变化用于识别材料软化、硬化或热影响异常；金相组织、裂纹、蠕变、脱碳、球化等记录用于校正单纯测厚无法覆盖的材料劣化风险。大模型深度分析会基于以上证据给出机理、复检范围和检修优先级，不会编造未录入的现场数据。`;
+  const report = `【AI综合分析判断】\n综合风险：${compositeRisk}\n综合证据：\n${evidenceText}\n\n硬度历史：\n${hardnessText}\n硬度预测：${composite.hardnessForecast ? `${composite.hardnessForecast.direction}，1年 ${composite.hardnessForecast.oneYear}HB，3年 ${composite.hardnessForecast.threeYear}HB，置信度 ${composite.hardnessForecast.confidence}%` : `数据不足，${composite.hardnessTrend}`}\n\n金相组织/材料劣化证据：\n${metallographyText}\n\n无损检测与检修结论：\n${inspectionText}\n\n综合判断逻辑：减薄趋势给出寿命下限，当前厚度与理论阈值决定承压裕量；硬度变化用于识别材料软化、硬化或热影响异常；金相组织、裂纹、蠕变、脱碳、球化等记录用于校正单纯测厚无法覆盖的材料劣化风险。大模型深度分析会基于以上证据给出机理、复检范围和检修优先级，不会编造未录入的现场数据。`;
   return { compositeRisk, score, hardnessText, metallographyText, inspectionText, evidenceText, report };
 }
-function predictThicknessTrendFromHistory(code, history) {
-  const sorted = [...history].sort((a, b) => a.year - b.year);
+function assessReplacementWarning(current, thresholdInfo) {
+  const threshold = Number(thresholdInfo?.threshold);
+  const value = Number(current);
+  if(current === null || current === undefined || current === '' || !thresholdInfo?.matched || threshold <= 0 || !Number.isFinite(threshold) || !Number.isFinite(value)) return { level: 'unknown', label: '无法判定更换预警', margin: null };
+  const margin = value - threshold;
+  const nearLimit = 0.2;
+  if(margin <= 0) return { level: 'replace', label: '立即更换预警', margin };
+  if(margin <= nearLimit + 1e-9) return { level: 'replace-soon', label: '接近理论厚度·提前更换预警', margin };
+  return { level: 'normal', label: '高于理论厚度下限', margin };
+}
+function predictThicknessTrendFromHistory(code, history, pipeType) {
+  const sorted = [...history].filter(p => positiveThickness(p.val) !== null && p.year !== null && Number.isFinite(Number(p.year))).map(p => ({...p, val: Number(p.val), year: Number(p.year)})).sort((a,b) => a.year - b.year);
   const first = sorted[0], last = sorted[sorted.length - 1];
-  const thresholdInfo = resolveTubeTheoryThreshold(code);
+  const thresholdInfo = resolveTubeTheoryThreshold(code, pipeType);
   const threshold = thresholdInfo.threshold;
+  const currentValue = sorted[sorted.length - 1]?.val ?? null;
+  const replacementWarning = assessReplacementWarning(currentValue, thresholdInfo);
+  if(sorted.length < 2 || !thresholdInfo.matched) {
+    const quality = assessPredictionQuality(sorted);
+    const compositeSignals = collectAICompositeSignals(code, sorted);
+    const status = ['replace','replace-soon'].includes(replacementWarning.level) ? replacementWarning.label : '数据不足';
+    const trendData = { target: code, current: currentValue, threshold, thresholdInfo, replacementWarning,
+      rateValue: null, rate: '不可可靠预测', rul: null, rulText: '不可可靠预测', conf: 0, status,
+      history: sorted, prediction: [], thresholdYear: '不可可靠预测', p50ThresholdYear: '不可可靠预测',
+      acceleratedThresholdYear: '不可可靠预测', baselineThresholdYear: '不可可靠预测', outliers: [], quality, reliable: false,
+      modelName: 'Theil-Sen + 近期窗口 + 三情景' };
+    const composite = buildCompositeAIReport(trendData, compositeSignals);
+    return { ...trendData, compositeRisk: composite.compositeRisk, compositeScore: composite.score, compositeSignals, composite,
+      report: `不可可靠预测：${thresholdInfo.reason || '有效测厚历史不足2个时点'}。\n${formatTheoryDetails(thresholdInfo)}\n${replacementWarning.label}\n\n${composite.report}` };
+  }
   const model = robustTheilSenModel(sorted);
   const robustRate = Math.max(0, -model.slope);
-  const recentSpan = Math.max(0.25, last.year - sorted[Math.max(0, sorted.length - 2)].year);
-  const recentRate = sorted.length >= 2 ? Math.max(0, (sorted[Math.max(0, sorted.length - 2)].val - last.val) / recentSpan) : robustRate;
+  const recentPoints = sorted.slice(-Math.min(4, sorted.length));
+  const recentModel = robustTheilSenModel(recentPoints);
+  const recentRate = Math.max(0, -recentModel.slope);
   const averageRate = Math.max(0, (first.val - last.val) / Math.max(0.25, last.year - first.year));
-  const conservativeRate = Math.max(robustRate, recentRate, averageRate * 1.15, 0.005);
-  const p50Rate = Math.max(robustRate || averageRate, 0.005);
+  const conservativeRate = Math.max(robustRate * 0.5 + recentRate * 0.3 + averageRate * 0.2, 0);
+  const p50Rate = Math.max(robustRate, 0);
+  const acceleratedRate = Math.max(conservativeRate * 1.35, p50Rate * 1.2, 0.001);
   const residualBand = Math.max(0.05, model.mad * 1.4826);
   const outliers = sorted.filter((point, index) => Math.abs(model.residuals[index]) > Math.max(0.18, residualBand * 2.5));
+  const quality = assessPredictionQuality(sorted, outliers.length);
   const p50Year = yearWhenCrosses(last.year, last.val, threshold, p50Rate);
   const conservativeYear = yearWhenCrosses(last.year, last.val, threshold, conservativeRate);
-  const horizonEnd = Math.min(
-    Math.ceil(Math.max(Number.isFinite(conservativeYear) ? conservativeYear : last.year + 10, last.year + 4)),
-    Math.ceil(last.year + 12)
-  );
+  const acceleratedYear = yearWhenCrosses(last.year, last.val, threshold, acceleratedRate);
+  const reliable = Boolean(quality.reliable && thresholdInfo.matched);
+  const horizonEnd = Math.min(Math.ceil(Math.max(last.year + 4, Number.isFinite(conservativeYear) ? conservativeYear : last.year + 8)), Math.ceil(last.year + 12));
   const prediction = [];
   for(let y = Math.ceil(last.year) + 1; y <= horizonEnd; y += 1) {
     const dt = y - last.year;
-    const band = residualBand + Math.max(0.03, (conservativeRate - p50Rate) * dt);
     const p50 = last.val - p50Rate * dt;
-    prediction.push({
-      year: y,
-      val: parseFloat(p50.toFixed(2)),
-      low: parseFloat((p50 - band).toFixed(2)),
-      high: parseFloat((p50 + band).toFixed(2))
-    });
+    const band = residualBand + Math.max(0.03, Math.abs(conservativeRate - p50Rate) * dt);
+    prediction.push({ year: y, baseline: Math.max(0, last.val - conservativeRate * dt), accelerated: Math.max(0, last.val - acceleratedRate * dt), val: parseFloat(p50.toFixed(2)), low: parseFloat((p50 - band).toFixed(2)), high: parseFloat((p50 + band).toFixed(2)) });
   }
   if(prediction.length === 0) prediction.push({ year: Math.ceil(last.year + 1), val: last.val, low: last.val - residualBand, high: last.val + residualBand });
-  const yearsToThreshold = Math.max(0, conservativeYear - last.year);
-  const status = yearsToThreshold <= 1 ? '高危' : yearsToThreshold <= 3 ? '预警' : yearsToThreshold <= 6 ? '关注' : '正常';
-  const confidence = Math.round(Math.max(45, Math.min(96, 50 + sorted.length * 7 + Math.min(18, (last.year - first.year) * 3) - residualBand * 18 - outliers.length * 8)));
+  const yearsToThreshold = Number.isFinite(conservativeYear) ? Math.max(0, conservativeYear - last.year) : Infinity;
+  const status = ['replace','replace-soon'].includes(replacementWarning.level) ? replacementWarning.label : !reliable ? '数据不足' : yearsToThreshold <= 1 ? '高危' : yearsToThreshold <= 3 ? '预警' : yearsToThreshold <= 6 ? '关注' : '正常';
+  const confidence = reliable ? quality.score : Math.min(54, quality.score);
   const rulHours = Number.isFinite(yearsToThreshold) ? Math.max(0, Math.round(yearsToThreshold * 8000)) : 999999;
-  const thresholdYearText = Number.isFinite(conservativeYear) ? conservativeYear.toFixed(1) : '未触及';
-  const trendReport = `【高级壁厚减薄趋势预测】\n对象：${code}\n模型：Theil-Sen鲁棒趋势 + 近期速率校正 + P90寿命下限\n\n测厚历史：\n${sorted.map(p => `${p.dateStr}：${p.val}mm（${p.source || '记录'}）`).join('\n')}\n\n规格预警阈值：${threshold.toFixed(2)}mm\n阈值来源：${thresholdInfo.source}\n\n趋势预测结果：\n- 当前壁厚：${last.val}mm\n- 鲁棒减薄速率：${robustRate.toFixed(3)} mm/y\n- 近期减薄速率：${recentRate.toFixed(3)} mm/y\n- 保守评估速率：${conservativeRate.toFixed(3)} mm/y\n- P50预计触阈：${Number.isFinite(p50Year) ? p50Year.toFixed(1) : '未触及'} 年\n- P90寿命下限：${thresholdYearText} 年（90%概率晚于此时触阈）\n- 异常测点：${outliers.length ? outliers.map(p => p.dateStr).join('、') : '未识别明显异常'}\n\n诊断提示：图中阴影带为预测不确定性区间，靠近或穿越红色理论厚度线时应提高复测频次，并结合相邻管排、同规格管段和运行工况复核。`;
+  const thresholdYearText = reliable && Number.isFinite(conservativeYear) ? conservativeYear.toFixed(1) : '不可可靠预测';
+  const trendReport = `【稳健壁厚减薄趋势预测】\n对象：${code}\n模型：Theil-Sen鲁棒趋势 + 近期窗口 + 三情景退化\n\n数据质量：${quality.points} 个测点，时间跨度 ${quality.span.toFixed(1)} 年，置信度 ${confidence}%\n${reliable ? '' : '结论：当前数据不足以支持可靠寿命预测，仅作趋势筛查。'}\n\n测厚历史：\n${sorted.map(p => `${p.dateStr}：${p.val}mm（${p.source || '记录'}）`).join('\n')}\n\n规格预警阈值：${threshold.toFixed(2)}mm\n阈值来源：${thresholdInfo.source}\n\n趋势预测结果：\n- 当前壁厚：${last.val}mm\n- 稳健减薄速率：${robustRate.toFixed(3)} mm/y\n- 近期减薄速率：${recentRate.toFixed(3)} mm/y\n- 基准评估速率：${conservativeRate.toFixed(3)} mm/y\n- 加速情景速率：${acceleratedRate.toFixed(3)} mm/y\n- P50预计触阈：${Number.isFinite(p50Year) ? p50Year.toFixed(1) : '未触及'} 年\n- 基准预计触阈：${Number.isFinite(conservativeYear) ? conservativeYear.toFixed(1) : '未触及'} 年\n- 加速情景触阈：${Number.isFinite(acceleratedYear) ? acceleratedYear.toFixed(1) : '未触及'} 年\n- 异常候选测点：${outliers.length ? outliers.map(p => p.dateStr).join('、') : '未识别明显异常'}\n\n诊断提示：预测不能替代现场检验；若存在裂纹、鼓包、泄漏、严重蠕变或阈值未匹配，应立即转专业寿命评估。`;
   const trendData = {
-    target: code,
-    current: last.val,
-    threshold,
-    thresholdInfo,
-    rateValue: conservativeRate,
-    rate: `${conservativeRate.toFixed(3)} mm/y`,
-    rul: rulHours,
-    rulText: rulHours >= 999999 ? '>999,999' : rulHours.toLocaleString(),
-    conf: confidence,
-    status,
-    history: sorted,
-    prediction,
-    thresholdYear: thresholdYearText,
-    p50ThresholdYear: Number.isFinite(p50Year) ? p50Year.toFixed(1) : '未触及',
-    outliers
+    target: code, current: last.val, threshold, thresholdInfo, replacementWarning, rateValue: conservativeRate, rate: `${conservativeRate.toFixed(3)} mm/y`, rul: reliable ? rulHours : null,
+    rulText: reliable ? (rulHours >= 999999 ? '>999,999' : rulHours.toLocaleString()) : '不可可靠预测', conf: confidence, status, history: sorted, prediction,
+    thresholdYear: thresholdYearText, p50ThresholdYear: Number.isFinite(p50Year) ? p50Year.toFixed(1) : '未触及', acceleratedThresholdYear: Number.isFinite(acceleratedYear) ? acceleratedYear.toFixed(1) : '未触及',
+    baselineThresholdYear: Number.isFinite(conservativeYear) ? conservativeYear.toFixed(1) : '未触及', outliers, quality, reliable, modelName: 'Theil-Sen + 近期窗口 + 三情景'
   };
   const compositeSignals = collectAICompositeSignals(code, sorted);
   const composite = buildCompositeAIReport(trendData, compositeSignals);
-  return {
-    ...trendData,
-    compositeRisk: composite.compositeRisk,
-    compositeScore: composite.score,
-    compositeSignals,
-    composite,
-    report: `${trendReport}\n\n${composite.report}`
-  };
-}
-function buildTrendAnalysisPrompt(data) {
-  return `炉管综合寿命风险大模型深度分析。\n\n分析对象：${data.target}\n\n测厚历史：\n${data.history.map(p => `- ${p.dateStr}: ${p.val}mm (${p.source || '记录'})`).join('\n')}\n\n趋势预测结果：\n- 当前壁厚：${data.current}mm\n- 保守年化减薄速率：${data.rate}\n- 对应规格理论厚度预警值：${data.threshold}mm\n- 阈值来源：${data.thresholdInfo?.source || '未匹配'}\n- P50触阈年份：${data.p50ThresholdYear}\n- P90寿命下限年份：${data.thresholdYear}（90%概率晚于此时触阈）\n- P90寿命下限小时：${data.rulText}h\n- 趋势评级：${data.status}\n- 本地综合风险：${data.compositeRisk || data.status}\n- 数据置信度：${data.conf}%\n\n硬度历史：\n${data.composite?.hardnessText || '暂无硬度历史'}\n\n金相组织/材料劣化证据：\n${data.composite?.metallographyText || '暂无金相组织记录'}\n\n无损检测、割管取样和检修结论：\n${data.composite?.inspectionText || '暂无无损/割管/检修结论'}\n\n请调用大模型专家能力，在不编造现场数据的前提下，综合减薄趋势、当前厚度、硬度变化、金相组织、裂纹/蠕变/脱碳/球化等证据，输出该炉管综合风险等级、主要失效机理、相邻管排排查范围、复测项目、检修优先级和需要补充的数据。`;
+  return { ...trendData, compositeRisk: composite.compositeRisk, compositeScore: composite.score, compositeSignals, composite, report: `${formatTheoryDetails(thresholdInfo)}\n更换判定：${replacementWarning.label}；实测 ${last.val}mm，裕量 ${replacementWarning.margin.toFixed(2)}mm，提前预警裕量≤0.20mm。\n${trendReport}\n\n${composite.report}` };
+}function buildTrendAnalysisPrompt(data) {
+  return `炉管综合寿命风险大模型深度分析。\n\n分析对象：${data.target}\n\n测厚历史：\n${data.history.map(p => `- ${p.dateStr}: ${p.val}mm (${p.source || '记录'})`).join('\n')}\n\n趋势预测结果：\n- 当前壁厚：${data.current}mm\n- 保守年化减薄速率：${data.rate}\n- 对应规格理论厚度预警值：${data.threshold === null ? '未匹配，不可可靠预测' : data.threshold + 'mm'}\n- ${formatTheoryDetails(data.thresholdInfo)}\n- 更换预警：${data.replacementWarning.label}\n- 阈值来源：${data.thresholdInfo?.source || '未匹配'}\n- P50触阈年份：${data.p50ThresholdYear}\n- 基准触阈估算年份：${data.thresholdYear}（基准情景估算，不代表概率保证）\n- 基准触阈估算小时：${data.rulText}h\n- 趋势评级：${data.status}\n- 本地综合风险：${data.compositeRisk || data.status}\n- 数据置信度：${data.conf}%\n\n硬度历史：\n${data.composite?.hardnessText || '暂无硬度历史'}\n硬度预测：${data.compositeSignals?.hardnessForecast ? `${data.compositeSignals.hardnessForecast.direction}，1年 ${data.compositeSignals.hardnessForecast.oneYear}HB，3年 ${data.compositeSignals.hardnessForecast.threeYear}HB，置信度 ${data.compositeSignals.hardnessForecast.confidence}%` : '数据不足，不能可靠预测'}\n\n金相组织/材料劣化证据：\n${data.composite?.metallographyText || '暂无金相组织记录'}\n\n无损检测、割管取样和检修结论：\n${data.composite?.inspectionText || '暂无无损/割管/检修结论'}\n\n请调用大模型专家能力，在不编造现场数据的前提下，综合减薄趋势、当前厚度、硬度变化、金相组织、裂纹/蠕变/脱碳/球化等证据，输出该炉管综合风险等级、主要失效机理、相邻管排排查范围、复测项目、检修优先级和需要补充的数据。`;
 }
 async function runDeepAIAnalysisFromTrend(data) {
   const promptBox = document.getElementById('llm-prompt');
@@ -2564,47 +2707,120 @@ async function runDeepAIAnalysisFromTrend(data) {
   setLLMStatus('AI模块正在调用大模型综合分析...', 'info');
   try {
     const text = await callLLMChatCompletions(buildTrendAnalysisPrompt(data), 2200);
+    if(window.__activeTubeAnalysis !== data) return;
     if(aiLLMBox) aiLLMBox.textContent = text;
     renderLLMResult(text);
     setLLMStatus('AI模块大模型综合分析完成。', 'ok');
+    setAIVisibilityStatus('本地预测与大模型综合分析均已完成。', 'info');
   } catch (err) {
+    if(window.__activeTubeAnalysis !== data) return;
     const message = formatLLMError(err, 'AI大模型调用');
     if(aiLLMBox) aiLLMBox.textContent = message;
     renderLLMResult(message);
     setLLMStatus('AI模块大模型调用失败，详情见结果框。', 'error');
+    setAIVisibilityStatus('本地预测已完成，但大模型调用失败；请查看下方错误说明。', 'warn');
   }
 }
-async function runAIAnalysis() {
-  const manualTarget = document.getElementById('ai-custom-target')?.value.trim().toUpperCase();
-  const target = manualTarget || document.getElementById('ai-target').value;
-  if(!target) { showToast('请下拉选择本地管段，或手动输入管段编码。', 'warn'); return; }
-  const history = extractThicknessData(target, { includeSystem: false });
-  if(history.length < 2) { showToast(`本地录入中 ${target} 的测厚数据不足，至少需要 2 条厚度记录才能预测趋势。`, 'warn'); populateAIThicknessTargets(); return; }
-  document.getElementById('ai-loading').style.display = 'block';
-  document.getElementById('ai-results').style.display = 'none';
-  const data = predictThicknessTrendFromHistory(target, history);
-  setTimeout(async () => {
-    renderAIResults(data);
-    await runDeepAIAnalysisFromTrend(data);
-  }, 600);
+function scrollToAIResults() {
+  const box = document.getElementById('ai-results');
+  if(!box) return;
+  requestAnimationFrame(() => setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40));
 }
-function renderAIResults(data) {
+function setAIVisibilityStatus(text, level = 'info') {
+  const box = document.getElementById('ai-visibility-status');
+  if(!box) return;
+  box.className = `alert alert-${level}`;
+  box.innerHTML = `<strong>预测模型结果</strong><span>${escapeHTML(text)}</span>`;
+}
+function analyzeTubeDetails(code) {
+  const info = resolveMaterialTheoryThickness(code, selectedTubePipeType(code));
+  document.getElementById('ai-custom-target').value = code;
+  document.getElementById('ai-pipe-type').value = info.pipeType || '';
+  return runAIAnalysis(code, info.pipeType || '');
+}
+function changeAnalysisPipeType(value) {
+  const code = document.getElementById('ai-custom-target').value.trim().toUpperCase() || document.getElementById('ai-target').value;
+  if(!code) return;
+  window.__tubePipeTypes = { ...window.__tubePipeTypes, [code]: value };
+  for(const id of ['searchResult', 'lcContent']) {
+    const box = document.getElementById(id);
+    if(box?.querySelector('.tube-detail h3')?.textContent.includes(code)) box.innerHTML = buildTubeProfileHTML(code, { context: id === 'lcContent' ? 'lifecycle' : 'search', pipeType: value });
+  }
+  renderDashboardWarnings();
+  return runAIAnalysis(code, value);
+}
+async function runAIAnalysis(explicitTarget, pipeType) {
+  const manualTarget = document.getElementById('ai-custom-target')?.value.trim().toUpperCase();
+  const target = explicitTarget || manualTarget || document.getElementById('ai-target').value;
+  if(!target) { showToast('请选择或输入管段编码。', 'warn'); return; }
+  pipeType = pipeType ?? (document.getElementById('ai-pipe-type').value || selectedTubePipeType(target));
+  const history = extractThicknessData(target, { includeSystem: false });
+  const data = predictThicknessTrendFromHistory(target, history, pipeType);
+  window.__activeTubeAnalysis = data;
+  setAIVisibilityStatus('本地预测模型已完成：正在展示壁厚/硬度趋势、理论阈值与风险判定。', 'info');
+  document.getElementById('ai-pipe-type').value = data.thresholdInfo.pipeType || '';
+  renderAIResults(data);
+  scrollToAIResults();
+  const report = document.getElementById('ai-llm-report');
+  const config = getLLMConfig();
+  if(config.baseUrl && config.apiKey && config.model) {
+    await runDeepAIAnalysisFromTrend(data);
+  } else {
+    if(report) report.textContent = '本地预测模型已完成分析；大模型接口未配置，未发起远程请求。';
+    setAIVisibilityStatus('本地预测已完成；远程大模型未配置，当前结果可直接用于现场判定。', 'info');
+  }
+  return data;
+}
+
+function renderHardnessChart(data) {
+  const svg = document.getElementById('hardnessChart');
+  const signal = data.compositeSignals;
+  if(!svg || !signal) return;
+  const points = signal.hardnessHistory.map(p => ({ ...p, year: new Date(p.date).getFullYear() + new Date(p.date).getMonth() / 12 })).filter(p => Number.isFinite(p.value));
+  const label = document.getElementById('hardnessTrendLabel');
+  const one = document.getElementById('hardnessOneYear');
+  const three = document.getElementById('hardnessThreeYear');
+  const conf = document.getElementById('hardnessConfidence');
+  if(label) label.textContent = signal.hardnessForecast ? `${signal.hardnessForecast.direction} · ${signal.hardnessRate.toFixed(1)} HB/年` : '数据不足，不能可靠预测';
+  if(one) one.textContent = signal.hardnessForecast ? `${signal.hardnessForecast.oneYear} HB` : '--';
+  if(three) three.textContent = signal.hardnessForecast ? `${signal.hardnessForecast.threeYear} HB` : '--';
+  if(conf) conf.textContent = signal.hardnessForecast ? `${signal.hardnessForecast.confidence}%` : '--';
+  if(points.length < 1) { svg.innerHTML = '<text x="24" y="44" fill="var(--chart-label)" font-size="14">暂无硬度数据</text>'; return; }
+  const width=980,height=260,p={top:30,right:28,bottom:42,left:58}; const vals=points.map(x=>x.value).concat(signal.hardnessForecast ? [signal.hardnessForecast.oneYear,signal.hardnessForecast.threeYear] : []); const min=Math.min(...vals)-10,max=Math.max(...vals)+10; const minY=Math.min(...points.map(x=>x.year)), maxY=Math.max(...points.map(x=>x.year), points[points.length-1].year + (signal.hardnessForecast ? 3 : 1), minY+1); const xs=y=>p.left+(y-minY)/Math.max(1,maxY-minY)*(width-p.left-p.right); const ys=v=>p.top+(height-p.top-p.bottom)-((v-min)/Math.max(1,max-min))*(height-p.top-p.bottom); const path=points.map((x,i)=>`${i?'L':'M'} ${xs(x.year)} ${ys(x.value)}`).join(' '); svg.innerHTML=`<rect x="${p.left}" y="${p.top}" width="${width-p.left-p.right}" height="${height-p.top-p.bottom}" rx="6" fill="var(--chart-panel)" stroke="var(--chart-panel-stroke)"/><text x="${p.left}" y="18" fill="var(--chart-title)" font-size="14" font-weight="700">Hardness Forecast · HB</text><path d="${path}" fill="none" stroke="var(--chart-orange)" stroke-width="3"/>${points.map(x=>`<circle cx="${xs(x.year)}" cy="${ys(x.value)}" r="5" fill="var(--chart-dot-fill)" stroke="var(--chart-orange)" stroke-width="2"><title>${x.date} ${x.value}HB</title></circle>`).join('')}<line x1="${p.left}" y1="${ys(points[points.length-1].value)}" x2="${width-p.right}" y2="${ys(points[points.length-1].value)}" stroke="var(--chart-orange)" stroke-opacity="0.25" stroke-dasharray="5 5"/><text x="${p.left-8}" y="${p.top+4}" text-anchor="end" fill="var(--chart-label)" font-size="11">${max.toFixed(0)}</text><text x="${p.left-8}" y="${height-p.bottom+4}" text-anchor="end" fill="var(--chart-label)" font-size="11">${min.toFixed(0)}</text>`;
+  for(let year = Math.ceil(minY); year <= maxY; year++) svg.innerHTML += `<text x="${xs(year)}" y="${height-12}" text-anchor="middle" fill="var(--chart-label)" font-size="11">${year}</text>`;
+  if(signal.hardnessForecast) { const y=points[points.length-1].year; svg.innerHTML += `<path d="M ${xs(y)} ${ys(points[points.length-1].value)} L ${xs(y+1)} ${ys(signal.hardnessForecast.oneYear)} L ${xs(y+3)} ${ys(signal.hardnessForecast.threeYear)}" fill="none" stroke="var(--chart-violet)" stroke-width="3" stroke-dasharray="8 5"/><circle cx="${xs(y+1)}" cy="${ys(signal.hardnessForecast.oneYear)}" r="4" fill="var(--chart-violet)"/><circle cx="${xs(y+3)}" cy="${ys(signal.hardnessForecast.threeYear)}" r="4" fill="var(--chart-violet)"/>`; }
+}function renderAIResults(data) {
   document.getElementById('ai-loading').style.display = 'none';
   document.getElementById('ai-results').style.display = 'block';
   document.getElementById('ai-rul').textContent = data.rulText || data.rul.toLocaleString();
   document.getElementById('ai-rate').textContent = data.rate;
+  const thresholdEl = document.getElementById('ai-threshold-detail');
+  if(thresholdEl) thresholdEl.textContent = formatTheoryDetails(data.thresholdInfo);
   document.getElementById('ai-conf').textContent = data.conf;
   document.getElementById('ai-status').textContent = data.status;
   document.getElementById('ai-status').style.color = data.status === '正常' ? 'var(--ok)' : data.status === '关注' ? 'var(--warn)' : 'var(--danger)';
   const compositeEl = document.getElementById('ai-composite');
+  const replacementEl = document.getElementById('ai-replacement-warning');
+  if(replacementEl) { replacementEl.textContent = data.replacementWarning?.label || '无法判定更换预警'; replacementEl.style.color = data.replacementWarning?.level === 'normal' ? 'var(--ok)' : data.replacementWarning?.level === 'unknown' ? 'var(--warn)' : 'var(--danger)'; }
   if(compositeEl) {
     compositeEl.textContent = data.compositeRisk || data.status;
     compositeEl.style.color = data.compositeRisk === '正常' ? 'var(--ok)' : data.compositeRisk === '关注' ? 'var(--warn)' : 'var(--danger)';
   }
   renderAIChart(data);
-  typeWriter('ai-report-text', data.report, 15);
+  renderHardnessChart(data);
+  document.getElementById('ai-report-text').textContent = data.report || '不可可靠预测';
+}
+function renderThicknessHistoryOnly(data) {
+  const svg = document.getElementById('aiChart'), points = data.history;
+  const minYear = points[0].year, span = Math.max(1, points[points.length-1].year - minYear);
+  const min = Math.max(0, Math.min(...points.map(p => p.val))-0.4), max = Math.max(...points.map(p => p.val))+0.4;
+  const x = y => 76 + (y-minYear)/span*720, y = v => 350-(v-min)/(max-min)*260;
+  svg.innerHTML = `<text x="24" y="30" fill="var(--chart-orange)" font-size="14">不可可靠预测 · 仅展示实测历史，不生成临时阈值或预测线</text><path d="${points.map((p,i) => `${i?'L':'M'} ${x(p.year)} ${y(p.val)}`).join(' ')}" fill="none" stroke="var(--chart-accent)" stroke-width="3"/>${points.map(p => `<circle cx="${x(p.year)}" cy="${y(p.val)}" r="5" fill="var(--chart-accent)"><title>${escapeHTML(p.dateStr || p.year)} ${p.val}mm</title></circle><text x="${x(p.year)}" y="380" fill="var(--chart-label)" font-size="12">${p.year}</text>`).join('')}`;
 }
 function renderAIChart(data) {
+  if(!document.getElementById('aiChart')) return;
+  if(!data || !Array.isArray(data.history) || data.history.length === 0) { document.getElementById('aiChart').innerHTML = '<text x="24" y="44" fill="var(--chart-label)" font-size="14">暂无可绘制的测厚数据</text>'; return; }
+  if(!Number.isFinite(data.threshold)) { renderThicknessHistoryOnly(data); return; }
   const svg = document.getElementById('aiChart');
   svg.innerHTML = '';
   const width = 980, height = 420, padding = { top: 56, right: 230, bottom: 62, left: 76 };
@@ -2613,12 +2829,12 @@ function renderAIChart(data) {
   const minYear = Math.floor(Math.min(...allPoints.map(p => p.year)));
   const numericP50 = parseFloat(data.p50ThresholdYear);
   const numericP90 = parseFloat(data.thresholdYear);
-  const markerYears = [numericP50, numericP90].filter(Number.isFinite);
+  const markerYears = [numericP50, numericP90].filter(y => Number.isFinite(y) && y <= data.history[data.history.length-1].year + 12);
   const maxYear = Math.ceil(Math.max(...allPoints.map(p => p.year), ...markerYears));
   const allVals = [
     data.threshold,
     ...data.history.map(p => p.val),
-    ...data.prediction.flatMap(p => [p.val, p.low, p.high].filter(Number.isFinite))
+    ...data.prediction.flatMap(p => [p.val, p.low, p.high, p.baseline, p.accelerated].filter(Number.isFinite))
   ];
   const minVal = Math.max(0, Math.min(...allVals) - 0.4);
   const maxVal = Math.max(...allVals) + 0.4;
@@ -2626,64 +2842,69 @@ function renderAIChart(data) {
   const yScale = (val) => padding.top + chartH - ((val - minVal) / Math.max(0.1, maxVal - minVal)) * chartH;
   const plotRight = width - padding.right, plotBottom = height - padding.bottom;
   svg.innerHTML += `<defs>
-    <linearGradient id="aiBand" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="rgba(34,192,126,0.26)"/><stop offset="100%" stop-color="rgba(0,212,255,0.04)"/></linearGradient>
-    <linearGradient id="riskZone" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="rgba(240,87,74,0.04)"/><stop offset="100%" stop-color="rgba(240,87,74,0.18)"/></linearGradient>
-    <linearGradient id="panelFill" x1="0" x2="1"><stop offset="0%" stop-color="rgba(0,29,61,0.72)"/><stop offset="100%" stop-color="rgba(0,6,15,0.88)"/></linearGradient>
+    <linearGradient id="aiBand" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" style="stop-color:var(--chart-green-soft)"/><stop offset="100%" style="stop-color:var(--chart-accent-faint)"/></linearGradient>
+    <linearGradient id="riskZone" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" style="stop-color:var(--chart-red-zone-1)"/><stop offset="100%" style="stop-color:var(--chart-red-zone-2)"/></linearGradient>
+    <linearGradient id="panelFill" x1="0" x2="1"><stop offset="0%" style="stop-color:var(--chart-panel-1)"/><stop offset="100%" style="stop-color:var(--chart-panel-2)"/></linearGradient>
     <filter id="aiGlow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>`;
-  svg.innerHTML += `<rect x="${padding.left}" y="${padding.top}" width="${chartW}" height="${chartH}" rx="6" fill="rgba(0,12,28,0.72)" stroke="rgba(127,179,213,0.18)" />`;
+  svg.innerHTML += `<rect x="${padding.left}" y="${padding.top}" width="${chartW}" height="${chartH}" rx="6" fill="var(--chart-panel)" stroke="var(--chart-panel-stroke)" />`;
   const threshY = yScale(data.threshold);
   svg.innerHTML += `<rect x="${padding.left}" y="${threshY}" width="${chartW}" height="${Math.max(0, plotBottom - threshY)}" fill="url(#riskZone)" />`;
   for(let i=0; i<=5; i++) {
     const y = padding.top + (chartH / 5) * i, val = maxVal - ((maxVal - minVal) / 5) * i;
-    svg.innerHTML += `<line x1="${padding.left}" y1="${y}" x2="${plotRight}" y2="${y}" stroke="rgba(127,179,213,0.14)" stroke-width="1" /><text x="${padding.left-12}" y="${y+4}" fill="#7fb3d5" font-size="11" text-anchor="end">${val.toFixed(1)}</text>`;
+    svg.innerHTML += `<line x1="${padding.left}" y1="${y}" x2="${plotRight}" y2="${y}" stroke="var(--chart-grid)" stroke-opacity="0.14" stroke-width="1" /><text x="${padding.left-12}" y="${y+4}" fill="var(--chart-label)" font-size="11" text-anchor="end">${val.toFixed(1)}</text>`;
   }
   for(let y = minYear; y <= maxYear; y++) {
     const x = xScale(y);
-    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="rgba(127,179,213,0.08)" stroke-width="1" /><text x="${x}" y="${height - 22}" fill="#7fb3d5" font-size="11" text-anchor="middle">${y}</text>`;
+    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-grid)" stroke-opacity="0.08" stroke-width="1" /><text x="${x}" y="${height - 22}" fill="var(--chart-label)" font-size="11" text-anchor="middle">${y}</text>`;
   }
-  svg.innerHTML += `<line x1="${padding.left}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}" stroke="rgba(127,179,213,0.36)" /><line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${plotBottom}" stroke="rgba(127,179,213,0.36)" />`;
-  svg.innerHTML += `<text x="${padding.left}" y="28" fill="#e6f7ff" font-size="15" font-weight="700">Wall Thickness Forecast</text><text x="${padding.left}" y="45" fill="#7fb3d5" font-size="11">unit: mm · threshold by tube specification</text><text x="22" y="${padding.top + 14}" fill="#7fb3d5" font-size="11" transform="rotate(-90 22 ${padding.top + 14})">厚度 / mm</text>`;
+  svg.innerHTML += `<line x1="${padding.left}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}" stroke="var(--chart-grid)" stroke-opacity="0.36" /><line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${plotBottom}" stroke="var(--chart-grid)" stroke-opacity="0.36" />`;
+  svg.innerHTML += `<text x="${padding.left}" y="28" fill="var(--chart-title)" font-size="15" font-weight="700">Wall Thickness Forecast</text><text x="${padding.left}" y="45" fill="var(--chart-label)" font-size="11">unit: mm · threshold by tube specification</text><text x="22" y="${padding.top + 14}" fill="var(--chart-label)" font-size="11" transform="rotate(-90 22 ${padding.top + 14})">厚度 / mm</text>`;
   const bandTop = data.prediction.map(p => `${xScale(p.year)},${yScale(p.high)}`).join(' ');
   const bandBottom = [...data.prediction].reverse().map(p => `${xScale(p.year)},${yScale(p.low)}`).join(' ');
-  if(data.prediction.length > 1) svg.innerHTML += `<polygon points="${bandTop} ${bandBottom}" fill="url(#aiBand)" stroke="rgba(34,192,126,0.24)" stroke-width="1" />`;
-  svg.innerHTML += `<line x1="${padding.left}" y1="${threshY}" x2="${plotRight}" y2="${threshY}" stroke="#f0574a" stroke-width="2.4" stroke-dasharray="10 8" stroke-linecap="butt" />`;
-  svg.innerHTML += `<text x="${padding.left + 8}" y="${Math.max(padding.top + 14, threshY - 8)}" fill="#ffb3c1" font-size="11" font-weight="700">理论阈值 ${data.threshold.toFixed(2)}mm</text>`;
+  if(data.prediction.length > 1) svg.innerHTML += `<polygon points="${bandTop} ${bandBottom}" fill="url(#aiBand)" stroke="var(--chart-green-line)" stroke-width="1" />`;
+  svg.innerHTML += `<line x1="${padding.left}" y1="${threshY}" x2="${plotRight}" y2="${threshY}" stroke="var(--chart-red)" stroke-width="2.4" stroke-dasharray="10 8" stroke-linecap="butt" />`;
+  svg.innerHTML += `<text x="${padding.left + 8}" y="${Math.max(padding.top + 14, threshY - 8)}" fill="var(--chart-red-soft)" font-size="11" font-weight="700">理论阈值 ${data.threshold.toFixed(2)}mm</text>`;
   const histPath = data.history.map((p, i) => `${i===0?'M':'L'} ${xScale(p.year)} ${yScale(p.val)}`).join(' ');
-  svg.innerHTML += `<path d="${histPath}" fill="none" stroke="#00d4ff" stroke-width="3.4" filter="url(#aiGlow)" />`;
+  svg.innerHTML += `<path d="${histPath}" fill="none" stroke="var(--chart-accent)" stroke-width="3.4" filter="url(#aiGlow)" />`;
   data.history.forEach(p => {
     const isOutlier = data.outliers?.some(o => o.dateStr === p.dateStr && o.val === p.val);
-    svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="${isOutlier ? 6.5 : 5.5}" fill="#001122" stroke="${isOutlier ? '#ff9f43' : '#00d4ff'}" stroke-width="2.5" style="cursor:pointer"><title>${p.dateStr} ${p.val}mm ${isOutlier ? '异常候选' : ''}</title></circle>`;
+    svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="${isOutlier ? 6.5 : 5.5}" fill="var(--chart-dot-fill)" stroke="${isOutlier ? 'var(--chart-orange)' : 'var(--chart-accent)'}" stroke-width="2.5" style="cursor:pointer"><title>${p.dateStr} ${p.val}mm ${isOutlier ? '异常候选' : ''}</title></circle>`;
   });
   const lastHist = data.history[data.history.length - 1];
   const predPath = `M ${xScale(lastHist.year)} ${yScale(lastHist.val)} ` + data.prediction.map(p => `L ${xScale(p.year)} ${yScale(p.val)}`).join(' ');
-  svg.innerHTML += `<path d="${predPath}" fill="none" stroke="#22c07e" stroke-width="3.2" stroke-dasharray="10,6" filter="url(#aiGlow)" />`;
-  data.prediction.forEach(p => svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="4.3" fill="#22c07e"><title>${p.year} P50 ${p.val}mm；区间 ${p.low}~${p.high}mm</title></circle>`);
-  const currentX = xScale(lastHist.year), currentY = yScale(lastHist.val);
-  svg.innerHTML += `<line x1="${currentX}" y1="${currentY}" x2="${currentX + 54}" y2="${currentY - 34}" stroke="rgba(0,212,255,0.48)" /><rect x="${currentX + 56}" y="${currentY - 52}" width="126" height="34" rx="5" fill="rgba(0,29,61,0.88)" stroke="rgba(0,212,255,0.36)" /><text x="${currentX + 66}" y="${currentY - 31}" fill="#e6f7ff" font-size="11">当前 ${lastHist.val.toFixed(2)}mm</text>`;
-  if(Number.isFinite(numericP50)) {
-    const x = xScale(numericP50);
-    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="rgba(34,192,126,0.38)" stroke-width="1.5" stroke-dasharray="4,5" /><text x="${x+6}" y="${padding.top+16}" fill="#8cf7c5" font-size="11">P50 ${data.p50ThresholdYear}</text>`;
+  svg.innerHTML += `<path d="${predPath}" fill="none" stroke="var(--chart-green)" stroke-width="3.2" stroke-dasharray="10,6" filter="url(#aiGlow)" />`;
+  data.prediction.forEach(p => svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="4.3" fill="var(--chart-green)"><title>${p.year} P50 ${p.val}mm；区间 ${p.low}~${p.high}mm</title></circle>`);
+  for(const [key, color, label] of [['baseline','var(--chart-orange)','基准情景'],['accelerated','var(--chart-red)','加速情景']]) {
+    const points = data.prediction.filter(point => Number.isFinite(point[key]));
+    if(points.length) svg.innerHTML += `<path d="M ${xScale(lastHist.year)} ${yScale(lastHist.val)} ${points.map(point => `L ${xScale(point.year)} ${yScale(point[key])}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="4 5"><title>${label}</title></path>`;
   }
-  if(Number.isFinite(numericP90)) {
+  const currentX = xScale(lastHist.year), currentY = yScale(lastHist.val);
+  if(['replace','replace-soon'].includes(data.replacementWarning?.level)) svg.innerHTML += `<circle cx="${currentX}" cy="${currentY}" r="10" fill="none" stroke="var(--chart-red)" stroke-width="3"><title>${escapeHTML(data.replacementWarning.label)}</title></circle>`;
+  svg.innerHTML += `<line x1="${currentX}" y1="${currentY}" x2="${currentX + 54}" y2="${currentY - 34}" stroke="var(--chart-accent)" stroke-opacity="0.48" /><rect x="${currentX + 56}" y="${currentY - 52}" width="126" height="34" rx="5" fill="var(--chart-tip-bg)" stroke="var(--chart-tip-stroke)" /><text x="${currentX + 66}" y="${currentY - 31}" fill="var(--chart-title)" font-size="11">当前 ${lastHist.val.toFixed(2)}mm</text>`;
+  if(Number.isFinite(numericP50) && numericP50 <= maxYear) {
+    const x = xScale(numericP50);
+    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-green)" stroke-opacity="0.38" stroke-width="1.5" stroke-dasharray="4,5" /><text x="${x+6}" y="${padding.top+16}" fill="var(--chart-green)" font-size="11">P50 ${data.p50ThresholdYear}</text>`;
+  }
+  if(Number.isFinite(numericP90) && numericP90 <= maxYear) {
     const x = xScale(numericP90);
-    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="rgba(255,159,67,0.68)" stroke-width="2" stroke-dasharray="7,5" /><rect x="${Math.min(x + 8, plotRight - 150)}" y="${plotBottom - 36}" width="142" height="26" rx="5" fill="rgba(255,159,67,0.14)" stroke="rgba(255,159,67,0.48)" /><text x="${Math.min(x + 16, plotRight - 142)}" y="${plotBottom - 18}" fill="#ffd29a" font-size="11" font-weight="700">P90寿命下限 ${data.thresholdYear}</text>`;
+    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-orange)" stroke-opacity="0.68" stroke-width="2" stroke-dasharray="7,5" /><rect x="${Math.min(x + 8, plotRight - 150)}" y="${plotBottom - 36}" width="142" height="26" rx="5" fill="var(--chart-accent-soft)" stroke="var(--chart-orange)" stroke-opacity="0.48" /><text x="${Math.min(x + 16, plotRight - 142)}" y="${plotBottom - 18}" fill="var(--chart-orange)" font-size="11" font-weight="700">基准触阈估算 ${data.thresholdYear}</text>`;
   }
   const panelX = plotRight + 22;
-  svg.innerHTML += `<rect x="${panelX}" y="${padding.top}" width="184" height="204" rx="8" fill="url(#panelFill)" stroke="rgba(127,179,213,0.22)" />`;
-  svg.innerHTML += `<text x="${panelX + 14}" y="${padding.top + 26}" fill="#e6f7ff" font-size="13" font-weight="700">ENGINEERING MODEL</text>`;
+  svg.innerHTML += `<rect x="${panelX}" y="${padding.top}" width="184" height="204" rx="8" fill="url(#panelFill)" stroke="var(--chart-panel-stroke)" />`;
+  svg.innerHTML += `<text x="${panelX + 14}" y="${padding.top + 26}" fill="var(--chart-title)" font-size="13" font-weight="700">ENGINEERING MODEL</text>`;
   const panelRows = [
     ['Method', 'Theil-Sen + MAD'],
     ['Risk', data.status],
     ['Rate', data.rate],
     ['Threshold', `${data.threshold.toFixed(2)} mm`],
     ['P50 year', data.p50ThresholdYear],
-    ['P90 lower', data.thresholdYear],
+    ['Baseline', data.thresholdYear],
     ['Confidence', `${data.conf}%`]
   ];
   panelRows.forEach((row, index) => {
     const y = padding.top + 52 + index * 20;
-    svg.innerHTML += `<text x="${panelX + 14}" y="${y}" fill="#7fb3d5" font-size="10">${row[0]}</text><text x="${panelX + 92}" y="${y}" fill="#ffffff" font-size="10" font-weight="700">${escapeHTML(row[1])}</text>`;
+    svg.innerHTML += `<text x="${panelX + 14}" y="${y}" fill="var(--chart-label)" font-size="10">${row[0]}</text><text x="${panelX + 92}" y="${y}" fill="var(--chart-title)" font-size="10" font-weight="700">${escapeHTML(row[1])}</text>`;
   });
   const hoverPoints = [
     ...data.history.map(p => ({ year: p.year, val: p.val, label: `${p.dateStr} · 实测 ${p.val}mm` })),
@@ -2691,10 +2912,10 @@ function renderAIChart(data) {
   ];
   const tipW = 158, tipH = 30;
   svg.innerHTML += `<g id="aiChartHover" opacity="0" pointer-events="none">
-    <line y1="${padding.top}" y2="${plotBottom}" stroke="rgba(47,212,232,0.5)" stroke-width="1" stroke-dasharray="3 3" />
-    <circle r="5" fill="#001122" stroke="#2fd4e8" stroke-width="2" filter="url(#aiGlow)" />
-    <rect rx="5" ry="5" width="${tipW}" height="${tipH}" fill="rgba(4,16,28,0.96)" stroke="rgba(72,202,228,0.4)" />
-    <text id="aiChartTipText" fill="#8ce6f2" font-size="11" font-weight="700" text-anchor="middle"></text>
+    <line y1="${padding.top}" y2="${plotBottom}" stroke="var(--chart-hover-line)" stroke-width="1" stroke-dasharray="3 3" />
+    <circle r="5" fill="var(--chart-dot-fill)" stroke="var(--chart-accent-2)" stroke-width="2" filter="url(#aiGlow)" />
+    <rect rx="5" ry="5" width="${tipW}" height="${tipH}" fill="var(--chart-tip-bg)" stroke="var(--chart-tip-stroke)" />
+    <text id="aiChartTipText" fill="var(--chart-tip-val)" font-size="11" font-weight="700" text-anchor="middle"></text>
   </g>
   <rect id="aiChartHit" x="${padding.left}" y="${padding.top}" width="${chartW}" height="${chartH}" fill="transparent" style="cursor:crosshair" />`;
   const hover = svg.querySelector('#aiChartHover');
@@ -2733,8 +2954,103 @@ function renderAIChart(data) {
 function typeWriter(elementId, text, speed = 20) { const el = document.getElementById(elementId); el.innerHTML = ''; let i = 0; const cursor = '<span class="ai-cursor"></span>'; function type() { if (i < text.length) { el.innerHTML = text.substring(0, i + 1).replace(/\n/g, '<br>') + cursor; i++; setTimeout(type, speed); } else { el.innerHTML = text.replace(/\n/g, '<br>'); } } type(); }
 function generateMockAIData(target, model) { if (model === 'thickness') { return { current: 7.1, threshold: 5.5, rate: '0.085 mm/y', rul: 18500, conf: 92, status: '关注', history: [{year:2018,val:8.0},{year:2020,val:7.8},{year:2023,val:7.4},{year:2025,val:7.1}], prediction: [{year:2026,val:6.9},{year:2028,val:6.5},{year:2030,val:6.1},{year:2032,val:5.7},{year:2033,val:5.5}], report: `【AI 壁厚减薄趋势分析报告】\n对象：${target}\n模型：LSTM 时序预测网络 + 物理约束\n\n1. 趋势分析：历史数据显示该管段壁厚呈非线性减薄趋势，近3年劣化速率从 0.05mm/y 加速至 0.085mm/y，表明内壁可能存在轻微的酸性腐蚀或外壁高温氧化加剧。\n2. 寿命预测：根据当前轨迹，预计将于 2032年底 触及设计最小壁厚阈值(5.5mm)。\n3. 剩余寿命(RUL)：折算运行小时数约 18,500 小时。\n4. AI 建议：建议在下次A级检修中对该管段及同屏相邻管进行超声波测厚(UT)复测，并检查烟气侧是否存在局部冲刷磨损。若减薄速率持续>0.1mm/y，请提前列入更换计划。` }; } else { return { current: 68, threshold: 90, rate: '1.2 %/y', rul: 22000, conf: 88, status: '预警', history: [{year:2018,val:10},{year:2020,val:25},{year:2023,val:45},{year:2025,val:68}], prediction: [{year:2026,val:75},{year:2028,val:82},{year:2030,val:88},{year:2031,val:90}], report: `【AI 蠕变损伤评估报告】\n对象：${target}\n模型：Larson-Miller 参数融合神经网络\n\n1. 损伤评估：当前蠕变损伤度已达 68%，进入加速蠕变阶段(第三阶段)。金相组织可能已出现明显的碳化物球化和晶界微裂纹。\n2. 趋势预测：预计在未来 5 年内损伤度将突破 90% 的安全红线。\n3. AI 建议：立即安排现场金相复型检验，重点关注热影响区(HAZ)。建议降低该区域管段的运行壁温控制设定值 5-10℃，以延缓蠕变进程。` }; } }
 
-const ZONES = { qdp: {title:'全大屏过热器', sys:'PSH', spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', count:'6片×4小屏', desc:'位于炉膛上方，全辐射式受热面。工作条件极为恶劣，屏底外圈采用 SA-213T91 耐热钢。', params:'吸收炉膛高温辐射热 | 烟气侧易结渣 | 需重点监控夹持管状态'}, hp: {title:'后屏/屏式过热器', sys:'ISH', spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', count:'21屏', desc:'布置于炉膛出口处，辐射对流式受热面。最外圈及包扎管底部采用奥氏体不锈钢 TP347H。', params:'承受炉膛出口高温烟气冲刷 | 易发生高温腐蚀 | 节距 S1=685.8'}, gg: {title:'高温过热器 (高过)', sys:'HSH', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', count:'32片', desc:'悬吊于水平烟道内，顺列顺流布置。12管圈U形绕制，暴露在最外侧的管子采用 TP304H。', params:'蒸汽温度最高区 | 烟气流向转折区 | 需防范管排晃动磨损'}, gz: {title:'高温再热器 (高再)', sys:'HRH', spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', count:'64片', desc:'位于水平烟道后部，7根管圈绕制。入口设有喷水减温器，控制再热汽温。', params:'带喷水减温控制 | 烟气温度开始下降 | 管间由带状机械管夹定位'}, dwgr: {title:'低温过热器 (低过)', sys:'LSH', spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', count:'112排', desc:'布置于尾部竖井前烟道，顺列逆流布置。水平段分4组，留有检修空间。', params:'入口烟温 876.6℃ | 出口烟温 382.7℃ | 压降 -0.3kPa | 易积灰'}, dwzr: {title:'低温再热器 (低再)', sys:'LRH', spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', count:'112片+56片', desc:'布置于尾部竖井后烟道，与低过并列。水平段5组，垂直段每2排并1排。', params:'入口烟温 840.3℃ | 出口烟温 349.4℃ | 压降 -0.2kPa | 支撑块承重'}, scr: {title:'SCR 脱硝反应器', sys:'SCR', spec:'氨注射栅格 + 催化剂', count:'A/B侧', desc:'位于尾部烟道下方，喷氨格栅将氨气与烟气均匀混合，通过催化剂还原 NOx。', params:'入口NOx ~278 mg/Nm³ | 出口NOx 25.1 mg/Nm³ | 脱硝效率 99.9% | 氨逃逸 <3ppm'}, smq: {title:'省煤器', sys:'ECO', spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', count:'124管', desc:'布置于SCR下方，利用尾部烟气余热加热锅炉给水，降低排烟温度，提高锅炉热效率。', params:'烟温 287.5℃ → 289.0℃ | 给水温度提升 | 易发生低温腐蚀与飞灰磨损'} };
+const ZONES = { qdp: {title:'全大屏过热器', sys:'PSH', spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', count:'6片×4小屏', desc:'位于炉膛上方，全辐射式受热面。工作条件极为恶劣，屏底外圈采用 SA-213T91 耐热钢。', params:'吸收炉膛高温辐射热 | 烟气侧易结渣 | 需重点监控夹持管状态'}, hp: {title:'后屏/屏式过热器', sys:'ISH', spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', count:'21屏', desc:'布置于炉膛出口处，辐射对流式受热面。最外圈及包扎管底部采用奥氏体不锈钢 TP347H。', params:'承受炉膛出口高温烟气冲刷 | 易发生高温腐蚀 | 节距 S1=685.8'}, gg: {title:'高温过热器 (高过)', sys:'HSH', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', count:'32片', desc:'悬吊于水平烟道内，顺列顺流布置。12管圈U形绕制，暴露在最外侧的管子采用 TP304H。', params:'蒸汽温度最高区 | 烟气流向转折区 | 需防范管排晃动磨损'}, gz: {title:'高温再热器 (高再)', sys:'HRH', spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', count:'64片', desc:'位于水平烟道后部，7根管圈绕制。入口设有喷水减温器，控制再热汽温。', params:'带喷水减温控制 | 烟气温度开始下降 | 管间由带状机械管夹定位'}, dwgr: {title:'低温过热器 (低过)', sys:'LSH', spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', count:'112排', desc:'布置于尾部竖井前烟道，顺列逆流布置。水平段分4组，留有检修空间。', params:'入口烟温 876.6℃ | 出口烟温 382.7℃ | 压降 -0.3kPa | 易积灰'}, dwzr: {title:'低温再热器 (低再)', sys:'LRH', spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', count:'112片+56片', desc:'布置于尾部竖井后烟道，与低过并列。水平段5组，垂直段每2排并1排。', params:'入口烟温 840.3℃ | 出口烟温 349.4℃ | 压降 -0.2kPa | 支撑块承重'}, scr: {title:'SCR 脱硝反应器', sys:'SCR', spec:'氨注射栅格 + 催化剂', count:'A/B侧', desc:'位于尾部烟道下方，喷氨格栅将氨气与烟气均匀混合，通过催化剂还原 NOx。', params:'入口NOx ~278 mg/Nm³ | 出口NOx 25.1 mg/Nm³ | 脱硝效率 99.9% | 氨逃逸 <3ppm'}, smq: {title:'省煤器', sys:'ECO', spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', count:'124管', desc:'分上、下两级串联布置于烟气挡板之后的下行竖井内，利用尾部烟气余热加热锅炉给水，降低排烟温度。', params:'上/下两级分级串联 | 烟温 287.5℃ → 289.0℃ | 易发生低温腐蚀与飞灰磨损'} };
 function showZone(z) { const info = ZONES[z]; const el = document.getElementById('zoneDetail'); el.style.display = 'block'; el.innerHTML = `<div class="card-title"><span class="badge badge-ww">${info.sys}</span> ${info.title}</div><div class="info-grid"><div class="info-item"><div class="k">规格/材质</div><div class="v">${info.spec}</div></div><div class="info-item"><div class="k">数量/规模</div><div class="v">${info.count}</div></div><div class="info-item" style="grid-column:span 2;"><div class="k">湛江#1机组 实时运行参数</div><div class="v" style="font-size:13px; color:var(--warn);">${info.params}</div></div><div class="info-item" style="grid-column:span 2;"><div class="k">工艺与防磨防爆描述</div><div class="v" style="font-size:12px;">${info.desc}</div></div></div>`; el.scrollIntoView({behavior:'smooth', block:'nearest'}); }
+
+// ========== AI 数据助手桥接（assistant-v1.js 复用，不得改变既有行为） ==========
+const ASSISTANT_EDIT_FIELDS = ['date', 'code', 'type', 'desc', 'thickness', 'hardness', 'spec', 'material'];
+const ASSISTANT_EDIT_FIELD_LABELS = { date: '日期', code: '管段编码', type: '事件类型', desc: '描述', thickness: '厚度', hardness: '硬度', spec: '规格', material: '材质' };
+
+function normalizeAssistantDateText(value) {
+  const text = String(value ?? '').trim();
+  if(!text) return null;
+  const match = text.match(/^(\d{4})\s*[-/年.]\s*(\d{1,2})\s*[-/月.]\s*(\d{1,2})\s*日?$/);
+  if(!match) return null;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  if(!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  if(month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(year, month - 1, day);
+  if(date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function updateEventRecord(ts, field, value) {
+  const key = String(field ?? '').trim();
+  if(ASSISTANT_EDIT_FIELDS.indexOf(key) < 0) return { ok: false, error: `不支持的字段：${field || '空'}` };
+  const target = userDB.events.find(record => Number(record.ts) === Number(ts));
+  if(!target) return { ok: false, error: '没有找到这条记录，可能已被删除，请重新查询。' };
+  let next = String(value ?? '').trim();
+  if(key === 'date') {
+    const normalized = normalizeAssistantDateText(next);
+    if(!normalized) return { ok: false, error: '日期无法识别，请使用 YYYY-MM-DD 格式。' };
+    next = normalized;
+  } else if(key === 'thickness') {
+    const num = Number(next);
+    if(!Number.isFinite(num) || num < 0.1 || num > 100) return { ok: false, error: '厚度必须是 0.1 ~ 100 之间的数字（mm）。' };
+    next = String(num);
+  } else if(key === 'hardness') {
+    const num = Number(next);
+    if(!Number.isFinite(num) || num < 1 || num > 600) return { ok: false, error: '硬度必须是 1 ~ 600 之间的数字（HB）。' };
+    next = String(num);
+  } else if(key === 'code') {
+    next = next.toUpperCase();
+    if(!/^[12]-[A-Z]{2,3}-[A-Z]{1,3}-\d{3}-\d{4}-[A-Z0-9]{3}(?:-R\d+)?$/.test(next)) return { ok: false, error: '管段编码格式不正确，示例：1-WW-FR-008-0003-000。' };
+    const boiler = getBoilerFromCode(next);
+    if(boiler) target.boiler = boiler;
+  } else if(!next) {
+    return { ok: false, error: `${ASSISTANT_EDIT_FIELD_LABELS[key]}不能为空。` };
+  }
+  const before = String(target[key] ?? '');
+  if(before === next) return { ok: true, unchanged: true, before, after: next, record: target };
+  target[key] = next;
+  saveDB();
+  return { ok: true, unchanged: false, before, after: next, record: target };
+}
+
+function collectAssistantSnapshot(options = {}) {
+  const events = Array.isArray(userDB.events) ? userDB.events : [];
+  const replacements = Array.isArray(userDB.replacements) ? userDB.replacements : [];
+  let materialLibrary = [];
+  try { materialLibrary = getMaterialLibrary() || []; } catch (err) { materialLibrary = []; }
+  let warnings = [];
+  try { warnings = collectDashboardWarnings({ limit: 500 }) || []; } catch (err) { warnings = []; }
+  let overdueRows = [];
+  try {
+    const year = Number(document.getElementById('maintenanceCycleStart')?.value) || new Date().getFullYear();
+    overdueRows = buildMaintenanceOverdueRows(year, 'all') || [];
+  } catch (err) { overdueRows = []; }
+  let retiredCodes = [];
+  try { retiredCodes = [...collectRetiredTubeCodes()]; } catch (err) { retiredCodes = []; }
+  const snapshot = {
+    events,
+    replacements,
+    materialLibrary,
+    matrix: Array.isArray(matrix) ? matrix : [],
+    retiredCodes,
+    warnings,
+    overdueRows,
+    ledgerRows: [],
+    role: getAssistantRole(),
+    session: currentAuthSession || null,
+    now: new Date().toISOString()
+  };
+  if(options.withLedger) {
+    try { snapshot.ledgerRows = getGeneratedTubeLedgerRows(options.boiler || 'all') || []; } catch (err) { snapshot.ledgerRows = []; }
+  }
+  return snapshot;
+}
+
+function getAssistantRole() {
+  try {
+    const forced = new URLSearchParams(location.search || '').get('assistantRole');
+    if(forced === 'viewer' || forced === 'editor' || forced === 'admin') return forced;
+  } catch (err) { /* 非标准环境忽略 */ }
+  const role = currentAuthSession && currentAuthSession.role;
+  if(role === 'admin') return 'admin';
+  if(role === 'viewer') return 'viewer';
+  // 已登录的普通账号或本地离线模式：数据都在本机，按编辑权限处理
+  return 'editor';
+}
 
 // ========== INIT ==========
 initNav();
