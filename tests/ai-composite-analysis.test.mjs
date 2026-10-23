@@ -22,7 +22,9 @@ assert.match(html, /硬度|金相|组织|裂纹|蠕变|脱碳/, "report or promp
 assert.match(html, /await runDeepAIAnalysisFromTrend\(data\)/, "AI analysis should call the configured LLM after local evidence assembly");
 assert.match(html, /大模型|LLM|深度分析/, "AI workflow should make the large-model step visible");
 assert.match(html, /id="ai-llm-report"/, "AI page should have its own LLM result panel");
-assert.match(html, /callLLMChatCompletions\(buildTrendAnalysisPrompt\(data\)/, "AI analysis should call the configured model directly from the AI module");
+assert.match(html, /const evidenceText = buildTrendAnalysisPrompt\(data\)/, "AI analysis should build the trend prompt once and reuse it");
+assert.match(html, /callLLMChatCompletions\(evidenceText, 2200\)/, "AI analysis should call the configured model directly from the AI module");
+assert.match(html, /auditLLMText\(text, evidenceText\)/, "AI analysis output must be audited against local evidence");
 assert.match(html, /总览.*模型配置|模型接口配置|复用/, "AI LLM panel should explain it reuses the overview model configuration");
 
 console.log("ok - composite AI analysis wiring exists");

@@ -95,6 +95,7 @@ const checks = [
       "data.query": ["viewer", false, true],
       "data.edit": ["editor", true, true],
       "data.stats": ["viewer", false, true],
+      "data.analyze": ["viewer", false, true],
       "data.undo": ["editor", true, true],
       "assistant.help": ["viewer", false, true]
     };
@@ -106,14 +107,15 @@ const checks = [
     assert.equal(Core.toolCatalog()[0].minRole, "viewer", "toolCatalog 必须返回副本，避免调用方改坏注册表");
   }],
   ["toolsForRole / requiredRole / toolRank / roleLabel follow the role ladder", () => {
-    assert.deepEqual(Core.toolsForRole("viewer").map((item) => item.name), ["assistant.clean", "data.export", "data.query", "data.stats", "assistant.help"]);
-    assert.deepEqual(Core.toolsForRole("editor").map((item) => item.name), ["assistant.clean", "data.import", "data.export", "data.query", "data.edit", "data.stats", "data.undo", "assistant.help"]);
-    assert.equal(Core.toolsForRole("admin").length, 8);
-    assert.equal(Core.toolsForRole("nobody").length, 5, "未知角色按 viewer 处理");
+    assert.deepEqual(Core.toolsForRole("viewer").map((item) => item.name), ["assistant.clean", "data.export", "data.query", "data.stats", "data.analyze", "assistant.help"]);
+    assert.deepEqual(Core.toolsForRole("editor").map((item) => item.name), ["assistant.clean", "data.import", "data.export", "data.query", "data.edit", "data.stats", "data.analyze", "data.undo", "assistant.help"]);
+    assert.equal(Core.toolsForRole("admin").length, 9);
+    assert.equal(Core.toolsForRole("nobody").length, 6, "未知角色按 viewer 处理");
     assert.equal(Core.requiredRole("assistant.clean"), "viewer");
     assert.equal(Core.requiredRole("data.import"), "editor");
     assert.equal(Core.requiredRole("data.edit", "events"), "editor");
     assert.equal(Core.requiredRole("data.undo"), "editor");
+    assert.equal(Core.requiredRole("data.analyze"), "viewer", "分析是只读能力");
     assert.deepEqual([Core.toolRank("viewer"), Core.toolRank("editor"), Core.toolRank("admin"), Core.toolRank("x")], [1, 2, 3, 0]);
     assert.deepEqual([Core.roleLabel("viewer"), Core.roleLabel("editor"), Core.roleLabel("admin")], ["只读", "编辑", "管理员"]);
   }],

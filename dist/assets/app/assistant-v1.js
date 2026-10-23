@@ -20,6 +20,8 @@
   var MAX_QUERY_ROWS = 12;
   var MAX_IMPORT_ROWS = 5000;
   var LLM_MAX_TOKENS = 420;
+  /* 规则置信度低于该阈值时才让模型参与判意图：全量模型优先会给「帮助」这类明确指令平白加一次往返 */
+  var LLM_INTENT_CONFIDENCE_FLOOR = 0.6;
 
   var state = {
     messages: [],
@@ -31,6 +33,7 @@
     pendingCleaning: null,
     lastImport: null,
     lastEdit: null,
+    lastAnalysis: null,
     mounted: false
   };
   var controller = null;
@@ -45,6 +48,17 @@
 
   function ui() {
     return global.BTAssistantUI || null;
+  }
+
+  function analysis() {
+    return global.BTAssistantAnalysis || null;
+  }
+
+  /* 让维护记录知道这次写入来自 AI 助手（日志层不可用时原样执行） */
+  function asAssistantSource(fn) {
+    var log = global.BTMaintenanceLog;
+    if (log && typeof log.withSource === 'function') return log.withSource('assistant', fn);
+    return fn();
   }
 
   function nextId(prefix) {
@@ -364,6 +378,7 @@
     if (payload && payload.attachment) message.attachment = payload.attachment;
     if (payload && payload.cleaning) message.cleaning = payload.cleaning;
     if (payload && payload.operation) message.operation = payload.operation;
+    if (payload && payload.analysis) message.analysis = payload.analysis;
     if (payload && payload.source) message.source = payload.source;
     return pushMessage(message);
   }
@@ -394,15 +409,25 @@
   function quickPrompts() {
     var module = core();
     if (!module || typeof module.toolsForRole !== 'function') {
-      return ['现在数据质量怎么样', '查询 1 号炉 HSH 的测厚记录', '帮助'];
+      return ['近两年壁厚趋势', '现在数据质量怎么样', '帮助'];
     }
-    var tools = module.toolsForRole(currentRole());
+    var catalog = module.toolsForRole(currentRole());
     var prompts = [];
-    for (var i = 0; i < tools.length && prompts.length < 6; i += 1) {
-      var examples = Array.isArray(tools[i].examples) ? tools[i].examples : [];
-      if (examples.length) prompts.push(examples[0]);
+    /* 先放分析类示例（最能体现看图说话），再补其它工具示例 */
+    for (var i = 0; i < catalog.length; i += 1) {
+      if (catalog[i].name !== 'data.analyze') continue;
+      var analyzeExamples = Array.isArray(catalog[i].examples) ? catalog[i].examples : [];
+      for (var a = 0; a < analyzeExamples.length && prompts.length < 3; a += 1) prompts.push(analyzeExamples[a]);
     }
-    return prompts.length ? prompts : ['现在数据质量怎么样', '帮助'];
+    for (var j = 0; j < catalog.length && prompts.length < 6; j += 1) {
+      if (catalog[j].name === 'data.analyze') continue;
+      var examples = Array.isArray(catalog[j].examples) ? catalog[j].examples : [];
+      for (var k = 0; k < examples.length && prompts.length < 6; k += 1) prompts.push(examples[k]);
+    }
+    if (prompts.length < 3) {
+      prompts = prompts.concat(['现在数据质量怎么样', '查询 1 号炉 HSH 的测厚记录', '帮助']).slice(0, 6);
+    }
+    return prompts;
   }
 
   function viewState() {
@@ -584,7 +609,7 @@
     if (datasetType === 'material_library') {
       var beforeLibrary = snapshot().materialLibrary;
       if (typeof global.importMaterialRows !== 'function') { reply('材料库导入失败：写入组件没有就绪，请刷新页面。'); return; }
-      result = global.importMaterialRows(rows);
+      result = asAssistantSource(function () { return global.importMaterialRows(rows, { reason: 'import' }); });
       if (!result) { reply('材料库导入失败：写入组件没有就绪，请刷新页面。'); return; }
       state.lastImport = {
         kind: 'material_library',
@@ -612,7 +637,7 @@
       return;
     }
     if (typeof global.importLifecycleRows !== 'function') { reply('导入失败：写入组件没有就绪，请刷新页面。'); return; }
-    result = global.importLifecycleRows(rows, { batchFilter: 'all' });
+    result = asAssistantSource(function () { return global.importLifecycleRows(rows, { batchFilter: 'all' }); });
     if (!result) { reply('导入失败：写入组件没有就绪，请刷新页面。'); return; }
     state.lastImport = {
       kind: 'events',
@@ -654,7 +679,7 @@
     if (!last) { reply('没有可撤销的导入记录（只记录助手最近一次导入）。'); return; }
     if (last.kind === 'material_library') {
       if (typeof global.saveMaterialLibrary === 'function' && Array.isArray(last.before)) {
-        global.saveMaterialLibrary(last.before);
+        asAssistantSource(function () { global.saveMaterialLibrary(last.before, { reason: 'undo' }); });
         state.lastImport = null;
         removeKey(LAST_IMPORT_KEY);
         reply('已撤销最近一次材料库导入，记录恢复到导入前的状态。');
@@ -680,6 +705,18 @@
       return true;
     });
     callApp('saveDB');
+    var logModule = global.BTMaintenanceLog;
+    if (logModule && typeof logModule.hook === 'function') {
+      try {
+        logModule.hook('undo', {
+          target: 'dataset',
+          targetLabel: '撤销导入',
+          summary: '撤销最近一次导入：移除事件 ' + removedEvents + ' 条、更换 ' + removedReplacements + ' 条',
+          meta: { removedEvents: removedEvents, removedReplacements: removedReplacements },
+          source: 'assistant'
+        });
+      } catch (err) { /* 日志失败不影响撤销 */ }
+    }
     state.lastImport = null;
     removeKey(LAST_IMPORT_KEY);
     reply('已撤销最近一次导入：移除事件 ' + removedEvents + ' 条、更换 ' + removedReplacements + ' 条。', {
@@ -1138,7 +1175,7 @@
   function confirmEdit() {
     var pending = state.pendingEdit;
     if (!pending) { reply('没有待确认的修改，请重新说明要改哪条记录的哪个字段。'); return; }
-    var result = callApp('updateEventRecord', pending.ts, pending.field, pending.value);
+    var result = asAssistantSource(function () { return callApp('updateEventRecord', pending.ts, pending.field, pending.value); });
     state.pendingEdit = null;
     if (!result || !result.ok) {
       reply('修改失败：' + ((result && result.error) || '写入组件未就绪，请刷新页面。'));
@@ -1171,7 +1208,7 @@
   function undoLastEdit() {
     var last = state.lastEdit;
     if (!last) { reply('没有可撤销的修改（只记录助手最近一次修改）。'); return; }
-    var result = callApp('updateEventRecord', last.ts, last.field, last.before);
+    var result = asAssistantSource(function () { return callApp('updateEventRecord', last.ts, last.field, last.before); });
     if (!result || !result.ok) {
       reply('撤销失败：' + ((result && result.error) || '写入组件未就绪。'));
       return;
@@ -1212,6 +1249,192 @@
     render();
   }
 
+  /* ---------------- 数据分析与可视化 ---------------- */
+
+  var ANALYSIS_HINT = '这句还没识别成可执行的分析。可以试试：「近两年壁厚趋势」「各受热面事件数排行」「壁厚分布」「1 号和 2 号炉壁厚对比」「壁厚和硬度相关性」「壁厚异常记录」。';
+
+  /* 把分析结果组装成卡片（规则版与模型版共用） */
+  function buildAnalysisCard(module, result, spec, extra) {
+    var chartSvg = '';
+    try {
+      chartSvg = module.chartSvg(result.chart, { emptyText: '暂无可绘制的数据' });
+    } catch (err) {
+      chartSvg = '';
+    }
+    var hasRisk = (result.metrics || []).some(function (metric) {
+      return metric && (metric.tone === 'danger' || metric.tone === 'warn');
+    });
+    var opts = extra && typeof extra === 'object' ? extra : {};
+    return {
+      kind: result.kind,
+      kindLabel: result.kindLabel,
+      title: opts.title || result.title,
+      metrics: result.metrics || [],
+      insights: opts.insights || result.insights || [],
+      chart: result.chart,
+      chartSvg: chartSvg,
+      table: result.table,
+      sampleSize: result.sampleSize,
+      tone: hasRisk ? 'warn' : '',
+      source: opts.source || 'rules',
+      note: opts.note || '',
+      advice: opts.advice || '',
+      tool: 'data.analyze',
+      actions: [{ id: 'export-analysis', label: '导出分析明细', tone: 'ghost' }]
+    };
+  }
+
+  function executeAnalysis(intent, message) {
+    var module = analysis();
+    if (!module || typeof module.parseAnalysis !== 'function' || typeof module.runAnalysis !== 'function') {
+      reply('分析组件还没有加载完成，请刷新页面后重试。');
+      return;
+    }
+    var raw = text(message) || state.lastMessage || '';
+    var spec = null;
+    try {
+      spec = module.parseAnalysis(raw, buildContext());
+    } catch (err) {
+      spec = null;
+    }
+    if (!spec) {
+      reply(ANALYSIS_HINT);
+      return;
+    }
+    var snap = snapshot({ withLedger: false });
+    var result = null;
+    try {
+      result = module.runAnalysis(spec, snap);
+    } catch (err) {
+      result = { ok: false, message: '分析过程出现异常：' + ((err && err.message) || '未知错误') };
+    }
+    if (!result || !result.ok) {
+      reply((result && result.message) || '数据不足，暂时算不出结果。');
+      return;
+    }
+    state.lastAnalysis = result;
+    var intro = (module.describeSpec ? module.describeSpec(spec) : result.title) + '：共 ' +
+      (result.sampleSize || 0) + ' 条记录参与计算。';
+    if (result.description) intro += '筛选口径 ' + result.description + '。';
+    /* 先出规则版卡片（不阻塞），配置了模型再异步升级为 AI 分析 */
+    var messageRef = pushAssistant({
+      text: intro,
+      analysis: buildAnalysisCard(module, result, spec, { source: 'rules' })
+    });
+    render();
+    upgradeAnalysisWithLlm(messageRef, raw, spec, result, module);
+  }
+
+  /* ---------------- 可选：大模型参与分析（只发聚合结果） ---------------- */
+
+  var LLM_ANALYSIS_MAX_TOKENS = 700;
+  var LLM_ANALYSIS_TIMEOUT = 9000;
+
+  function upgradeAnalysisWithLlm(messageRef, raw, spec, ruleResult, module) {
+    if (!llmConfigured() || typeof global.callAssistantChatCompletions !== 'function') return;
+    if (!messageRef || !messageRef.id) return;
+    var evidence = null;
+    var messages = null;
+    try {
+      evidence = module.buildEvidence(raw, spec, ruleResult);
+      messages = module.buildAnalysisMessages(evidence);
+    } catch (err) {
+      return;
+    }
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      applyModelAnalysis(messageRef, module, spec, ruleResult, null, '超时（9 秒）');
+    }, LLM_ANALYSIS_TIMEOUT);
+    global.callAssistantChatCompletions(messages, LLM_ANALYSIS_MAX_TOKENS).then(function (rawReply) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      var parsed = null;
+      try {
+        parsed = module.parseModelAnalysis(rawReply, evidence);
+      } catch (err) {
+        parsed = { ok: false, reason: '模型返回解析失败' };
+      }
+      applyModelAnalysis(messageRef, module, spec, ruleResult, parsed, '');
+    }).catch(function (err) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      applyModelAnalysis(messageRef, module, spec, ruleResult, null, (err && err.message) || '网络或接口错误');
+    });
+  }
+
+  function applyModelAnalysis(messageRef, module, spec, ruleResult, parsed, failure) {
+    if (failure || !parsed) {
+      updateMessage(messageRef.id, {
+        analysis: buildAnalysisCard(module, ruleResult, spec, {
+          source: 'rules',
+          note: '模型分析未采用：' + (failure || '结果不可用') + '（已保留规则结论）'
+        })
+      });
+      render();
+      return;
+    }
+    if (!parsed.ok) {
+      updateMessage(messageRef.id, {
+        analysis: buildAnalysisCard(module, ruleResult, spec, {
+          source: 'rules',
+          note: '模型分析未采用：' + (parsed.reason || '结果不可用') + '（已保留规则结论）'
+        })
+      });
+      render();
+      return;
+    }
+    /* 模型若建议了更合适的口径，本地按新口径重算，图表与指标随之一致 */
+    var finalSpec = spec;
+    var finalResult = ruleResult;
+    var specNote = '';
+    if (parsed.specPatch && typeof module.mergeAnalysisSpec === 'function') {
+      try {
+        var merged = module.mergeAnalysisSpec(spec, parsed.specPatch);
+        if (merged.changed) {
+          var rerun = module.runAnalysis(merged.spec, snapshot({ withLedger: false }));
+          if (rerun && rerun.ok) {
+            finalSpec = merged.spec;
+            finalResult = rerun;
+            specNote = '按模型建议改用「' + rerun.title + '」口径';
+          }
+        }
+      } catch (err) { /* 口径重算失败则保留原口径 */ }
+    }
+    state.lastAnalysis = finalResult;
+    var notes = [];
+    if (specNote) notes.push(specNote);
+    if (parsed.dropped > 0) {
+      notes.push('模型有 ' + parsed.dropped + ' 条结论因未引用给定向数据被过滤');
+    }
+    updateMessage(messageRef.id, {
+      analysis: buildAnalysisCard(module, finalResult, finalSpec, {
+        source: 'llm',
+        title: parsed.title || finalResult.title,
+        insights: parsed.insights,
+        advice: parsed.advice,
+        note: notes.join('；')
+      })
+    });
+    render();
+  }
+
+  function exportAnalysisResult() {
+    var result = state.lastAnalysis;
+    var table = result && result.table ? result.table : null;
+    if (!table || !Array.isArray(table.columns) || !table.columns.length || !Array.isArray(table.rows) || !table.rows.length) {
+      reply('上一次分析没有可导出的明细表，可以换个问法再分析一次。');
+      return;
+    }
+    var stamp = new Date().toISOString().slice(0, 10);
+    var safeTitle = text(result.title || result.kind || '分析').replace(/[\\/:*?"<>|\s]+/g, '-');
+    var ok = downloadCsv(table.columns, table.rows, '分析明细_' + safeTitle + '_' + stamp + '.csv');
+    if (ok) reply('已导出分析明细：' + table.rows.length + ' 行（' + table.columns.length + ' 列）。');
+  }
+
   function executeHelp() {
     var module = core();
     var role = currentRole();
@@ -1224,8 +1447,9 @@
       '· 导出数据：按当前机组筛选或全部，导出 CSV / Excel。',
       '· 查询数据：按机组、受热面、类型、管段编码、日期、壁厚等条件查记录。',
       '· 统计概览：数据质量、预警条数、超期未检。',
+      '· 分析可视化：一句中文出图表（折线/柱状/排行/环形/散点），覆盖趋势、分布、排行、对比、相关性、异常识别、单管剖面和综合画像，结果可导出明细。',
       '· 修改记录：改单条记录的单个字段，改完可撤销。',
-      '示例：「检查这批寿命数据能不能导入」「查询 1 号炉高过的测厚记录」「现在数据质量怎么样」「把 1-WW-FR-008-0003-000 的最新测厚记录厚度改成 6.8」'
+      '示例：「检查这批寿命数据能不能导入」「查询 1 号炉高过的测厚记录」「现在数据质量怎么样」「近两年壁厚趋势」「各受热面事件数排行」「把 1-WW-FR-008-0003-000 的最新测厚记录厚度改成 6.8」'
     ];
     reply(lines.join(String.fromCharCode(10)));
   }
@@ -1247,7 +1471,7 @@
       '你是锅炉炉管全生命周期管理系统的数据助手意图解析器。',
       '只返回严格 JSON，不要 Markdown 代码块，不要任何解释。',
       'JSON 字段：intent、datasetType、params、reply、confidence。',
-      'intent 只能是 clean/import/export/query/edit/stats/undo/help/unknown。',
+      'intent 只能是 clean/import/export/query/edit/stats/analyze/undo/help/unknown。',
       'datasetType 只能是 events/material_library/unknown。',
       '可用工具：' + JSON.stringify(tools) + '。'
     ].join('');
@@ -1298,13 +1522,13 @@
   function mergeLlmIntent(parsed, message, ctx, fallback) {
     if (!parsed || typeof parsed !== 'object') return null;
     var module = core();
-    var intents = ['clean', 'import', 'export', 'query', 'edit', 'stats', 'undo', 'help'];
+    var intents = ['clean', 'import', 'export', 'query', 'edit', 'stats', 'analyze', 'undo', 'help'];
     var intent = intents.indexOf(parsed.intent) >= 0 ? parsed.intent : null;
     if (!intent) return null;
     var rebuilt = module && typeof module.parseIntent === 'function' ? module.parseIntent(message, ctx) : null;
     var toolMap = {
       clean: 'assistant.clean', import: 'data.import', export: 'data.export', query: 'data.query',
-      edit: 'data.edit', stats: 'data.stats', undo: 'data.undo', help: 'assistant.help'
+      edit: 'data.edit', stats: 'data.stats', analyze: 'data.analyze', undo: 'data.undo', help: 'assistant.help'
     };
     var tool = toolMap[intent];
     var spec = module && typeof module.toolSpec === 'function' ? module.toolSpec(tool) : null;
@@ -1487,6 +1711,7 @@
     if (actionId === 'export-cleaned') { exportCleanedRows(); return; }
     if (actionId === 'export-issues') { exportIssueRows(); return; }
     if (actionId === 'export-query') { exportQueryResult(); return; }
+    if (actionId === 'export-analysis') { exportAnalysisResult(); return; }
     if (actionId === 'edit-confirm') { confirmEdit(); return; }
     if (actionId === 'edit-cancel') { state.pendingEdit = null; reply('已取消本次修改，没有写入任何数据。'); return; }
     if (actionId === 'undo-last-edit') { undoLastEdit(); return; }
@@ -1529,6 +1754,7 @@
     if (!intent) { reply('没太听懂，可以说「帮助」查看示例。'); return; }
     if (intent.intent === 'help') { executeHelp(); return; }
     if (intent.intent === 'stats') { executeStats(); return; }
+    if (intent.intent === 'analyze') { executeAnalysis(intent, message); return; }
     if (intent.intent === 'clean') { handleCleanIntent(intent); return; }
     if (intent.intent === 'import') { handleImportIntent(intent); return; }
     if (intent.intent === 'export') { executeExport(intent.params); return; }
@@ -1554,7 +1780,12 @@
       reply('助手组件还没有加载完成，请刷新页面后重试。');
       return;
     }
-    if (intent.intent !== 'unknown' || !llmConfigured()) {
+    /* 文件流程中不打断：有待导入/待清洗数据时，规则意图比模型更可靠 */
+    var pendingFileFlow = Boolean(ctx.hasPendingFile || ctx.hasPendingRows) &&
+      (intent.intent === 'clean' || intent.intent === 'import');
+    var lowConfidence = intent.intent === 'unknown' ||
+      !(Number(intent.confidence) >= LLM_INTENT_CONFIDENCE_FLOOR);
+    if (!llmConfigured() || pendingFileFlow || !lowConfidence) {
       setBusy(false);
       routeIntent(intent, raw);
       return;

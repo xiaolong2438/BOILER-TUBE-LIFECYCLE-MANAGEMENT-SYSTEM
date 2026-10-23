@@ -7,6 +7,7 @@ import vm from "node:vm";
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(resolve(here, p), "utf8");
 const coreSource = read("../assets/app/assistant-core-v1.js");
+const analysisSource = read("../assets/app/assistant-analysis-v1.js");
 const uiSource = read("../assets/app/assistant-ui-v1.js");
 const wiringSource = read("../assets/app/assistant-v1.js");
 
@@ -14,6 +15,8 @@ const wiringSource = read("../assets/app/assistant-v1.js");
 
 const checks = [];
 const check = (name, fn) => checks.push([name, fn]);
+const asyncChecks = [];
+const checkAsync = (name, fn) => asyncChecks.push([name, fn]);
 const has = (source, needle, label) => assert.ok(source.indexOf(needle) >= 0, label || ("缺少 " + needle));
 
 check("接线层挂载门面并复用领域层与界面层", () => {
@@ -79,7 +82,7 @@ function createElement(doc) {
   };
 }
 
-function boot() {
+function boot(extra) {
   const downloads = [];
   const storage = {};
   const doc = {
@@ -107,10 +110,12 @@ function boot() {
     confirm: () => true,
     fetch: () => { throw new Error("未配置模型时不应发起网络请求"); }
   };
+  if (extra && typeof extra === "object") Object.assign(sandbox, extra);
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(coreSource, sandbox);
+  vm.runInContext(analysisSource, sandbox);
   vm.runInContext(uiSource, sandbox);
   vm.runInContext(wiringSource, sandbox);
   return { sandbox, doc, downloads, storage };
@@ -169,6 +174,52 @@ check("导出意图在无下载组件时报错而不是崩溃", () => {
   assert.match(lastMessagesHtml(doc), /已导出/);
 });
 
+check("分析意图渲染图表卡片，并挂出导出明细动作", () => {
+  const events = [];
+  for (let i = 0; i < 8; i += 1) {
+    events.push({
+      ts: i + 1,
+      code: "1-HSH-E-012-0005-W01",
+      boiler: "1",
+      date: "2026-0" + ((i % 9) + 1) + "-10",
+      type: "测厚",
+      thickness: Number((7.5 - i * 0.1).toFixed(2)),
+      hardness: 180 + i * 3,
+      spec: "Φ51×7.5",
+      desc: "接线层样例"
+    });
+  }
+  const { sandbox, doc } = boot({
+    collectAssistantSnapshot: () => ({
+      events: events,
+      replacements: [],
+      materialLibrary: [],
+      matrix: [],
+      retiredCodes: [],
+      warnings: [],
+      overdueRows: [],
+      role: "editor",
+      now: "2026-10-23T00:00:00.000Z"
+    })
+  });
+  sandbox.BTAssistant.open();
+  sandbox.BTAssistant.send("近两年壁厚趋势");
+  const html = lastMessagesHtml(doc);
+  assert.match(html, /class="assistant-analysis"/);
+  assert.match(html, /data-kind="trend"/);
+  assert.match(html, /<svg/);
+  assert.match(html, /assistant-insight/);
+  assert.match(html, /data-action-id="export-analysis"/, "分析卡片必须能导出明细");
+  assert.match(html, /壁厚/);
+});
+
+check("没有数据时分析给出可执行提示，而不是空卡片", () => {
+  const { sandbox, doc } = boot();
+  sandbox.BTAssistant.open();
+  sandbox.BTAssistant.send("各受热面事件数排行");
+  assert.match(lastMessagesHtml(doc), /没有可分析的数据/);
+});
+
 check("会话历史持久化到本地存储", () => {
   const { sandbox, storage } = boot();
   sandbox.BTAssistant.open();
@@ -178,6 +229,125 @@ check("会话历史持久化到本地存储", () => {
   const list = JSON.parse(raw);
   assert.ok(Array.isArray(list) && list.length >= 1);
   assert.ok(Array.isArray(list[0].messages) && list[0].messages.length >= 2);
+});
+
+/* ---------------- 大模型参与分析（异步） ---------------- */
+
+checkAsync("配置模型后分析卡片升级为模型解读，并过滤无依据结论", async () => {
+  const events = [];
+  for (let m = 1; m <= 12; m += 1) {
+    events.push({
+      ts: m,
+      code: "1-WW-FR-008-0001-000",
+      boiler: "1",
+      date: "2026-" + String(m).padStart(2, "0") + "-10",
+      type: "测厚",
+      thickness: m <= 6 ? 7.4 : 7.0,
+      hardness: 180,
+      spec: "Φ63.5×7.5",
+      desc: "阶梯式减薄样例"
+    });
+  }
+  const captured = [];
+  const { sandbox, doc } = boot({
+    collectAssistantSnapshot: () => ({
+      events: events,
+      replacements: [],
+      materialLibrary: [],
+      matrix: [],
+      retiredCodes: [],
+      warnings: [],
+      overdueRows: [],
+      role: "editor",
+      now: "2026-10-23T00:00:00.000Z"
+    }),
+    getLLMConfig: () => ({ baseUrl: "https://llm.example/v1", apiKey: "k", model: "m" }),
+    callAssistantChatCompletions: async (messages) => {
+      captured.push(messages);
+      return JSON.stringify({
+        title: "壁厚阶跃下降",
+        insights: [
+          "平均壁厚 7.2mm，前 6 个月 7.4mm、后 6 个月 7mm，呈阶跃式下降。",
+          "另有 3 根管段壁厚低于 5.55mm，需要立即换管。"
+        ],
+        risk: "medium",
+        advice: "对后 6 个月的低值段安排测点复测。",
+        spec: { kind: "trend", metric: "thickness", dimension: "month", chartType: "line" }
+      });
+    }
+  });
+  sandbox.BTAssistant.open();
+  sandbox.BTAssistant.send("近两年壁厚趋势");
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  assert.equal(captured.length, 1, "分析只应调用一次模型");
+  const payloadText = captured[0][1].content;
+  assert.ok(!payloadText.includes("1-WW-FR-008-0001-000"), "证据包不得外发管段编码");
+  const payload = JSON.parse(payloadText);
+  assert.ok(payload.series.length > 0, "必须提供聚合序列供模型判断");
+  assert.ok(!payload.table && !payload.rows, "不得外发明细表");
+
+  const html = lastMessagesHtml(doc);
+  assert.match(html, /data-source="llm"/, "卡片应标记为模型分析");
+  assert.match(html, /assistant-analysis-badge/, "应渲染模型解读徽标元素");
+  assert.match(html, /模型解读/, "徽标文案应为「模型解读」，与页面「深度分析」区分");
+  assert.match(html, /平均壁厚 7\.2mm/, "有依据的模型结论应展示");
+  assert.doesNotMatch(html, /5\.55/, "编造数值必须被过滤");
+  assert.match(html, /1 条结论/, "应提示被过滤条数");
+  assert.match(html, /对后 6 个月的低值段安排测点复测/, "建议应展示");
+});
+
+checkAsync("只在规则置信度低时才让模型参与判意图", async () => {
+  const calls = [];
+  const { sandbox } = boot({
+    getLLMConfig: () => ({ baseUrl: "https://llm.example/v1", apiKey: "k", model: "m" }),
+    callAssistantChatCompletions: async (messages) => {
+      calls.push(messages);
+      return JSON.stringify({ intent: "stats", datasetType: "unknown", params: {}, reply: "", confidence: 0.9 });
+    }
+  });
+  const lowText = "看看这些数据";
+  const baseIntent = sandbox.BTAssistantCore.parseIntent(lowText, {});
+  assert.ok(baseIntent.confidence < 0.6, "测试文本的规则置信度应低于阈值，实际 " + baseIntent.confidence);
+
+  sandbox.BTAssistant.open();
+  sandbox.BTAssistant.send(lowText);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(calls.length, 1, "低置信度应请求模型判定");
+
+  sandbox.BTAssistant.send("帮助");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(calls.length, 1, "高置信度的明确指令不应再请求模型");
+});
+
+checkAsync("模型调用失败时保留规则结论并给出降级说明", async () => {
+  const events = [];
+  for (let m = 1; m <= 6; m += 1) {
+    events.push({
+      ts: m,
+      code: "1-WW-FR-008-0001-000",
+      boiler: "1",
+      date: "2026-0" + m + "-10",
+      type: "测厚",
+      thickness: 7.4 - m * 0.05,
+      hardness: 180,
+      spec: "Φ63.5×7.5",
+      desc: ""
+    });
+  }
+  const { sandbox, doc } = boot({
+    collectAssistantSnapshot: () => ({ events, replacements: [], materialLibrary: [], matrix: [], retiredCodes: [], warnings: [], overdueRows: [], role: "editor" }),
+    getLLMConfig: () => ({ baseUrl: "https://llm.example/v1", apiKey: "k", model: "m" }),
+    callAssistantChatCompletions: async () => { throw new Error("接口 502"); }
+  });
+  sandbox.BTAssistant.open();
+  sandbox.BTAssistant.send("壁厚趋势");
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const html = lastMessagesHtml(doc);
+  assert.match(html, /data-source="rules"/, "失败时应回落为规则卡片");
+  assert.match(html, /模型分析未采用/, "必须说明降级原因");
+  assert.match(html, /接口 502/);
+  assert.match(html, /平均壁厚/, "规则结论必须保留");
 });
 
 /* ---------------- 样例文件与领域层联动 ---------------- */
@@ -209,4 +379,9 @@ for (const [name, fn] of checks) {
   fn();
   console.log("ok - " + name);
 }
-console.log("ok - assistant wiring: " + checks.length + "/" + checks.length + " checks passed");
+for (const [name, fn] of asyncChecks) {
+  await fn();
+  console.log("ok - " + name);
+}
+const total = checks.length + asyncChecks.length;
+console.log("ok - assistant wiring: " + total + "/" + total + " checks passed");

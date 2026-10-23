@@ -74,6 +74,41 @@ const checks = [
     assert.match(html, /BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v8\.\d+ · 2026/);
     assert.doesNotMatch(html, /<footer>[^<]*v7\.0/);
   }],
+  ["LLM config is read from storage, not from the form DOM", () => {
+    assert.ok(html.includes('function readLLMConfigFromStorage'), "必须提供只读存储的配置读取函数");
+    assert.ok(html.includes('function getLLMFormConfig'), "必须提供表单配置（允许未保存输入）");
+    assert.ok(html.includes('function syncLLMConfigStatus'), "必须提供配置状态同步");
+    const start = html.indexOf('function getLLMConfig(');
+    const end = html.indexOf('function getLLMFormConfig(');
+    assert.ok(start > 0 && end > start, "getLLMConfig 与 getLLMFormConfig 必须相邻定义");
+    const body = html.slice(start, end);
+    assert.ok(!body.includes("getElementById('llm-model')"), "getLLMConfig 不得从 DOM 读模型");
+    assert.ok(body.includes('readLLMConfigFromStorage'), "getLLMConfig 必须读已保存配置");
+    assert.ok(html.includes('loadLLMConfigToForm();'), "INIT 必须把已保存配置回填到表单");
+    assert.ok(html.includes('models: saved.models'), "保存配置时必须保留已识别模型列表");
+  }],
+  ["LLM reports are audited against locally computed numbers", () => {
+    assert.ok(html.includes('function auditLLMText'), "缺少模型输出数值审计入口");
+    assert.ok(html.includes('auditNumericClaims'), "必须复用分析层的数值审计实现");
+    assert.ok(html.includes('function auditLLMNotice'), "缺少审计结论文案");
+    assert.ok(html.includes('function prependLLMNotice'), "缺少审计提示渲染");
+    const overview = html.slice(html.indexOf('async function runLLMAnalysis'), html.indexOf('async function runWarningTrendAnalysis'));
+    assert.ok(overview.includes('auditLLMText(text, promptText)'), "总览页深度分析必须审计模型输出");
+    const single = html.slice(html.indexOf('async function runDeepAIAnalysisFromTrend'), html.indexOf('function scrollToAIResults'));
+    assert.ok(single.includes('auditLLMText(text, evidenceText)'), "单管综合分析必须审计模型输出");
+    assert.ok(single.includes('const evidenceText = buildTrendAnalysisPrompt(data)'), "单管分析应复用同一份证据文本，避免两次生成不一致");
+  }],
+  ["cloud load never silently overwrites local edits", () => {
+    assert.ok(html.includes('const LOCAL_DB_AT_KEY'), "必须记录本机最近写入时间");
+    assert.ok(html.includes('const DB_BACKUP_KEY'), "必须提供本机数据库备份键");
+    assert.ok(html.includes('function parseCloudTime'), "必须能解析云端的 updated_at");
+    const boot = html.slice(html.indexOf('async function bootstrapCloudStorage'), html.indexOf('async function loadAuthSession'));
+    assert.ok(boot.includes('localAt > remoteAt + 2000'), "本机更新时应保留本机版本");
+    assert.ok(boot.includes('DB_BACKUP_KEY'), "云端更新时应先备份本机数据");
+    assert.ok(boot.includes('本机数据比云端新'), "需要提示本机更新被保留");
+    assert.ok(boot.includes('云端数据比本机新'), "需要提示已载入云端版本并备份");
+    assert.ok(html.includes("localStorage.setItem(LOCAL_DB_AT_KEY"), "saveDB 必须刷新本机写入时间");
+  }],
   ["top bar keeps the application title instead of repeating the active view", () => {
     assert.match(html, /id="topbar-title">锅炉炉管全生命周期管理系统<\/div>/);
     assert.match(html, /const APP_TITLE = '锅炉炉管全生命周期管理系统'/);

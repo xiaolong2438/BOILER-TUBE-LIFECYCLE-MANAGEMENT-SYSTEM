@@ -392,6 +392,98 @@
     return lines.join('\n');
   }
 
+  /* ---------------- 纯渲染：分析卡片 ---------------- */
+
+  function tableMarkup(table, limit) {
+    var data = table && typeof table === 'object' ? table : {};
+    var columns = Array.isArray(data.columns) ? data.columns : [];
+    var rows = Array.isArray(data.rows) ? data.rows : [];
+    if (!columns.length || !rows.length) return '';
+    var max = typeof limit === 'number' && limit > 0 ? limit : 6;
+    var shown = rows.slice(0, max);
+    var lines = [
+      '<div class="assistant-analysis-table">',
+      '  <table>',
+      '    <thead><tr>' + columns.map(function (column) {
+        return '<th>' + escapeHtml(toText(column)) + '</th>';
+      }).join('') + '</tr></thead>',
+      '    <tbody>'
+    ];
+    for (var i = 0; i < shown.length; i += 1) {
+      lines.push('      <tr>' + columns.map(function (column) {
+        var value = shown[i] && typeof shown[i] === 'object' ? shown[i][column] : '';
+        return '<td>' + escapeHtml(toText(value)) + '</td>';
+      }).join('') + '</tr>');
+    }
+    lines.push('    </tbody>');
+    lines.push('  </table>');
+    if (rows.length > shown.length) {
+      lines.push('  <p class="assistant-analysis-more">仅显示前 ' + formatCount(shown.length) + ' 行，共 ' + formatCount(rows.length) + ' 行；导出可得完整明细。</p>');
+    }
+    lines.push('</div>');
+    return lines.join('\n');
+  }
+
+  function analysisMarkup(card) {
+    var analysis = card && typeof card === 'object' ? card : {};
+    var module = global.BTAssistantAnalysis;
+    var kindLabel = toText(analysis.kindLabel) || '分析';
+    var title = toText(analysis.title) || kindLabel;
+    var metrics = Array.isArray(analysis.metrics) ? analysis.metrics : [];
+    var insights = Array.isArray(analysis.insights) ? analysis.insights : [];
+    var actions = Array.isArray(analysis.actions) ? analysis.actions : [];
+    var chartSvg = toText(analysis.chartSvg);
+    if (!chartSvg && module && typeof module.chartSvg === 'function' && analysis.chart) {
+      try { chartSvg = module.chartSvg(analysis.chart); } catch (err) { chartSvg = ''; }
+    }
+    var sampleSize = num(analysis.sampleSize);
+    var datasetType = toText(analysis.datasetType) || 'unknown';
+    var tone = analysis.tone === 'warn' || analysis.tone === 'danger' ? analysis.tone : '';
+    var source = analysis.source === 'llm' ? 'llm' : 'rules';
+    var note = toText(analysis.note);
+    var advice = toText(analysis.advice);
+
+    var lines = [
+      '<div class="assistant-analysis" data-kind="' + escapeHtml(toText(analysis.kind) || 'overview') + '" data-source="' + source + '"' + (tone ? ' data-tone="' + tone + '"' : '') + '>',
+      '  <div class="assistant-card-head">',
+      '    <span class="assistant-chip" data-tone="accent">' + escapeHtml(kindLabel) + '</span>',
+      '    <span class="assistant-card-title">' + escapeHtml(title) + '</span>',
+      source === 'llm' ? '    <span class="assistant-analysis-badge">模型解读</span>' : '',
+      datasetType !== 'unknown' ? '    <span class="assistant-card-sub">' + escapeHtml(datasetLabel(datasetType)) + '</span>' : '',
+      '  </div>'
+    ];
+    if (metrics.length) {
+      lines.push('  <div class="assistant-metrics">');
+      for (var i = 0; i < metrics.length; i += 1) lines.push(metricMarkup(metrics[i]));
+      lines.push('  </div>');
+    }
+    lines.push('  <figure class="assistant-analysis-chart">');
+    if (chartSvg) {
+      lines.push(chartSvg);
+    } else {
+      lines.push('    <p class="assistant-analysis-chart-empty">当前图表暂无可绘制数据</p>');
+    }
+    if (sampleSize !== null) {
+      lines.push('    <figcaption class="assistant-analysis-caption">样本 ' + escapeHtml(formatCount(sampleSize)) + ' 条 · 数据来自当前浏览器已同步的记录</figcaption>');
+    }
+    lines.push('  </figure>');
+    if (insights.length) {
+      lines.push('  <ul class="assistant-insights">');
+      for (var k = 0; k < insights.length; k += 1) {
+        lines.push('    <li class="assistant-insight">' + escapeHtml(toText(insights[k])) + '</li>');
+      }
+      lines.push('  </ul>');
+    }
+    lines.push(tableMarkup(analysis.table, 6));
+    if (advice) {
+      lines.push('  <p class="assistant-analysis-advice"><b>建议</b>' + escapeHtml(advice) + '</p>');
+    }
+    if (note) lines.push('  <p class="assistant-analysis-note">' + escapeHtml(note) + '</p>');
+    if (actions.length) lines.push(actionButtonsMarkup(actions, { tool: toText(analysis.tool) }));
+    lines.push('</div>');
+    return lines.filter(function (line) { return line !== ''; }).join('\n');
+  }
+
   /* ---------------- 纯渲染：消息 ---------------- */
 
   function messageMarkup(message) {
@@ -414,10 +506,11 @@
     }
     if (msg.cleaning) lines.push(cleaningMarkup(msg.cleaning));
     if (msg.operation) lines.push(operationMarkup(msg.operation));
+    if (msg.analysis) lines.push(analysisMarkup(msg.analysis));
     if (msg.source === 'llm' || msg.source === 'rules') {
       lines.push('    <span class="assistant-source">' + (msg.source === 'llm' ? '模型解析' : '规则解析') + '</span>');
     }
-    if (!text && !msg.attachment && !msg.cleaning && !msg.operation) {
+    if (!text && !msg.attachment && !msg.cleaning && !msg.operation && !msg.analysis) {
       lines.push('    <div class="assistant-bubble assistant-bubble--empty"><p class="assistant-bubble-text">（无内容）</p></div>');
     }
     lines.push('  </div>');
@@ -491,8 +584,9 @@
     return [
       '<div class="assistant-empty">',
       '  <p class="assistant-empty-title">你好，我是锅炉炉管数据助手</p>',
-      '  <p class="assistant-empty-desc">用一句中文就能完成清洗、导入、导出、撤销、查询、统计与单条修改。</p>',
+      '  <p class="assistant-empty-desc">用一句中文就能完成清洗、导入、导出、撤销、查询、统计、分析与单条修改，分析结果直接出图表。</p>',
       '  <ul class="assistant-empty-list">',
+      '    <li>「近两年壁厚趋势」出一张折线图</li>',
       '    <li>「现在数据质量怎么样」查看统计与问题清单</li>',
       '    <li>「查询 1 号炉 HSH 的测厚记录」</li>',
       '    <li>「帮我检查这份 CSV 能不能导入」</li>',
@@ -945,6 +1039,8 @@
     messageMarkup: messageMarkup,
     cleaningMarkup: cleaningMarkup,
     operationMarkup: operationMarkup,
+    analysisMarkup: analysisMarkup,
+    tableMarkup: tableMarkup,
     quickPromptMarkup: quickPromptMarkup,
     historyMarkup: historyMarkup,
     mount: mount

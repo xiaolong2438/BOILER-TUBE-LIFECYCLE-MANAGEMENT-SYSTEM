@@ -18,6 +18,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='2' width='20' height='20' rx='5' fill='%23001122' stroke='%2300d4ff' stroke-width='1.5'/%3E%3Cpath d='M12 4.5L5.5 8v8L12 19.5 18.5 16V8z' fill='none' stroke='%2300d4ff' stroke-width='1.4'/%3E%3Cpath d='M12 4.5V12l6.5 3M12 12L5.5 8' fill='none' stroke='%2348cae4' stroke-width='1.1'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="assets/app/app-v8.0.css">
 <link rel="stylesheet" href="assets/app/assistant-v1.css">
+<link rel="stylesheet" href="assets/app/maintenance-log-v1.css">
 </head>
 <body>
 <script>try{if(localStorage.getItem('blcms-rail-collapsed')==='1')document.body.classList.add('rail-collapsed');}catch(e){}</script>
@@ -50,6 +51,7 @@
     <button class="nav-btn" data-view="datamgr"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>数据录入</span></button>
     <button class="nav-btn" data-view="generator"><svg viewBox="0 0 24 24"><path d="M4 7V5m0 14v-2m0-6v-2m0 6h2m-2-6h2M10 5h10M10 12h10M10 19h10"/></svg><span>编码生成</span></button>
     <button class="nav-btn" data-view="inventory"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.8"/><path d="M4 5.5V18.5c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8V5.5"/><path d="M4 12c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8"/></svg><span>全量台账</span></button>
+    <button class="nav-btn" data-view="maintainlog"><svg viewBox="0 0 24 24"><path d="M8 4h9l4 4v12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M16 4v5h5"/><path d="M10 13h7M10 17h5"/></svg><span>维护记录</span></button>
   </div>
   <div class="nav-group" aria-label="设备资料">
     <span class="nav-caption">设备资料</span>
@@ -499,6 +501,70 @@
   </section>
 
   <!-- 8. INVENTORY -->
+  <section class="view" id="view-maintainlog">
+    <div class="section-title"><h2>维护记录</h2><span class="sub">MAINTENANCE LOG · 数据变更流水与操作留痕</span></div>
+    <div class="mlog-stats" id="mlog-stats"></div>
+    <div class="card">
+      <div class="card-title">维护流水</div>
+      <div class="mlog-toolbar">
+        <div class="mlog-field">
+          <label for="mlog-range">时间范围</label>
+          <select id="mlog-range">
+            <option value="0">全部</option>
+            <option value="1">今天</option>
+            <option value="7">近 7 天</option>
+            <option value="30">近 30 天</option>
+            <option value="90">近 90 天</option>
+          </select>
+        </div>
+        <div class="mlog-field">
+          <label for="mlog-action">动作</label>
+          <select id="mlog-action">
+            <option value="">全部动作</option>
+            <option value="create">新增</option>
+            <option value="update">修改</option>
+            <option value="delete">删除</option>
+            <option value="import">导入</option>
+            <option value="undo">撤销</option>
+            <option value="replace">更换登记</option>
+            <option value="material">材料库</option>
+            <option value="system">系统</option>
+          </select>
+        </div>
+        <div class="mlog-field">
+          <label for="mlog-source">来源</label>
+          <select id="mlog-source">
+            <option value="">全部来源</option>
+            <option value="manual">手工操作</option>
+            <option value="assistant">AI 助手</option>
+            <option value="import">文件导入</option>
+            <option value="system">系统</option>
+          </select>
+        </div>
+        <div class="mlog-field mlog-search">
+          <label for="mlog-keyword">关键词</label>
+          <input type="search" id="mlog-keyword" placeholder="管段编码 / 字段名 / 操作人" />
+        </div>
+        <div class="mlog-actions">
+          <button type="button" class="btn btn-outline" id="mlog-refresh">刷新</button>
+          <button type="button" class="btn btn-outline" id="mlog-export">导出 CSV</button>
+          <button type="button" class="btn btn-outline" id="mlog-clear">清空日志</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th style="width:132px;">时间</th><th style="width:88px;">动作</th><th>对象</th><th>变更内容</th><th style="width:96px;">操作人</th><th style="width:88px;">来源</th><th style="width:64px;"></th></tr></thead>
+          <tbody id="mlog-body"></tbody>
+        </table>
+      </div>
+      <p class="mlog-foot" id="mlog-foot"></p>
+    </div>
+    <div class="alert alert-info" style="margin-top:14px;">
+      <div>ℹ</div>
+      <div>日志只记录本系统的数据维护动作（新增 / 修改 / 删除 / 导入 / 撤销 / 更换登记 / 材料库变更），不含浏览与查询行为；本机保留最近 800 条，并与云端按条合并，不会因为换设备而丢历史。</div>
+    </div>
+  </section>
+
   <section class="view" id="view-inventory">
     <div class="section-title"><h2>全量管段台账</h2><span class="sub">TUBE INVENTORY · CSV / XLSX EXPORT</span></div>
     <div class="stats-grid">
@@ -814,10 +880,12 @@
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" defer></script>
 <script src="assets/app/app-v7.9.js" defer></script>
+<script src="assets/app/maintenance-log-v1.js" defer></script>
 <script src="assets/app/ui-shell-v8.js" defer></script>
 <script src="assets/app/theme-toggle-v1.js" defer></script>
 <script src="assets/app/xlsx-export-v1.js" defer></script>
 <script src="assets/app/assistant-core-v1.js" defer></script>
+<script src="assets/app/assistant-analysis-v1.js" defer></script>
 <script src="assets/app/assistant-ui-v1.js" defer></script>
 <script src="assets/app/assistant-v1.js" defer></script>
 </body>

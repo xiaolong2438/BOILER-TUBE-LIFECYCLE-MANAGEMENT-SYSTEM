@@ -63,6 +63,49 @@ window.runAssistantTests = async function () {
     assert(undone, 'undo did not restore records');
   });
 
+  await test('analysis intent renders a chart card', async () => {
+    const before = userDB.events.length;
+    const csv = [
+      '数据分类,炉号,日期,管段编码,规格,材质,厚度(mm),硬度(HB),事件类型/更换原因,关联新管码,详细描述/结论',
+      '事件,1,2025-06-10,1-WW-FR-009-0007-000,Φ63.5×7.5,SA-210C,7.12,183,测厚,,AI 分析冒烟一',
+      '事件,1,2025-09-12,1-WW-FR-009-0007-000,Φ63.5×7.5,SA-210C,6.94,188,测厚,,AI 分析冒烟二',
+      '事件,1,2026-01-08,1-WW-FR-009-0007-000,Φ63.5×7.5,SA-210C,6.71,192,测厚,,AI 分析冒烟三'
+    ].join(String.fromCharCode(10));
+    const cardsBefore = document.querySelectorAll('[data-action-id="import-confirm"]').length;
+    window.BTAssistant.handleFile(new File([csv], 'assistant-analysis-smoke.csv', { type: 'text/csv' }));
+    await until(() => document.querySelectorAll('[data-action-id="import-confirm"]').length > cardsBefore);
+    const importButtons = document.querySelectorAll('[data-action-id="import-confirm"]');
+    const importButton = importButtons[importButtons.length - 1];
+    assert(importButton, 'import confirm button missing for analysis smoke');
+    importButton.click();
+    const imported = await until(() => userDB.events.length > before);
+    assert(imported, 'analysis smoke data not imported');
+
+    window.BTAssistant.send('近两年壁厚趋势');
+    const ok = await until(() => document.querySelector('.assistant-analysis svg'));
+    assert(ok, 'analysis chart card missing: ' + messagesText().slice(-200));
+    assert(document.querySelector('[data-action-id="export-analysis"]'), 'export analysis action missing');
+
+    const undoButtons = document.querySelectorAll('[data-action-id="undo-last-import"]');
+    const undoButton = undoButtons[undoButtons.length - 1];
+    if (undoButton) {
+      undoButton.click();
+      await until(() => userDB.events.length === before);
+    }
+  });
+
+  await test('maintenance log records and renders operations', async () => {
+    assert(window.BTMaintenanceLog, 'BTMaintenanceLog missing');
+    const logged = await until(() => window.BTMaintenanceLog.stats().total > 0);
+    assert(logged, 'no maintenance log entries after import/undo');
+    window.switchView('maintainlog');
+    const rendered = await until(() => document.querySelectorAll('#mlog-body tr[data-log-id]').length > 0);
+    assert(rendered, 'maintenance log rows not rendered');
+    assert(document.querySelector('[data-log-toggle]'), 'detail toggle missing');
+    const stats = window.BTMaintenanceLog.stats();
+    assert(stats.byAction.import >= 1, 'import action should be logged');
+  });
+
   await test('page remains error-free', async () => {
     assert(!window.__testErrors.length, JSON.stringify(window.__testErrors));
   });

@@ -1,0 +1,297 @@
+/* ============================================================
+   BOILER-TUBE LIFECYCLE MANAGEMENT SYSTEM · 维护记录 · 样式
+   assets/app/maintenance-log-v1.css · v1.0.0
+   ------------------------------------------------------------
+   约定：
+   1. 只使用 app-v8.0.css 的 :root / html[data-theme="light"] 设计令牌
+   2. 类名统一 mlog-* 前缀，与既有 .card / .btn / .table-wrap 组合使用
+   ============================================================ */
+
+/* ---------- 概览指标 ---------- */
+.mlog-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.mlog-stat {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.mlog-stat[data-tone="accent"] { border-left-color: var(--accent); }
+.mlog-stat[data-tone="warn"] { border-left-color: var(--warn); }
+.mlog-stat[data-tone="danger"] { border-left-color: var(--danger); }
+
+.mlog-stat-k {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: var(--text-faint);
+}
+
+.mlog-stat-v {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-hi);
+  font-variant-numeric: tabular-nums;
+}
+
+.mlog-stat-h {
+  display: block;
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--text-ghost);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- 工具栏 ---------- */
+.mlog-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--line-subtle);
+}
+
+.mlog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+}
+
+.mlog-field > label {
+  font-size: 10.5px;
+  letter-spacing: 0.3px;
+  color: var(--text-faint);
+}
+
+.mlog-field select,
+.mlog-field input {
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.mlog-field select:focus,
+.mlog-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.mlog-field.mlog-search {
+  flex: 1 1 200px;
+  min-width: 180px;
+}
+
+.mlog-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* ---------- 动作标签 ---------- */
+.mlog-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.mlog-action[data-tone="ok"] {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+  color: var(--ok);
+}
+
+.mlog-action[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+  color: var(--danger);
+}
+
+.mlog-action[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 13%, transparent);
+  color: var(--warn);
+}
+
+.mlog-action[data-tone="accent"] {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-bright);
+}
+
+/* ---------- 表格 ---------- */
+#view-maintainlog .table-wrap table td {
+  vertical-align: top;
+  font-size: 12px;
+}
+
+.mlog-time span {
+  display: block;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.mlog-time em {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--text-ghost);
+}
+
+.mlog-target span {
+  display: block;
+  color: var(--text);
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+
+.mlog-target em {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.mlog-summary {
+  max-width: 340px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mlog-summary em {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--text-ghost);
+}
+
+.mlog-operator,
+.mlog-source {
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.mlog-source[data-source="assistant"] { color: var(--info-violet); }
+.mlog-source[data-source="system"] { color: var(--text-faint); }
+
+.mlog-ops { white-space: nowrap; }
+
+.mlog-detail-btn {
+  padding: 2px 9px;
+  font-size: 11px;
+}
+
+.mlog-empty {
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+/* ---------- 明细（字段级差异） ---------- */
+.mlog-detail > td {
+  padding: 0 !important;
+  background: var(--surface-sunken);
+}
+
+.mlog-detail-box {
+  padding: 10px 14px 12px;
+  border-top: 1px dashed var(--line-subtle);
+}
+
+.mlog-detail-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-hi);
+  margin-bottom: 8px;
+}
+
+.mlog-diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mlog-diff th,
+.mlog-diff td {
+  padding: 4px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.mlog-diff th {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  background: transparent;
+}
+
+.mlog-diff .mlog-before { color: var(--text-faint); }
+.mlog-diff .mlog-after { color: var(--ok); }
+
+.mlog-detail-empty,
+.mlog-detail-meta {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--text-ghost);
+  line-height: 1.7;
+}
+
+.mlog-foot {
+  margin: 10px 0 0;
+  font-size: 10.5px;
+  color: var(--text-ghost);
+  text-align: right;
+}
+
+/* ---------- 窄屏 ---------- */
+@media (max-width: 900px) {
+  .mlog-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mlog-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .mlog-field.mlog-search {
+    flex: 1 1 100%;
+  }
+  .mlog-summary,
+  .mlog-target span {
+    max-width: none;
+  }
+}

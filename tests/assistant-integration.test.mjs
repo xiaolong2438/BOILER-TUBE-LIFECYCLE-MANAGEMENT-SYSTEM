@@ -18,6 +18,7 @@ const appJs = read("assets/app/app-v7.9.js");
 const coreJs = readOrEmpty("assets/app/assistant-core-v1.js");
 const uiJs = readOrEmpty("assets/app/assistant-ui-v1.js");
 const wiringJs = readOrEmpty("assets/app/assistant-v1.js");
+const analysisJs = readOrEmpty("assets/app/assistant-analysis-v1.js");
 const css = readOrEmpty("assets/app/assistant-v1.css");
 const baseCss = read("assets/app/app-v8.0.css");
 const workflow = read(".github/workflows/deploy-cloudflare-pages.yml");
@@ -36,6 +37,7 @@ check("页面按依赖顺序加载助手资源", () => {
     "assets/app/app-v7.9.js",
     "assets/app/xlsx-export-v1.js",
     "assets/app/assistant-core-v1.js",
+    "assets/app/assistant-analysis-v1.js",
     "assets/app/assistant-ui-v1.js",
     "assets/app/assistant-v1.js"
   ];
@@ -47,7 +49,7 @@ check("页面按依赖顺序加载助手资源", () => {
   for (let i = 1; i < positions.length; i += 1) {
     assert.ok(positions[i] > positions[i - 1], `资源顺序错误：${order[i]} 必须晚于 ${order[i - 1]}`);
   }
-  for (const asset of ["assistant-core-v1.js", "assistant-ui-v1.js", "assistant-v1.js"]) {
+  for (const asset of ["assistant-core-v1.js", "assistant-analysis-v1.js", "assistant-ui-v1.js", "assistant-v1.js"]) {
     has(html, `<script src="assets/app/${asset}" defer></script>`, `${asset} 必须以 defer 加载`);
   }
   has(html, '<link rel="stylesheet" href="assets/app/assistant-v1.css">');
@@ -87,8 +89,8 @@ check("app-v7.9.js 暴露助手所需的桥接函数", () => {
 });
 
 /* ---------------- 3. 三层脚本可解析、命名空间正确 ---------------- */
-check("三个助手脚本语法合法且命名空间符合契约", () => {
-  const files = ["assets/app/assistant-core-v1.js", "assets/app/assistant-ui-v1.js", "assets/app/assistant-v1.js"];
+check("四个助手脚本语法合法且命名空间符合契约", () => {
+  const files = ["assets/app/assistant-core-v1.js", "assets/app/assistant-analysis-v1.js", "assets/app/assistant-ui-v1.js", "assets/app/assistant-v1.js"];
   for (const file of files) {
     assert.ok(existsSync(resolve(root, file)), `缺少文件 ${file}`);
     execFileSync(process.execPath, ["--check", resolve(root, file)], { stdio: "pipe" });
@@ -96,6 +98,7 @@ check("三个助手脚本语法合法且命名空间符合契约", () => {
   has(coreJs, "BTAssistantCore", "领域层必须挂到 window.BTAssistantCore");
   has(uiJs, "BTAssistantUI", "UI 层必须挂到 window.BTAssistantUI");
   has(wiringJs, "BTAssistant", "接线层必须挂到 window.BTAssistant");
+  has(analysisJs, "BTAssistantAnalysis", "分析层必须挂到 window.BTAssistantAnalysis");
   has(coreJs, "module.exports", "core 需要同时支持 Node 测试加载");
 });
 
@@ -110,7 +113,7 @@ check("领域层导出契约要求的全部 API", () => {
 });
 
 check("UI 层导出契约要求的全部渲染函数与 DOM id", () => {
-  const fns = ["escapeHtml", "launcherMarkup", "panelMarkup", "messageMarkup", "cleaningMarkup", "operationMarkup", "quickPromptMarkup", "historyMarkup", "mount"];
+  const fns = ["escapeHtml", "launcherMarkup", "panelMarkup", "messageMarkup", "cleaningMarkup", "operationMarkup", "analysisMarkup", "quickPromptMarkup", "historyMarkup", "mount"];
   for (const name of fns) has(uiJs, name, `UI 层缺少 ${name}`);
   const ids = [
     "assistantLauncher", "assistantPanel", "assistantClose", "assistantHistoryBtn", "assistantNewChat",
@@ -118,6 +121,22 @@ check("UI 层导出契约要求的全部渲染函数与 DOM id", () => {
     "assistantSend", "assistantAttach", "assistantFile", "assistantHistory", "assistantModelHint", "assistantTyping"
   ];
   for (const id of ids) has(uiJs, id, `UI 层缺少契约 DOM id：${id}`);
+});
+
+/* ---------------- 3.5 维护记录模块 ---------------- */
+check("维护记录模块资源齐备、dist 同步且工作流已校验", () => {
+  const assets = ["maintenance-log-v1.js", "maintenance-log-v1.css"];
+  for (const asset of assets) {
+    assert.ok(existsSync(resolve(root, "assets/app", asset)), `缺少源文件 ${asset}`);
+    assert.ok(existsSync(resolve(root, "dist/assets/app", asset)), `dist 缺少 ${asset}`);
+    assert.equal(read(`assets/app/${asset}`), read(`dist/assets/app/${asset}`), `${asset} 与 dist 不一致`);
+    has(html, asset, `页面缺少 ${asset} 引用`);
+    has(workflow, `test -f dist/assets/app/${asset}`, `工作流缺少 ${asset} 校验`);
+  }
+  assert.ok(html.indexOf("maintenance-log-v1.js") > html.indexOf("app-v7.9.js"), "日志模块必须晚于主应用加载");
+  assert.ok(html.includes('data-view="maintainlog"'), "缺少维护记录导航项");
+  assert.ok(html.includes('id="view-maintainlog"'), "缺少维护记录视图");
+  execFileSync(process.execPath, ["--check", resolve(root, "assets/app/maintenance-log-v1.js")], { stdio: "pipe" });
 });
 
 /* ---------------- 4. 接线层必须复用三层，不得重复实现 ---------------- */
@@ -170,7 +189,7 @@ check("助手样式只用已定义的设计令牌且括号配平", () => {
 
 /* ---------------- 6. 部署工作流 ---------------- */
 check("部署工作流校验并发布助手资源", () => {
-  for (const asset of ["assistant-core-v1.js", "assistant-ui-v1.js", "assistant-v1.js", "assistant-v1.css"]) {
+  for (const asset of ["assistant-core-v1.js", "assistant-analysis-v1.js", "assistant-ui-v1.js", "assistant-v1.js", "assistant-v1.css"]) {
     has(workflow, `test -f dist/assets/app/${asset}`, `工作流缺少 ${asset} 存在性校验`);
     has(workflow, `grep -q 'assets/app/${asset}' dist/index.html`, `工作流缺少 ${asset} 引用校验`);
   }
@@ -181,7 +200,7 @@ check("部署工作流校验并发布助手资源", () => {
 check("dist 产物包含助手资源且与源码同步", () => {
   const distIndex = read("dist/index.html");
   assert.equal(distIndex, html, "dist/index.html 必须与源码页面完全一致（发布前请重新生成 dist）");
-  for (const asset of ["assistant-core-v1.js", "assistant-ui-v1.js", "assistant-v1.js", "assistant-v1.css"]) {
+  for (const asset of ["assistant-core-v1.js", "assistant-analysis-v1.js", "assistant-ui-v1.js", "assistant-v1.js", "assistant-v1.css"]) {
     assert.ok(existsSync(resolve(root, "dist/assets/app", asset)), `dist 缺少 ${asset}`);
     assert.equal(read(`dist/assets/app/${asset}`), read(`assets/app/${asset}`), `dist/${asset} 与源码不一致`);
   }
@@ -190,7 +209,7 @@ check("dist 产物包含助手资源且与源码同步", () => {
 /* ---------------- 8. 文案与依赖口径 ---------------- */
 check("入口文案为中文且不引入未定义的外部依赖", () => {
   assert.ok(uiJs.includes("AI 数据助手") || uiJs.includes("数据助手"), "入口必须有中文名称");
-  for (const script of [coreJs, uiJs, wiringJs]) {
+  for (const script of [coreJs, analysisJs, uiJs, wiringJs]) {
     assert.ok(!/^\s*import\s+[\w{*]/m.test(script), "经典脚本里不能出现 ESM import");
     assert.ok(!/^\s*export\s+(default|const|function|class)/m.test(script), "经典脚本里不能出现 ESM export");
     assert.ok(!script.includes("cdn.jsdelivr") && !script.includes("unpkg.com"), "不得引入新的外部 CDN 依赖");

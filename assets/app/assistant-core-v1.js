@@ -139,6 +139,15 @@
     { name: 'data.query', label: '查询数据', minRole: 'viewer', requiresConfirm: false, runnableWithoutFile: true, intent: 'query' },
     { name: 'data.edit', label: '修改记录', minRole: 'editor', requiresConfirm: true, runnableWithoutFile: true, intent: 'edit' },
     { name: 'data.stats', label: '统计概览', minRole: 'viewer', requiresConfirm: false, runnableWithoutFile: true, intent: 'stats' },
+    {
+      name: 'data.analyze',
+      label: '分析可视化',
+      minRole: 'viewer',
+      requiresConfirm: false,
+      runnableWithoutFile: true,
+      intent: 'analyze',
+      examples: ['近两年壁厚趋势', '各受热面事件数排行', '1、2 号炉壁厚对比']
+    },
     { name: 'data.undo', label: '撤销导入', minRole: 'editor', requiresConfirm: true, runnableWithoutFile: true, intent: 'undo' },
     { name: 'assistant.help', label: '使用帮助', minRole: 'viewer', requiresConfirm: false, runnableWithoutFile: true, intent: 'help' }
   ];
@@ -148,13 +157,14 @@
   var ROLE_RANK = { viewer: 1, editor: 2, admin: 3 };
   var ROLE_LABELS = { viewer: '只读', editor: '编辑', admin: '管理员' };
 
-  var INTENT_PRIORITY = ['undo', 'clean', 'export', 'import', 'edit', 'query', 'stats', 'help', 'unknown'];
+  var INTENT_PRIORITY = ['undo', 'clean', 'export', 'import', 'edit', 'query', 'analyze', 'stats', 'help', 'unknown'];
   var INTENT_TOOL = {
     clean: 'assistant.clean',
     import: 'data.import',
     export: 'data.export',
     query: 'data.query',
     edit: 'data.edit',
+    analyze: 'data.analyze',
     stats: 'data.stats',
     undo: 'data.undo',
     help: 'assistant.help',
@@ -181,6 +191,9 @@
     { intent: 'stats', weight: 5, re: /数据(?:怎么样|如何|情况|状态)|质量(?:怎么样|如何|情况)/ },
     { intent: 'stats', weight: 4, re: /多少|几条|几个|多少个|总数|数量/ },
     { intent: 'stats', weight: 1, re: /怎么样|如何|情况/ },
+    { intent: 'analyze', weight: 6, re: /趋势|走势|逐月|逐年|按月|按年|分布图|直方图|分布|排行|排名|对比|比较|相关性|相关系数|散点图|异常值|离群|画像|图表|可视化|柱状图|折线图|饼图|环形图|构成/ },
+    { intent: 'analyze', weight: 5, re: /top\s*\d+|前\s*\d+\s*名|前\s*\d+\s*个|最薄|最厚|变化情况|变化曲线|历史曲线|剖面|环比|同比/ },
+    { intent: 'analyze', weight: 4, re: /分析|异常|可疑|看一下|帮我看看/ },
     { intent: 'help', weight: 6, re: /怎么用|怎么使用|能做什么|会做什么|能干什么|有什么功能|使用说明|使用帮助/ },
     { intent: 'help', weight: 5, re: /帮助|帮助文档|教程|你是谁|怎么操作/ },
     { intent: 'help', weight: 2, re: /功能|介绍|说明/ }
@@ -193,6 +206,8 @@
   var CANNOT_IMPORT_RE = /能不能导入|能否导入|能导入吗|可以导入吗|可不可以导入|能不能入库|能否入库|能入库吗|可以入库吗|可不可以入库/;
   var COUNTING_RE = /多少|几条|几个|多少个|总数|统计|概览/;
   var LISTING_RE = /有哪些|列出|找出|查询|查一下|查找|显示/;
+  /* 强分析词：出现这些词时以「分析」为准，避免被「统计/多少」抢走 */
+  var STRONG_ANALYSIS_RE = /趋势|走势|排行|排名|对比|比较|相关性|相关系数|散点|直方图|分布图|分布|画像|异常值|异常记录|离群|剖面|图表|可视化|环比|同比/;
 
   /* ============================================================
    * 通用工具函数（§2.8）
@@ -1496,7 +1511,7 @@
     return 'unknown';
   }
 
-  var UNKNOWN_INTENT_REPLY = '没太听懂这句话。你可以试试：\n1. 「检查这批寿命数据能不能导入」\n2. 「查一下 2 号炉高再的测厚记录」\n3. 「现在数据质量怎么样」';
+  var UNKNOWN_INTENT_REPLY = '没太听懂这句话。你可以试试：\n1. 「检查这批寿命数据能不能导入」\n2. 「查一下 2 号炉高再的测厚记录」\n3. 「现在数据质量怎么样」\n4. 「近两年壁厚趋势」看图表分析';
 
   function createUnknownIntent(reply, datasetType, ctx) {
     var params = {};
@@ -1530,12 +1545,17 @@
 
     var templateRequest = TEMPLATE_RE.test(text);
     var cannotImport = CANNOT_IMPORT_RE.test(text);
+    var cannotExport = /导出|下载|另存为|保存为|保存成|存成/.test(text);
     var exportScan = templateRequest ? text.replace(/下载/g, '').replace(/模板/g, '') : text;
     var importScan = cannotImport ? text.replace(/能不能导入|能否导入|能导入吗|可以导入吗|可不可以导入|能入库吗|能不能入库|可不可以入库/g, '') : text;
+    /* 明确的导出/下载说法优先走导出：不让「导出壁厚趋势」被当成分析 */
+    var analyzeScan = cannotExport ? '' : text;
 
-    var scores = { undo: 0, clean: 0, export: 0, import: 0, edit: 0, query: 0, stats: 0, help: 0 };
+    var scores = { undo: 0, clean: 0, export: 0, import: 0, edit: 0, query: 0, analyze: 0, stats: 0, help: 0 };
     INTENT_PATTERNS.forEach(function (rule) {
-      var scan = rule.intent === 'export' ? exportScan : (rule.intent === 'import' ? importScan : text);
+      var scan = rule.intent === 'export' ? exportScan
+        : (rule.intent === 'import' ? importScan
+          : (rule.intent === 'analyze' ? analyzeScan : text));
       if (rule.re.test(scan)) scores[rule.intent] += rule.weight;
     });
     if (templateRequest) scores.help += 6;
@@ -1546,6 +1566,7 @@
       else scores.edit += 1;
     }
     if (COUNTING_RE.test(text) && !LISTING_RE.test(text)) scores.stats += 3;
+    if (analyzeScan && STRONG_ANALYSIS_RE.test(analyzeScan)) scores.analyze += 6;
 
     var bestIntent = 'unknown';
     var bestScore = 0;
@@ -1638,6 +1659,8 @@
         return '我来查询：' + (info.queryResult && info.queryResult.description ? info.queryResult.description : label + '记录') + '。';
       case 'stats':
         return '好，我汇总一下当前数据的整体情况和问题。';
+      case 'analyze':
+        return '好，我按你说的口径做一次分析，结果会用图表和结论一起给你（可导出明细）。';
       case 'edit':
         return info.editResult
           ? info.editResult.reply

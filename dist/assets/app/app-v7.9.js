@@ -25,6 +25,20 @@ function showToast(message, type = 'info', duration = 3600) {
 }
 function downloadBlob(filename, content, type = 'text/plain;charset=utf-8;') { const blob = new Blob([content], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href); }
 const CLOUD_STORAGE_ENDPOINT = '/api/storage';
+/* 多设备覆盖保护：记录本机最后一次写入时间；云端覆盖本机前先备份 */
+const LOCAL_DB_AT_KEY = 'boiler_user_db_local_at';
+const DB_BACKUP_KEY = 'boiler_user_db_backup';
+const MATERIAL_BACKUP_KEY = 'boiler_material_library_backup';
+function parseCloudTime(value) {
+  if(!value) return 0;
+  const text = String(value).trim();
+  const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text) ? text.replace(' ', 'T') + 'Z' : text;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : 0;
+}
+function safeParseJson(raw, fallback) {
+  try { return raw ? JSON.parse(raw) : fallback; } catch(err) { return fallback; }
+}
 const cloudSaveTimers = new Map();
 let currentAuthSession = null;
 function cloudStorageEnabled() { return location.protocol.startsWith('http') && location.host && location.origin !== 'null'; }
@@ -56,13 +70,49 @@ async function bootstrapCloudStorage() {
     cloudStorageRequest('boiler_material_library')
   ]);
   let changed = false;
+  let conflictNotice = '';
+  const localRaw = localStorage.getItem('boiler_user_db') || '';
+  const localAt = Date.parse(localStorage.getItem(LOCAL_DB_AT_KEY) || '') || 0;
+
   if(remoteUserDB?.found && remoteUserDB.value && typeof remoteUserDB.value === 'object') {
-    userDB = remoteUserDB.value;
-    localStorage.setItem('boiler_user_db', JSON.stringify(userDB));
-    changed = true;
+    const remoteRaw = JSON.stringify(remoteUserDB.value);
+    const remoteAt = parseCloudTime(remoteUserDB.updatedAt);
+    const localDB = safeParseJson(localRaw, null);
+    const localCount = localDB ? ((localDB.events || []).length + (localDB.replacements || []).length) : 0;
+    const remoteCount = ((remoteUserDB.value.events || []).length + (remoteUserDB.value.replacements || []).length);
+    const differs = Boolean(localRaw) && localRaw !== remoteRaw;
+    if(differs && localAt > remoteAt + 2000) {
+      /* 本机比云端新：保留本机并排队上传，避免被旧版本冲掉 */
+      queueCloudStorageSave('boiler_user_db', userDB);
+      conflictNotice = '本机数据比云端新（本机 ' + localCount + ' 条 / 云端 ' + remoteCount + ' 条），已保留本机版本并排队上传。';
+    } else {
+      if(differs && localCount > 0) {
+        localStorage.setItem(DB_BACKUP_KEY, JSON.stringify({
+          at: new Date().toISOString(),
+          reason: 'cloud-newer',
+          remoteUpdatedAt: remoteUserDB.updatedAt || '',
+          data: localDB
+        }));
+        conflictNotice = '云端数据比本机新（本机 ' + localCount + ' 条 / 云端 ' + remoteCount +
+          ' 条），已载入云端版本；本机原数据已备份到本地，可在「维护记录」查看这条记录。';
+      }
+      userDB = remoteUserDB.value;
+      localStorage.setItem('boiler_user_db', remoteRaw);
+      localStorage.setItem(LOCAL_DB_AT_KEY, new Date(remoteAt || Date.now()).toISOString());
+      changed = true;
+    }
   }
   if(remoteMaterialLibrary?.found && Array.isArray(remoteMaterialLibrary.value)) {
-    localStorage.setItem('boiler_material_library', JSON.stringify(remoteMaterialLibrary.value));
+    const localMatRaw = localStorage.getItem('boiler_material_library') || '';
+    const remoteMatRaw = JSON.stringify(remoteMaterialLibrary.value);
+    if(localMatRaw && localMatRaw !== remoteMatRaw) {
+      localStorage.setItem(MATERIAL_BACKUP_KEY, JSON.stringify({
+        at: new Date().toISOString(),
+        reason: 'cloud-newer',
+        data: localMatRaw
+      }));
+    }
+    localStorage.setItem('boiler_material_library', remoteMatRaw);
     changed = true;
   }
   if(remoteUserDB?.found === false && ((userDB.events || []).length || (userDB.replacements || []).length)) {
@@ -82,6 +132,14 @@ async function bootstrapCloudStorage() {
     renderComponent('ww');
     const activeComp = document.querySelector('.comp-tab.active')?.dataset.comp || 'ww';
     renderMaterialLibrary(activeComp);
+  }
+  if(conflictNotice) {
+    showToast(conflictNotice, 'warn', 9000);
+    try {
+      if(window.BTMaintenanceLog && typeof window.BTMaintenanceLog.hook === 'function') {
+        window.BTMaintenanceLog.hook('system', { summary: conflictNotice });
+      }
+    } catch(err) { /* 留痕失败不影响主流程 */ }
   }
 }
 async function loadAuthSession() {
@@ -235,7 +293,14 @@ function parseCSVLine(line) {
   result.push(current); return result;
 }
 function csvEscape(value) { return `"${String(value ?? '').replace(/"/g, '""')}"`; }
-function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); queueCloudStorageSave('boiler_user_db', userDB); renderDMTable(); updateLifecycleDropdown(); populateAIThicknessTargets(); renderDashboardWarnings(); syncDashboardSnapshot(); }
+function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); localStorage.setItem(LOCAL_DB_AT_KEY, new Date().toISOString()); queueCloudStorageSave('boiler_user_db', userDB); renderDMTable(); updateLifecycleDropdown(); populateAIThicknessTargets(); renderDashboardWarnings(); syncDashboardSnapshot(); }
+/* 维护记录（操作日志）统一入口：日志失败绝不影响主流程 */
+function mlog(kind, payload) {
+  try {
+    if(window.BTMaintenanceLog && typeof window.BTMaintenanceLog.hook === 'function') return window.BTMaintenanceLog.hook(kind, payload);
+  } catch(err) { console.warn('[维护记录] 写入失败：', err); }
+  return null;
+}
 function getBoilerFromCode(code) {
   const match = String(code || '').trim().match(/^([12])-/);
   return match ? match[1] : '';
@@ -275,8 +340,10 @@ function addUserEvent() {
   const desc = document.getElementById('dm-desc').value.trim();
   if(!boiler || !code || !date || !desc) { showToast('请填写机组、管段编码、日期和详细数据/结论', 'warn'); return; }
   if(getBoilerFromCode(code) && getBoilerFromCode(code) !== boiler) { showToast('所选机组与管段编码开头不一致，请核对。', 'warn'); return; }
-  userDB.events.push({boiler, code, spec, material, thickness, hardness, type, date, desc, ts: Date.now()});
+  const newEvent = {boiler, code, spec, material, thickness, hardness, type, date, desc, ts: Date.now()};
+  userDB.events.push(newEvent);
   saveDB();
+  mlog('create', { record: newEvent, source: 'manual' });
   showToast('保存成功，请前往【管段综合分析】验证', 'ok');
   ['dm-code','dm-spec','dm-material','dm-thickness','dm-hardness','dm-desc'].forEach(id => document.getElementById(id).value = '');
 }
@@ -288,14 +355,16 @@ function addReplacement() {
   const date = document.getElementById('dm-rep-date').value;
   if(!boiler || !oldCode || !newCode || !date) { showToast('请填写机组、旧管段编码、新管段编码和更换日期', 'warn'); return; }
   if((getBoilerFromCode(oldCode) && getBoilerFromCode(oldCode) !== boiler) || (getBoilerFromCode(newCode) && getBoilerFromCode(newCode) !== boiler)) { showToast('所选机组与旧/新管段编码开头不一致，请核对。', 'warn'); return; }
-  userDB.replacements.push({boiler, oldCode, newCode, reason, date, ts: Date.now()});
+  const newReplacement = {boiler, oldCode, newCode, reason, date, ts: Date.now()};
+  userDB.replacements.push(newReplacement);
   userDB.events.push({boiler, code: oldCode, type: '报废更换', date, desc: `更换为 ${newCode}，原因：${reason}`, ts: Date.now()});
   userDB.events.push({boiler, code: newCode, type: '安装投运', date, desc: `替换 ${oldCode}，继承历史`, ts: Date.now()});
   saveDB();
+  mlog('replace', { record: newReplacement, source: 'manual' });
   showToast('更换登记成功', 'ok');
 }
 function renderDMTable() { const tbody = document.getElementById('dm-table-body'); if(!tbody) return; const filter = getBatchBoilerFilter(); const all = [...userDB.events].filter(r => filter === 'all' || eventBoiler(r) === filter).sort((a,b) => b.ts - a.ts); tbody.innerHTML = all.map(r => `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(eventBoiler(r) || '-')}号</td><td style="color:var(--accent)">${escapeHTML(r.code)}</td><td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td><button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteEvent(${Number(r.ts)})">删除</button></td></tr>`).join('') || '<tr><td colspan="10" style="text-align:center; padding:20px;">暂无数据</td></tr>'; }
-function deleteEvent(ts) { if(confirm('确定删除？')) { userDB.events = userDB.events.filter(e => e.ts !== ts); saveDB(); } }
+function deleteEvent(ts) { if(confirm('确定删除？')) { const removed = userDB.events.find(e => Number(e.ts) === Number(ts)) || null; userDB.events = userDB.events.filter(e => Number(e.ts) !== Number(ts)); saveDB(); mlog('delete', { record: removed, source: 'manual' }); } }
 const EVENT_CSV_COLUMNS = ['数据分类','炉号','日期','管段编码','规格','材质','厚度(mm)','硬度(HB)','事件类型/更换原因','关联新管码','详细描述/结论'];
 function downloadCSVTemplate() {
   const rows = [
@@ -409,6 +478,7 @@ function importLifecycleRows(rawRows, options = {}) {
   stats.importedReplacements = importReplacements;
   stats.skippedDuplicates = skipDuplicates;
   stats.skippedMismatch = skipBoilerMismatch;
+  mlog('import', { dataset: 'events', stats: stats, fileName: options.fileName || '' });
   return stats;
 }
 
@@ -421,7 +491,7 @@ function importCSV(event) {
       const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
       if (lines.length < 2) { showToast('CSV 文件为空', 'warn'); return; }
       const rawRows = lines.map(parseCSVLine);
-      const result = importLifecycleRows(rawRows, { batchFilter: getBatchBoilerFilter() });
+      const result = importLifecycleRows(rawRows, { batchFilter: getBatchBoilerFilter(), fileName: file.name });
       showToast(`导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}`, 'ok', 6000);
     } catch (err) {
       console.error(err);
@@ -431,7 +501,7 @@ function importCSV(event) {
   reader.readAsText(file, 'UTF-8'); event.target.value = '';
 }
 function backupLocalData() { const backup = JSON.stringify({ version: 'v6.7-local-backup', exportedAt: new Date().toISOString(), data: userDB }, null, 2); downloadBlob(`锅炉本地数据备份_${new Date().toISOString().slice(0,10)}.json`, backup, 'application/json;charset=utf-8;'); }
-function clearLocalData() { const total = userDB.events.length + userDB.replacements.length; if(total === 0) { showToast('当前没有可清空的本地数据', 'info'); return; } if(confirm(`即将清空 ${total} 条本地数据。清空前将自动导出备份，是否继续？`) && confirm('请再次确认：备份下载后将清空浏览器本地数据。')) { backupLocalData(); userDB = {events:[], replacements:[]}; saveDB(); showToast(`已备份并清空 ${total} 条本地数据`, 'ok'); } }
+function clearLocalData() { const total = userDB.events.length + userDB.replacements.length; if(total === 0) { showToast('当前没有可清空的本地数据', 'info'); return; } if(confirm(`即将清空 ${total} 条本地数据。清空前将自动导出备份，是否继续？`) && confirm('请再次确认：备份下载后将清空浏览器本地数据。')) { backupLocalData(); userDB = {events:[], replacements:[]}; saveDB(); mlog('clear', { total }); showToast(`已备份并清空 ${total} 条本地数据`, 'ok'); } }
 
 // ========== DATA (基础数据库) ==========
 const COMPONENTS = { ww: { name: '炉膛水冷壁', sys: 'WW', badge: 'badge-ww', spec: 'Φ63.5×7.5 SA-210C、Φ159×18 20G', mat: '按材料库分项', count: 722, detail: {'前墙':'192根','后墙':'192根','侧墙':'169*2根','循环回路':'24个'} }, rsh: { name: '顶棚过热器', sys: 'RSH', badge: 'badge-sh', spec: 'Φ159×18 20G、Φ48.5×6 15CrMoG', mat: '按材料库分项', count: 128, detail: {'区域':'顶棚 CE','屏/排':'1排','管数':'128根'} }, wsh: { name: '包墙过热器', sys: 'WSH', badge: 'badge-sh', spec: 'Φ51×6 12Cr1MoVG、Φ51×7 12Cr1MoVG、Φ63.5×12 12Cr1MoVG', mat: '按材料库分项', count: 260, detail: {'区域':'前/后/侧包墙','屏/排':'1排','管数':'260根'} }, lsh: { name: '低温过热器', sys: 'LSH', badge: 'badge-sh', spec: 'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat: '按材料库分项', count: 112, detail: {'排数':'112排','管圈':'5根','布置':'顺列逆流'} }, psh: { name: '全大屏过热器', sys: 'PSH', badge: 'badge-sh', spec: 'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat: '按材料库分项', count: '6片', detail: {'小屏':'4小屏/片','管数':'14根/小屏'} }, 'hsh-p': { name: '屏式过热器', sys: 'ISH', badge: 'badge-sh', spec: 'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', mat: '按材料库分项', count: 21, detail: {'屏数':'21屏','管数':'13根/屏'} }, hsh: { name: '高温过热器', sys: 'HSH', badge: 'badge-sh', spec: 'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat: '按材料库分项', count: 32, detail: {'片数':'32片','管圈':'12管圈'} }, lrh: { name: '低温再热器', sys: 'LRH', badge: 'badge-rh', spec: 'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat: '按材料库分项', count: 112, detail: {'水平':'112片','垂直':'56片'} }, hrh: { name: '高温再热器', sys: 'HRH', badge: 'badge-rh', spec: 'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat: '按材料库分项', count: 64, detail: {'片数':'64片','管圈':'7管圈'} }, eco: { name: '省煤器', sys: 'ECO', badge: 'badge-eco', spec: 'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', mat: '按材料库分项', count: 124, detail: {'管数':'124根'} } };
@@ -1015,11 +1085,12 @@ function switchView(viewId, { updateHash = true } = {}) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b === btn));
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === target));
   const titleEl = document.getElementById('topbar-title');
-  const VIEW_TITLES = { dashboard: '炉管风险驾驶舱', 'tube-analysis': '管段综合分析', 'maintenance-plan': '检修计划指挥', datamgr: '数据录入与管理', generator: '编码生成器', inventory: '全量管段台账', components: '受热面材料库', headers: '集箱库', diagram: '炉管分布图' };
+  const VIEW_TITLES = { dashboard: '炉管风险驾驶舱', 'tube-analysis': '管段综合分析', 'maintenance-plan': '检修计划指挥', datamgr: '数据录入与管理', generator: '编码生成器', inventory: '全量管段台账', maintainlog: '维护记录', components: '受热面材料库', headers: '集箱库', diagram: '炉管分布图' };
   if(titleEl) titleEl.textContent = VIEW_TITLES[viewId] || (btn ? btn.querySelector('span')?.textContent : '') || titleEl.textContent;
   if(window.scrollY > 8) window.scrollTo({ top: 0, behavior: 'smooth' });
   document.body.classList.remove('rail-open');
   if(btn) btn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  if(viewId === 'maintainlog' && window.BTMaintenanceLog && typeof window.BTMaintenanceLog.render === 'function') window.BTMaintenanceLog.render();
   if(updateHash && location.hash !== '#view-' + viewId) history.replaceState(null, '', '#view-' + viewId);
 }
 function initNav() {
@@ -1442,11 +1513,31 @@ function getMaterialLibrary() {
   });
   return splitMaterialSpecRows([...merged.values()]).map(materialTheoryForItem);
 }
-function saveMaterialLibrary(items) {
+function saveMaterialLibrary(items, options = {}) {
+  const beforeRows = getMaterialLibrary();
   localStorage.setItem(MATERIAL_LIBRARY_KEY, JSON.stringify(items));
   queueCloudStorageSave(MATERIAL_LIBRARY_KEY, items);
   const active = document.querySelector('.comp-tab.active')?.dataset.comp || 'ww';
   renderMaterialLibrary(active);
+  try {
+    const beforeMap = new Map(beforeRows.map(item => [materialKey(item), item]));
+    const afterMap = new Map((Array.isArray(items) ? items : []).map(item => [materialKey(item), item]));
+    let added = 0, updated = 0, removed = 0, sample = '';
+    afterMap.forEach((item, key) => {
+      if(!beforeMap.has(key)) { added++; if(!sample) sample = item.component || ''; }
+      else if(JSON.stringify(beforeMap.get(key)) !== JSON.stringify(item)) updated++;
+    });
+    beforeMap.forEach((item, key) => { if(!afterMap.has(key)) removed++; });
+    if(added || updated || removed) {
+      mlog(options.reason === 'import' ? 'import' : 'material', {
+        dataset: 'material_library',
+        stats: { added, updated, removed },
+        added, updated, removed, sample,
+        fileName: options.fileName || '',
+        reason: options.reason || ''
+      });
+    }
+  } catch(err) { console.warn('[维护记录] 材料库差异计算失败：', err); }
 }
 function materialRowToCSV(item) {
   return [
@@ -1483,7 +1574,7 @@ function exportMaterialCSV() {
   const rows = getMaterialLibrary().map(materialRowToCSV).join('\n');
   downloadBlob(`受热面材料库_${new Date().toISOString().slice(0,10)}.csv`, `${header}\n${rows}`, 'text/csv;charset=utf-8;');
 }
-function importMaterialRows(rawRows) {
+function importMaterialRows(rawRows, options = {}) {
   const rows = Array.isArray(rawRows) ? rawRows : [];
   const stats = { imported: 0, errors: [] };
   if(rows.length < 2) { stats.errors.push('材料库 CSV 文件为空'); return stats; }
@@ -1496,7 +1587,7 @@ function importMaterialRows(rawRows) {
     merged.set(materialKey(item), item);
     stats.imported++;
   }
-  saveMaterialLibrary([...merged.values()]);
+  saveMaterialLibrary([...merged.values()], { reason: 'import', fileName: options.fileName || '' });
   return stats;
 }
 
@@ -1507,7 +1598,7 @@ function importMaterialCSV(event) {
     try {
       const lines = e.target.result.split(/\r?\n/).filter(line => line.trim() !== '');
       if(lines.length < 2) { showToast('材料库 CSV 文件为空', 'warn'); return; }
-      const result = importMaterialRows(lines.map(parseCSVLine));
+      const result = importMaterialRows(lines.map(parseCSVLine), { fileName: file.name });
       showToast(`材料库导入完成，更新/新增 ${result.imported} 条记录`, 'ok');
     } catch (err) {
       console.error(err);
@@ -2093,28 +2184,76 @@ function invLog(msg) { const logBox = document.getElementById('invLogBox'); logB
 function normalizeLLMBaseUrl(baseUrl) {
   return String(baseUrl || '').trim().replace(/\/+$/, '');
 }
-function getLLMConfig() {
-  const saved = JSON.parse(localStorage.getItem(LLM_CONFIG_KEY) || '{}');
+/* ---------------- 模型配置：localStorage 是唯一真相，DOM 只是编辑缓冲 ----------------
+   以前 getLLMConfig 直接读表单 DOM，导致「表单没回填/还没渲染」时把已保存配置判成未配置，
+   而且逻辑无法单测。现在读写分离：
+   - readLLMConfigFromStorage / getLLMConfig：读已保存配置（任何非面板逻辑都用它）
+   - getLLMFormConfig：面板内的操作（识别模型、测试连接）用，允许使用尚未保存的输入
+   - saveLLMConfig：表单 → 存储
+------------------------------------------------------------------------- */
+function readLLMConfigFromStorage() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(LLM_CONFIG_KEY) || '{}') || {}; } catch(err) { saved = {}; }
+  const preset = LLM_PROVIDER_PRESETS[saved.provider] || LLM_PROVIDER_PRESETS.custom || { baseUrl: '' };
   return {
-    provider: document.getElementById('llm-provider')?.value || saved.provider || 'custom',
-    baseUrl: normalizeLLMBaseUrl(document.getElementById('llm-base-url')?.value || saved.baseUrl || ''),
-    apiKey: document.getElementById('llm-api-key')?.value || saved.apiKey || '',
-    model: (document.getElementById('llm-model')?.value || '').trim(),
-    temperature: Number(document.getElementById('llm-temperature')?.value || saved.temperature || 0.2)
+    provider: saved.provider || 'custom',
+    baseUrl: normalizeLLMBaseUrl(saved.baseUrl || preset.baseUrl || ''),
+    apiKey: saved.apiKey || '',
+    model: String(saved.model || '').trim(),
+    temperature: Number(saved.temperature ?? 0.2),
+    models: Array.isArray(saved.models) ? saved.models.slice(0, 200) : []
+  };
+}
+function getLLMConfig() {
+  const config = readLLMConfigFromStorage();
+  return {
+    provider: config.provider,
+    baseUrl: config.baseUrl,
+    apiKey: config.apiKey,
+    model: config.model,
+    temperature: config.temperature
+  };
+}
+function getLLMFormConfig() {
+  const saved = readLLMConfigFromStorage();
+  const readField = (id, fallback) => {
+    const el = document.getElementById(id);
+    const value = el && typeof el.value === 'string' ? el.value.trim() : '';
+    return value === '' ? fallback : value;
+  };
+  return {
+    provider: readField('llm-provider', saved.provider),
+    baseUrl: normalizeLLMBaseUrl(readField('llm-base-url', saved.baseUrl)),
+    apiKey: readField('llm-api-key', saved.apiKey),
+    model: readField('llm-model', saved.model),
+    temperature: Number(readField('llm-temperature', saved.temperature))
   };
 }
 function saveLLMConfig() {
-  const config = getLLMConfig();
-  localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(config));
-  setLLMStatus('配置已保存到本浏览器。', 'ok');
+  const config = getLLMFormConfig();
+  const saved = readLLMConfigFromStorage();
+  localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify({ ...config, models: saved.models }));
+  setLLMStatus('配置已保存到本浏览器（模型：' + (config.model || '未选择') + '）。', 'ok');
+  syncLLMConfigStatus();
 }
 function loadLLMConfigToForm() {
-  const saved = JSON.parse(localStorage.getItem(LLM_CONFIG_KEY) || '{}');
-  const preset = LLM_PROVIDER_PRESETS[saved.provider || 'deepseek'];
-  const config = { provider: saved.provider || 'deepseek', baseUrl: saved.baseUrl || preset.baseUrl, apiKey: saved.apiKey || '', model: saved.model || '', temperature: saved.temperature ?? 0.2 };
+  const config = readLLMConfigFromStorage();
   const ids = { provider:'llm-provider', baseUrl:'llm-base-url', apiKey:'llm-api-key', temperature:'llm-temperature' };
   Object.entries(ids).forEach(([key, id]) => { const el = document.getElementById(id); if(el) el.value = config[key]; });
-  renderLLMModelOptions(saved.models || (config.model ? [config.model] : []), config.model);
+  renderLLMModelOptions(config.models.length ? config.models : (config.model ? [config.model] : []), config.model);
+  syncLLMConfigStatus();
+}
+function syncLLMConfigStatus() {
+  const config = readLLMConfigFromStorage();
+  if(config.baseUrl && config.apiKey && config.model) {
+    setLLMStatus('已载入配置：' + config.model + '（' + config.baseUrl + '）', 'ok');
+    return;
+  }
+  const missing = [];
+  if(!config.baseUrl) missing.push('Base URL');
+  if(!config.apiKey) missing.push('API Key');
+  if(!config.model) missing.push('模型');
+  setLLMStatus(missing.length ? '未完成配置：还缺 ' + missing.join('、') + '；当前可用规则分析' : '未配置模型', 'info');
 }
 function applyLLMProviderPreset() {
   const provider = document.getElementById('llm-provider').value;
@@ -2244,6 +2383,34 @@ function renderLLMReport(text) {
     <div class="llm-report-section"><h4>依据与不确定性</h4>${renderList(report.uncertainty)}</div>
   `;
 }
+/* ---------------- 模型输出数值审计（只提示，不改写报告） ---------------- */
+function auditLLMText(reportText, evidenceText) {
+  try {
+    const mod = window.BTAssistantAnalysis;
+    if(!mod || typeof mod.auditNumericClaims !== 'function') return null;
+    const audit = mod.auditNumericClaims(reportText, evidenceText);
+    return audit && typeof audit === 'object' ? audit : null;
+  } catch(err) { return null; }
+}
+function auditLLMNotice(audit) {
+  if(!audit) return '';
+  if(audit.skipped) return '数值校验：本次问题未附带本地数据，已跳过校验。';
+  if(audit.ok) return '数值校验：通过，报告中的数值均可在本地数据中找到。';
+  return '数值校验：发现 ' + audit.count + ' 处数值在本地证据中找不到（' + audit.examples.join('、') + '），引用前请核对。';
+}
+function prependLLMNotice(text, tone) {
+  const host = document.getElementById('llm-report-view');
+  if(!host || !text) return;
+  const box = document.createElement('div');
+  box.className = 'llm-audit-note';
+  const ok = tone !== 'warn';
+  box.style.cssText = 'margin:0 0 10px;padding:7px 10px;border-radius:6px;font-size:12px;line-height:1.6;' +
+    'border-left:3px solid ' + (ok ? 'var(--ok)' : 'var(--warn)') + ';' +
+    'background:color-mix(in srgb, ' + (ok ? 'var(--ok)' : 'var(--warn)') + ' 10%, transparent);' +
+    'color:var(--text-mid);';
+  box.textContent = text;
+  host.insertBefore(box, host.firstChild);
+}
 function renderLLMResult(text) {
   const value = text || '模型没有返回可显示内容。';
   const el = document.getElementById('llm-result');
@@ -2319,7 +2486,7 @@ function clearLLMResult() {
   setLLMStatus('结果已清空。', 'info');
 }
 async function discoverLLMModels(options = {}) {
-  const config = getLLMConfig();
+  const config = getLLMFormConfig();
   if(!config.baseUrl) throw new Error('请填写 API Base URL。');
   if(!config.apiKey) throw new Error('请填写 API Key。');
   if(!options.silent) {
@@ -2352,10 +2519,10 @@ async function discoverLLMModelsFromUI() {
   }
 }
 async function ensureLLMModelSelected() {
-  let config = getLLMConfig();
+  let config = getLLMFormConfig();
   if(config.model) return config;
   await discoverLLMModels({ silent: true });
-  config = getLLMConfig();
+  config = getLLMFormConfig();
   if(!config.model) throw new Error('未选择可用模型，请先识别模型并选择。');
   return config;
 }
@@ -2422,7 +2589,14 @@ async function runLLMAnalysis() {
   try {
     const text = await callLLMChatCompletions(promptText, 2200);
     renderLLMResult(text);
-    setLLMStatus('深度分析完成。', 'ok');
+    const audit = auditLLMText(text, promptText);
+    if(audit && !audit.ok && !audit.skipped) {
+      prependLLMNotice(auditLLMNotice(audit), 'warn');
+      setLLMStatus('深度分析完成，但发现 ' + audit.count + ' 处数值无本地依据，请核对。', 'warn');
+    } else {
+      if(audit && !audit.skipped) prependLLMNotice(auditLLMNotice(audit), 'ok');
+      setLLMStatus('深度分析完成。' + (audit && !audit.skipped ? '数值校验通过。' : ''), 'ok');
+    }
   } catch (err) {
     renderLLMResult(formatLLMError(err, '调用'));
     setLLMStatus('调用失败，详情见结果框。', 'error');
@@ -2706,12 +2880,21 @@ async function runDeepAIAnalysisFromTrend(data) {
   if(aiLLMBox) aiLLMBox.textContent = '正在复用总览模型配置，调用大模型进行综合分析...';
   setLLMStatus('AI模块正在调用大模型综合分析...', 'info');
   try {
-    const text = await callLLMChatCompletions(buildTrendAnalysisPrompt(data), 2200);
+    const evidenceText = buildTrendAnalysisPrompt(data);
+    const text = await callLLMChatCompletions(evidenceText, 2200);
     if(window.__activeTubeAnalysis !== data) return;
-    if(aiLLMBox) aiLLMBox.textContent = text;
+    const audit = auditLLMText(text, evidenceText);
+    const notice = auditLLMNotice(audit);
+    if(aiLLMBox) aiLLMBox.textContent = (notice ? notice + '\n\n' : '') + text;
     renderLLMResult(text);
-    setLLMStatus('AI模块大模型综合分析完成。', 'ok');
-    setAIVisibilityStatus('本地预测与大模型综合分析均已完成。', 'info');
+    if(notice) prependLLMNotice(notice, audit && !audit.ok && !audit.skipped ? 'warn' : 'ok');
+    if(audit && !audit.ok && !audit.skipped) {
+      setLLMStatus('AI模块分析完成，但发现 ' + audit.count + ' 处数值无本地依据，请核对。', 'warn');
+      setAIVisibilityStatus('本地预测已完成；大模型报告中存在无本地依据的数值，请核对后再引用。', 'warn');
+    } else {
+      setLLMStatus('AI模块大模型综合分析完成。', 'ok');
+      setAIVisibilityStatus('本地预测与大模型综合分析均已完成。', 'info');
+    }
   } catch (err) {
     if(window.__activeTubeAnalysis !== data) return;
     const message = formatLLMError(err, 'AI大模型调用');
@@ -2762,7 +2945,7 @@ async function runAIAnalysis(explicitTarget, pipeType) {
   renderAIResults(data);
   scrollToAIResults();
   const report = document.getElementById('ai-llm-report');
-  const config = getLLMConfig();
+  const config = getLLMFormConfig();
   if(config.baseUrl && config.apiKey && config.model) {
     await runDeepAIAnalysisFromTrend(data);
   } else {
@@ -3004,6 +3187,7 @@ function updateEventRecord(ts, field, value) {
   if(before === next) return { ok: true, unchanged: true, before, after: next, record: target };
   target[key] = next;
   saveDB();
+  mlog('update', { record: target, field: key, before, after: next });
   return { ok: true, unchanged: false, before, after: next, record: target };
 }
 
