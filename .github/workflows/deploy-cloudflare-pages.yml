@@ -30,6 +30,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in tests/*.test.mjs; do
+            echo "== node $f"
+            node "$f"
+          done
+          python tests/resolve_d1_id.test.py
+
       - name: Prepare static site
         shell: bash
         run: |
@@ -50,6 +60,7 @@ jobs:
           test -f dist/assets/app/maintenance-log-v1.js
           test -f dist/assets/app/assistant-core-v1.js
           test -f dist/assets/app/assistant-analysis-v1.js
+          test -f dist/assets/app/assistant-docs-v1.js
           test -f dist/assets/app/assistant-ui-v1.js
           test -f dist/assets/app/assistant-v1.js
           test -f dist/assets/app/assistant-v1.css
@@ -60,10 +71,12 @@ jobs:
           grep -q 'assets/app/maintenance-log-v1.js' dist/index.html
           grep -q 'assets/app/assistant-core-v1.js' dist/index.html
           grep -q 'assets/app/assistant-analysis-v1.js' dist/index.html
+          grep -q 'assets/app/assistant-docs-v1.js' dist/index.html
           grep -q 'assets/app/assistant-ui-v1.js' dist/index.html
           grep -q 'assets/app/assistant-v1.js' dist/index.html
           grep -q 'assets/app/assistant-v1.css' dist/index.html
           grep -q 'assets/app/maintenance-log-v1.css' dist/index.html
+          grep -q 'pdf.js/3.11.174/pdf.min.js' dist/index.html
           grep -q 'xlsx-0.20.3/package/dist/xlsx.full.min.js' dist/index.html
           test ! -e dist/assets/app/app.css
           test ! -e dist/assets/app/app.js
@@ -137,6 +150,29 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name=boiler-tube-lifecycle-system --branch=${{ github.ref_name }}
+
+      - name: Sync LLM server key (optional)
+        if: steps.cloudflare.outputs.ready == 'true'
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${LLM_API_KEY:-}" ]]; then
+            echo "::warning::LLM_API_KEY not configured. The AI panel will require a browser-side API key until the LLM_API_KEY repository secret is set."
+            exit 0
+          fi
+          echo "$LLM_API_KEY" | npx --yes wrangler@latest pages secret put LLM_API_KEY --project-name=boiler-tube-lifecycle-system
+          if [[ -n "${LLM_BASE_URL:-}" ]]; then
+            echo "$LLM_BASE_URL" | npx --yes wrangler@latest pages secret put LLM_BASE_URL --project-name=boiler-tube-lifecycle-system
+          fi
+          if [[ -n "${LLM_MODEL:-}" ]]; then
+            echo "$LLM_MODEL" | npx --yes wrangler@latest pages secret put LLM_MODEL --project-name=boiler-tube-lifecycle-system
+          fi
 
       - name: Smoke test deployed login
         if: steps.cloudflare.outputs.ready == 'true'

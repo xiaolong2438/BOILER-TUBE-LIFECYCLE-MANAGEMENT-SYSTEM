@@ -110,7 +110,8 @@ check("面板骨架包含契约要求的全部节点且默认隐藏", () => {
   assert.match(markup, /\bhidden\b/);
   assert.match(markup, /aria-live="polite"/);
   assert.match(markup, /type="file"/);
-  assert.match(markup, /accept="\.csv,\.xlsx,\.xls"/);
+  assert.match(markup, /accept="\.csv,\.xlsx,\.xls,\.png,\.jpg,\.jpeg,\.webp,\.pdf"/);
+  assert.match(markup, /data-assistant="export-chat"/, "缺少导出对话按钮");
 });
 
 check("消息渲染对用户输入做 HTML 转义", () => {

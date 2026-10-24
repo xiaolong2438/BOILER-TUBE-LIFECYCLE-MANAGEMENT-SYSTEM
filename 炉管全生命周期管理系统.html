@@ -185,6 +185,21 @@
           <button class="btn btn-outline" onclick="clearLLMResult()">清空结果</button>
           <span class="llm-status" id="llm-status">等待配置模型接口</span>
         </div>
+        <div class="llm-viz" id="llm-viz">
+          <div class="llm-viz-head">
+            <strong>可视化分析</strong>
+            <span class="llm-note">本地规则计算，图表数据可作为大模型解读的依据</span>
+            <select id="llm-viz-type" onchange="runLLMVisualAnalysis()">
+              <option value="壁厚趋势">壁厚趋势</option>
+              <option value="各受热面事件数排行">受热面事件排行</option>
+              <option value="各受热面最薄壁厚排行">最薄壁厚排行</option>
+              <option value="壁厚分布">壁厚分布</option>
+              <option value="数据整体画像">数据整体画像</option>
+            </select>
+            <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;" onclick="runLLMVisualAnalysis()">刷新</button>
+          </div>
+          <div class="llm-viz-view" id="llm-viz-view"></div>
+        </div>
         <div class="llm-view-tabs">
           <button class="llm-view-tab active" id="llm-report-tab" onclick="setLLMViewMode('report')">结构化报告</button>
           <button class="llm-view-tab" id="llm-raw-tab" onclick="setLLMViewMode('raw')">原文</button>
@@ -479,24 +494,30 @@
       <div class="card-title">批量数据管理 (支持 Excel/CSV 编辑)</div>
       <div class="alert alert-info" style="margin-bottom:15px;">
         <div>💡</div>
-        <div><strong>操作指南：</strong>下载模板填写后导入。<strong style="color:var(--ok);">系统已开启防重复校验</strong>，多次导入同一文件自动跳过已存在的数据，确保台账干净无冗余。</div>
+        <div><strong>操作指南：</strong>下载 Excel 或 CSV 模板填写后导入，Excel 日期单元格会自动转换为标准格式。<strong style="color:var(--ok);">系统已开启防重复校验</strong>，多次导入同一文件自动跳过已存在的数据，确保台账干净无冗余。</div>
       </div>
       <div class="form-group" style="max-width:260px;">
         <label>批量范围</label>
-        <select id="dm-batch-boiler" onchange="renderDMTable()">
+        <select id="dm-batch-boiler" onchange="renderDataManagerTables()">
           <option value="all">全部机组</option>
           <option value="1">1号机组</option>
           <option value="2">2号机组</option>
         </select>
       </div>
       <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
-        <button class="btn" onclick="downloadCSVTemplate()">📄 下载 CSV 录入模板</button>
+        <button class="btn" onclick="downloadXLSXTemplate()">📗 下载 Excel 录入模板</button>
+        <button class="btn btn-outline" onclick="downloadCSVTemplate()">📄 下载 CSV 录入模板</button>
         <button class="btn btn-outline" onclick="exportCSV()">📥 导出所选机组数据 (CSV)</button>
         <button class="btn btn-outline" onclick="exportLifecycleDataToXLSX()">📊 导出所选机组 Excel</button>
+        <label class="btn" style="cursor:pointer;">📤 导入 Excel 数据 <input type="file" id="importXlsxFile" accept=".xlsx,.xls" style="display:none;" onchange="importXLSX(event)"></label>
         <label class="btn btn-outline" style="cursor:pointer;">📤 导入 CSV 数据 <input type="file" id="importFile" accept=".csv" style="display:none;" onchange="importCSV(event)"></label>
         <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="clearLocalData()">🗑 备份并清空本地数据</button>
       </div>
       <div class="table-wrap"><table><thead><tr><th>日期</th><th>机组</th><th>管段编码</th><th>规格</th><th>材质</th><th>厚度(mm)</th><th>硬度(HB)</th><th>类型</th><th>详情</th><th>操作</th></tr></thead><tbody id="dm-table-body"></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="card-title">管段更换登记记录</div>
+      <div class="table-wrap"><table><thead><tr><th>日期</th><th>机组</th><th>旧管段编码</th><th>新管段编码</th><th>更换原因</th><th>操作</th></tr></thead><tbody id="dm-rep-table-body"></tbody></table></div>
     </div>
   </section>
 
@@ -819,6 +840,7 @@
 <footer>⬢ BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v8.0 · 2026 ⬢</footer>
 </div>
 </div>
+<div class="data-edit-modal" id="dataEditModal" aria-hidden="true"></div>
 <div class="password-modal" id="password-modal" aria-hidden="true">
   <div class="password-panel" role="dialog" aria-modal="true" aria-labelledby="password-title">
     <div class="password-panel-head">
@@ -879,6 +901,7 @@
 <div class="toast-host" id="toast-host" aria-live="polite"></div>
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
 <script src="assets/app/app-v7.9.js" defer></script>
 <script src="assets/app/maintenance-log-v1.js" defer></script>
 <script src="assets/app/ui-shell-v8.js" defer></script>
@@ -886,6 +909,7 @@
 <script src="assets/app/xlsx-export-v1.js" defer></script>
 <script src="assets/app/assistant-core-v1.js" defer></script>
 <script src="assets/app/assistant-analysis-v1.js" defer></script>
+<script src="assets/app/assistant-docs-v1.js" defer></script>
 <script src="assets/app/assistant-ui-v1.js" defer></script>
 <script src="assets/app/assistant-v1.js" defer></script>
 </body>

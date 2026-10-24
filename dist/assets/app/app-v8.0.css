@@ -4433,3 +4433,83 @@ html[data-theme="light"] .boiler-diagram {
 html[data-theme="light"] .boiler-zone:hover {
   filter: saturate(1.35) brightness(0.96) drop-shadow(0 0 12px rgba(14, 124, 155, 0.3));
 }
+
+/* ================= 数据录入 · 单条记录编辑弹窗（事件 / 更换登记） ================= */
+.data-edit-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(1, 4, 10, 0.72);
+  backdrop-filter: blur(14px);
+  z-index: 420;
+}
+.data-edit-modal.open { display: flex; }
+.data-edit-panel {
+  width: min(600px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--surface-glass-2, #fff);
+  border: 1px solid var(--line-strong, #d5e2e7);
+  border-radius: 16px;
+  padding: 22px 24px;
+  box-shadow: var(--shadow-card, 0 18px 50px rgba(0, 0, 0, 0.35));
+}
+.data-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.data-edit-head h3 { margin: 0; font-size: 16px; color: var(--text); }
+.data-edit-close {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.data-edit-close:hover { color: var(--text); }
+.data-edit-sub {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: 'Consolas', monospace;
+}
+
+/* ---- v8.4.5 总览深度分析面板 · 本地可视化分析区块 ---- */
+.llm-viz {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+}
+.llm-viz-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.llm-viz-head strong { font-size: 13px; color: var(--text-mid); letter-spacing: 1px; }
+.llm-viz-head select {
+  padding: 6px 10px; font-size: 12px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--bg-2, var(--surface-elevated)); color: var(--text);
+}
+.llm-viz-title { font-size: 13px; font-weight: 700; color: var(--text-hi); margin-bottom: 10px; }
+.llm-viz-metrics { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.llm-viz-metric {
+  display: inline-flex; flex-direction: column; gap: 2px;
+  padding: 6px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--bg-2, var(--surface-elevated));
+}
+.llm-viz-metric .k { font-size: 10.5px; color: var(--text-faint); letter-spacing: .5px; }
+.llm-viz-metric .v { font-size: 14px; font-weight: 700; color: var(--text-hi); font-variant-numeric: tabular-nums; }
+.llm-viz-chart { margin: 6px 0 10px; }
+.llm-viz-chart svg { width: 100%; height: auto; display: block; }
+.llm-viz-insights { margin: 0; padding-left: 18px; color: var(--text-mid); font-size: 12.5px; line-height: 1.8; }
+.llm-viz-insights li { margin-bottom: 2px; }

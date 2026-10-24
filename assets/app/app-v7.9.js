@@ -123,7 +123,7 @@ async function bootstrapCloudStorage() {
     if(Array.isArray(localMaterials) && localMaterials.length) queueCloudStorageSave('boiler_material_library', localMaterials);
   }
   if(changed) {
-    renderDMTable();
+    renderDataManagerTables();
     updateLifecycleDropdown();
     populateAIThicknessTargets();
     renderDashboardWarnings();
@@ -279,6 +279,12 @@ document.getElementById('password-modal')?.addEventListener('click', event => {
 document.addEventListener('keydown', event => {
   if(event.key === 'Escape') closePasswordManager();
 });
+document.getElementById('dataEditModal')?.addEventListener('click', event => {
+  if(event.target?.id === 'dataEditModal') closeDataEditModal();
+});
+document.addEventListener('keydown', event => {
+  if(event.key === 'Escape') closeDataEditModal();
+});
 function parseCSVLine(line) {
   const result = []; let current = ''; let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
@@ -293,7 +299,7 @@ function parseCSVLine(line) {
   result.push(current); return result;
 }
 function csvEscape(value) { return `"${String(value ?? '').replace(/"/g, '""')}"`; }
-function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); localStorage.setItem(LOCAL_DB_AT_KEY, new Date().toISOString()); queueCloudStorageSave('boiler_user_db', userDB); renderDMTable(); updateLifecycleDropdown(); populateAIThicknessTargets(); renderDashboardWarnings(); syncDashboardSnapshot(); }
+function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); localStorage.setItem(LOCAL_DB_AT_KEY, new Date().toISOString()); queueCloudStorageSave('boiler_user_db', userDB); renderDMTable(); renderReplacementTable(); updateLifecycleDropdown(); populateAIThicknessTargets(); renderDashboardWarnings(); syncDashboardSnapshot(); if(typeof runLLMVisualAnalysis === 'function') runLLMVisualAnalysis(); }
 /* 维护记录（操作日志）统一入口：日志失败绝不影响主流程 */
 function mlog(kind, payload) {
   try {
@@ -363,8 +369,198 @@ function addReplacement() {
   mlog('replace', { record: newReplacement, source: 'manual' });
   showToast('更换登记成功', 'ok');
 }
-function renderDMTable() { const tbody = document.getElementById('dm-table-body'); if(!tbody) return; const filter = getBatchBoilerFilter(); const all = [...userDB.events].filter(r => filter === 'all' || eventBoiler(r) === filter).sort((a,b) => b.ts - a.ts); tbody.innerHTML = all.map(r => `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(eventBoiler(r) || '-')}号</td><td style="color:var(--accent)">${escapeHTML(r.code)}</td><td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td><button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteEvent(${Number(r.ts)})">删除</button></td></tr>`).join('') || '<tr><td colspan="10" style="text-align:center; padding:20px;">暂无数据</td></tr>'; }
+function canManageTubeData() {
+  try { return getAssistantRole() !== 'viewer'; } catch (err) { return true; }
+}
+function renderDataManagerTables() { renderDMTable(); renderReplacementTable(); }
+function renderDMTable() {
+  const tbody = document.getElementById('dm-table-body'); if(!tbody) return;
+  const filter = getBatchBoilerFilter();
+  const all = [...userDB.events].filter(r => filter === 'all' || eventBoiler(r) === filter).sort((a,b) => b.ts - a.ts);
+  const manage = canManageTubeData();
+  tbody.innerHTML = all.map(r => {
+    const action = manage
+      ? `<button class="btn btn-outline" style="padding:2px 8px; font-size:11px;" onclick="openEditEvent(${Number(r.ts)})">编辑</button>
+         <button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteEvent(${Number(r.ts)})">删除</button>`
+      : '<span style="font-size:11px; color:var(--text-dim);">只读</span>';
+    return `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(eventBoiler(r) || '-')}号</td><td style="color:var(--accent)">${escapeHTML(r.code)}</td><td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td style="white-space:nowrap;">${action}</td></tr>`;
+  }).join('') || '<tr><td colspan="10" style="text-align:center; padding:20px;">暂无数据</td></tr>';
+}
 function deleteEvent(ts) { if(confirm('确定删除？')) { const removed = userDB.events.find(e => Number(e.ts) === Number(ts)) || null; userDB.events = userDB.events.filter(e => Number(e.ts) !== Number(ts)); saveDB(); mlog('delete', { record: removed, source: 'manual' }); } }
+
+/* ---------------- 单条记录编辑维护（事件 / 更换登记） ----------------
+ * 与 AI 助手共用同一权限口径：viewer 只读；所有修改写入维护记录留痕。 */
+const DATA_EDIT_TYPES = ['测厚', '金相分析', '无损检测', '割管取样', '检修维护', '报废更换', '安装投运'];
+const DATA_EDIT_FIELD_LABELS = { boiler: '机组', code: '管段编码', spec: '规格', material: '材质', thickness: '厚度', hardness: '硬度', type: '事件类型', date: '日期', desc: '详细数据/结论', oldCode: '旧管段编码', newCode: '新管段编码', reason: '更换原因' };
+
+function openDataEditModal(html) {
+  const host = document.getElementById('dataEditModal');
+  if(!host) { alert('编辑弹窗容器缺失，请刷新页面。'); return; }
+  host.innerHTML = html;
+  host.classList.add('open');
+  host.setAttribute('aria-hidden', 'false');
+}
+function closeDataEditModal() {
+  const host = document.getElementById('dataEditModal');
+  if(!host) return;
+  host.classList.remove('open');
+  host.setAttribute('aria-hidden', 'true');
+  host.innerHTML = '';
+}
+function dataEditBoilerSelect(selectId, current) {
+  return `<select id="${selectId}"><option value="1" ${String(current) === '1' ? 'selected' : ''}>1号机组</option><option value="2" ${String(current) === '2' ? 'selected' : ''}>2号机组</option></select>`;
+}
+function openEditEvent(ts) {
+  const record = userDB.events.find(e => Number(e.ts) === Number(ts));
+  if(!record) { showToast('没有找到这条记录，可能已被删除。', 'warn'); return; }
+  const typeOptions = [...new Set([...DATA_EDIT_TYPES, record.type].filter(Boolean))]
+    .map(t => `<option value="${escapeHTML(t)}"></option>`).join('');
+  openDataEditModal(`
+    <div class="data-edit-panel" role="dialog" aria-modal="true" aria-labelledby="dataEditTitle">
+      <div class="data-edit-head">
+        <h3 id="dataEditTitle">编辑事件记录</h3>
+        <button type="button" class="data-edit-close" onclick="closeDataEditModal()" aria-label="关闭">×</button>
+      </div>
+      <p class="data-edit-sub">${escapeHTML(record.code)} · 记录编号 ${Number(record.ts)}</p>
+      <div class="form-group"><label>机组/炉号</label>${dataEditBoilerSelect('de-boiler', eventBoiler(record))}</div>
+      <div class="form-group"><label>管段编码</label><input type="text" id="de-code" value="${escapeHTML(record.code)}" oninput="syncEditEventBoiler()" /></div>
+      <div class="form-group"><label>规格</label><input type="text" id="de-spec" value="${escapeHTML(record.spec || '')}" /></div>
+      <div class="form-group"><label>材质</label><input type="text" id="de-material" value="${escapeHTML(record.material || '')}" /></div>
+      <div class="form-group"><label>厚度(mm)</label><input type="number" id="de-thickness" min="0" step="0.01" value="${escapeHTML(record.thickness || '')}" /></div>
+      <div class="form-group"><label>硬度(HB)</label><input type="number" id="de-hardness" min="0" step="1" value="${escapeHTML(record.hardness || '')}" /></div>
+      <div class="form-group"><label>事件类型</label><input type="text" id="de-type" list="de-type-options" value="${escapeHTML(record.type || '')}" /><datalist id="de-type-options">${typeOptions}</datalist></div>
+      <div class="form-group"><label>日期</label><input type="date" id="de-date" value="${escapeHTML(record.date || '')}" /></div>
+      <div class="form-group"><label>详细数据/结论</label><textarea id="de-desc" rows="3">${escapeHTML(record.desc || '')}</textarea></div>
+      <div style="display:flex; gap:10px; margin-top:6px;">
+        <button class="btn" style="flex:1;" onclick="saveEventEdit(${Number(record.ts)})">💾 保存修改</button>
+        <button class="btn btn-outline" onclick="closeDataEditModal()">取消</button>
+      </div>
+    </div>`);
+}
+function syncEditEventBoiler() {
+  const boiler = getBoilerFromCode(document.getElementById('de-code')?.value);
+  const select = document.getElementById('de-boiler');
+  if(boiler && select) select.value = boiler;
+}
+function saveEventEdit(ts) {
+  const target = userDB.events.find(e => Number(e.ts) === Number(ts));
+  if(!target) { showToast('没有找到这条记录，可能已被删除。', 'warn'); closeDataEditModal(); return; }
+  const boiler = document.getElementById('de-boiler').value;
+  const code = document.getElementById('de-code').value.trim().toUpperCase();
+  const spec = document.getElementById('de-spec').value.trim();
+  const material = document.getElementById('de-material').value.trim();
+  const thickness = document.getElementById('de-thickness').value.trim();
+  const hardness = document.getElementById('de-hardness').value.trim();
+  const type = document.getElementById('de-type').value.trim();
+  const date = document.getElementById('de-date').value;
+  const desc = document.getElementById('de-desc').value.trim();
+  if(!boiler || !code || !date || !desc) { showToast('机组、管段编码、日期和详细数据/结论不能为空', 'warn'); return; }
+  if(getBoilerFromCode(code) && getBoilerFromCode(code) !== boiler) { showToast('所选机组与管段编码开头不一致，请核对。', 'warn'); return; }
+  if(thickness !== '') {
+    const num = Number(thickness);
+    if(!Number.isFinite(num) || num < 0.1 || num > 100) { showToast('厚度必须是 0.1 ~ 100 之间的数字（mm），或留空', 'warn'); return; }
+  }
+  if(hardness !== '') {
+    const num = Number(hardness);
+    if(!Number.isFinite(num) || num < 1 || num > 600) { showToast('硬度必须是 1 ~ 600 之间的数字（HB），或留空', 'warn'); return; }
+  }
+  const changes = [['boiler', boiler], ['code', code], ['spec', spec], ['material', material], ['thickness', thickness], ['hardness', hardness], ['type', type], ['date', date], ['desc', desc]]
+    .filter(([key, next]) => String(target[key] ?? '') !== next);
+  if(!changes.length) { closeDataEditModal(); showToast('内容未变化，无需保存', 'info'); return; }
+  changes.forEach(([key, next]) => {
+    const before = String(target[key] ?? '');
+    target[key] = next;
+    mlog('update', { record: target, field: key, before, after: next, source: 'manual' });
+  });
+  saveDB();
+  closeDataEditModal();
+  showToast(`已保存修改（${changes.map(([key]) => DATA_EDIT_FIELD_LABELS[key] || key).join('、')}），维护记录已留痕`, 'ok');
+}
+function renderReplacementTable() {
+  const tbody = document.getElementById('dm-rep-table-body'); if(!tbody) return;
+  const filter = getBatchBoilerFilter();
+  const all = [...userDB.replacements].filter(r => filter === 'all' || replacementBoiler(r) === filter).sort((a,b) => b.ts - a.ts);
+  const manage = canManageTubeData();
+  tbody.innerHTML = all.map(r => {
+    const action = manage
+      ? `<button class="btn btn-outline" style="padding:2px 8px; font-size:11px;" onclick="openEditReplacement(${Number(r.ts)})">编辑</button>
+         <button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteReplacement(${Number(r.ts)})">删除</button>`
+      : '<span style="font-size:11px; color:var(--text-dim);">只读</span>';
+    return `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(replacementBoiler(r) || '-')}号</td><td style="color:var(--accent)">${escapeHTML(r.oldCode)}</td><td style="color:var(--ok)">${escapeHTML(r.newCode)}</td><td style="font-family:inherit; max-width:260px; white-space:normal;">${escapeHTML(r.reason || '-')}</td><td style="white-space:nowrap;">${action}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center; padding:20px;">暂无更换记录。可在上方“管段更换登记”表单或批量导入中登记。</td></tr>';
+}
+function isReplacementAutoEvent(event, replacement) {
+  if(!event || !replacement) return false;
+  if(String(event.date || '') !== String(replacement.date || '')) return false;
+  if(event.type === '报废更换' && event.code === replacement.oldCode) return true;
+  if(event.type === '安装投运' && event.code === replacement.newCode) return true;
+  return false;
+}
+function deleteReplacement(ts) {
+  const record = userDB.replacements.find(r => Number(r.ts) === Number(ts));
+  if(!record) return;
+  const linked = userDB.events.filter(e => isReplacementAutoEvent(e, record));
+  const tip = linked.length ? `本次登记自动生成的 ${linked.length} 条关联事件（报废更换/安装投运）将一并删除。` : '确定删除这条更换登记？';
+  if(!confirm(`确定删除更换登记 ${record.oldCode} → ${record.newCode}？${tip}`)) return;
+  userDB.replacements = userDB.replacements.filter(r => Number(r.ts) !== Number(ts));
+  if(linked.length) {
+    const linkedTs = new Set(linked.map(e => Number(e.ts)));
+    userDB.events = userDB.events.filter(e => !linkedTs.has(Number(e.ts)));
+    linked.forEach(e => mlog('delete', { record: e, source: 'manual' }));
+  }
+  saveDB();
+  mlog('delete', { record, source: 'manual' });
+  showToast(linked.length ? `已删除更换登记及 ${linked.length} 条关联事件` : '已删除更换登记', 'ok');
+}
+function openEditReplacement(ts) {
+  const record = userDB.replacements.find(r => Number(r.ts) === Number(ts));
+  if(!record) { showToast('没有找到这条更换记录，可能已被删除。', 'warn'); return; }
+  openDataEditModal(`
+    <div class="data-edit-panel" role="dialog" aria-modal="true" aria-labelledby="dataEditTitle">
+      <div class="data-edit-head">
+        <h3 id="dataEditTitle">编辑更换登记</h3>
+        <button type="button" class="data-edit-close" onclick="closeDataEditModal()" aria-label="关闭">×</button>
+      </div>
+      <p class="data-edit-sub">${escapeHTML(record.oldCode)} → ${escapeHTML(record.newCode)}</p>
+      <div class="form-group"><label>机组/炉号</label>${dataEditBoilerSelect('dr-boiler', replacementBoiler(record))}</div>
+      <div class="form-group"><label>旧管段编码</label><input type="text" id="dr-oldcode" value="${escapeHTML(record.oldCode)}" oninput="syncEditReplacementBoiler()" /></div>
+      <div class="form-group"><label>新管段编码</label><input type="text" id="dr-newcode" value="${escapeHTML(record.newCode)}" oninput="syncEditReplacementBoiler()" /></div>
+      <div class="form-group"><label>更换原因</label><input type="text" id="dr-reason" value="${escapeHTML(record.reason || '')}" /></div>
+      <div class="form-group"><label>更换日期</label><input type="date" id="dr-rep-date" value="${escapeHTML(record.date || '')}" /></div>
+      <div class="alert alert-info" style="margin:6px 0 12px;"><div>ℹ</div><div>仅修改本条登记；如需调整其自动生成的“报废更换/安装投运”事件，请到事件表中单独编辑。</div></div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn" style="flex:1;" onclick="saveReplacementEdit(${Number(record.ts)})">💾 保存修改</button>
+        <button class="btn btn-outline" onclick="closeDataEditModal()">取消</button>
+      </div>
+    </div>`);
+}
+function syncEditReplacementBoiler() {
+  const boiler = getBoilerFromCode(document.getElementById('dr-oldcode')?.value) || getBoilerFromCode(document.getElementById('dr-newcode')?.value);
+  const select = document.getElementById('dr-boiler');
+  if(boiler && select) select.value = boiler;
+}
+function saveReplacementEdit(ts) {
+  const target = userDB.replacements.find(r => Number(r.ts) === Number(ts));
+  if(!target) { showToast('没有找到这条更换记录，可能已被删除。', 'warn'); closeDataEditModal(); return; }
+  const boiler = document.getElementById('dr-boiler').value;
+  const oldCode = document.getElementById('dr-oldcode').value.trim().toUpperCase();
+  const newCode = document.getElementById('dr-newcode').value.trim().toUpperCase();
+  const reason = document.getElementById('dr-reason').value.trim();
+  const date = document.getElementById('dr-rep-date').value;
+  if(!boiler || !oldCode || !newCode || !date) { showToast('机组、旧管段编码、新管段编码和更换日期不能为空', 'warn'); return; }
+  if((getBoilerFromCode(oldCode) && getBoilerFromCode(oldCode) !== boiler) || (getBoilerFromCode(newCode) && getBoilerFromCode(newCode) !== boiler)) { showToast('所选机组与旧/新管段编码开头不一致，请核对。', 'warn'); return; }
+  const changes = [['boiler', boiler], ['oldCode', oldCode], ['newCode', newCode], ['reason', reason], ['date', date]]
+    .filter(([key, next]) => String(target[key] ?? '') !== next);
+  if(!changes.length) { closeDataEditModal(); showToast('内容未变化，无需保存', 'info'); return; }
+  changes.forEach(([key, next]) => {
+    const before = String(target[key] ?? '');
+    target[key] = next;
+    mlog('update', { record: target, field: key, before, after: next, source: 'manual' });
+  });
+  saveDB();
+  closeDataEditModal();
+  showToast(`已保存修改（${changes.map(([key]) => DATA_EDIT_FIELD_LABELS[key] || key).join('、')}）`, 'ok');
+}
 const EVENT_CSV_COLUMNS = ['数据分类','炉号','日期','管段编码','规格','材质','厚度(mm)','硬度(HB)','事件类型/更换原因','关联新管码','详细描述/结论'];
 function downloadCSVTemplate() {
   const rows = [
@@ -499,6 +695,56 @@ function importCSV(event) {
     }
   };
   reader.readAsText(file, 'UTF-8'); event.target.value = '';
+}
+
+// Excel 批量导入：转换为与 CSV 相同的网格结构后走同一条 importLifecycleRows 管线。
+function normalizeImportDate(value) {
+  if(value instanceof Date && !Number.isNaN(value.getTime())) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  }
+  return String(value ?? '').trim();
+}
+function importXLSX(event) {
+  const file = event.target.files[0]; if (!file) return;
+  if (typeof XLSX === 'undefined') { showToast('Excel 组件未加载，请检查网络后刷新页面。', 'error', 6000); event.target.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      if(!sheet) { showToast('Excel 文件中没有工作表。', 'warn'); return; }
+      const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' })
+        .map(row => row.map(cell => normalizeImportDate(cell)));
+      if(grid.length < 2) { showToast('Excel 文件为空或只有表头。', 'warn'); return; }
+      const headers = (grid[0] || []).map(item => String(item ?? '').trim());
+      const missing = ['数据分类', '管段编码', '日期'].filter(name => !headers.includes(name));
+      if(missing.length) {
+        showToast('未识别到表头：缺少“' + missing.join('”“') + '”列，请使用系统提供的 Excel 模板。', 'error', 6000);
+        return;
+      }
+      const result = importLifecycleRows(grid, { batchFilter: getBatchBoilerFilter(), fileName: file.name });
+      showToast(`Excel 导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}`, 'ok', 6000);
+    } catch (err) {
+      console.error(err);
+      showToast('Excel 解析失败，请确认使用的是系统提供的模板文件。', 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file); event.target.value = '';
+}
+function downloadXLSXTemplate() {
+  if (typeof XLSX === 'undefined') { showToast('Excel 组件未加载，请检查网络后刷新页面。', 'error', 6000); return; }
+  const headers = EVENT_CSV_COLUMNS;
+  const rows = [
+    { '数据分类': '事件', '炉号': '1', '日期': '2022-04-15', '管段编码': '1-WW-FR-015-0042-000', '规格': 'Φ63.5×7.5', '材质': 'SA-210C', '厚度(mm)': '7.10', '硬度(HB)': '185', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '标高18m处壁厚7.10mm' },
+    { '数据分类': '事件', '炉号': '2', '日期': '2024-05-20', '管段编码': '2-HSH-E-012-0005-W02', '规格': 'Φ51×8', '材质': 'SA-213T91', '厚度(mm)': '6.90', '硬度(HB)': '210', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '高过入口第12屏第5管测厚6.90mm' },
+    { '数据分类': '更换', '炉号': '1', '日期': '2026-05-22', '管段编码': '1-WW-FL-010-0005-000', '规格': '', '材质': '', '厚度(mm)': '', '硬度(HB)': '', '事件类型/更换原因': '爆管更换', '关联新管码': '1-WW-FL-010-0005-000-R1', '详细描述/结论': '运行中发生泄漏，紧急割管更换' }
+  ];
+  const sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+  sheet['!cols'] = headers.map(name => ({ wch: name.length > 8 ? 22 : 14 }));
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, '录入模板');
+  XLSX.writeFile(workbook, `锅炉寿命数据_录入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 function backupLocalData() { const backup = JSON.stringify({ version: 'v6.7-local-backup', exportedAt: new Date().toISOString(), data: userDB }, null, 2); downloadBlob(`锅炉本地数据备份_${new Date().toISOString().slice(0,10)}.json`, backup, 'application/json;charset=utf-8;'); }
 function clearLocalData() { const total = userDB.events.length + userDB.replacements.length; if(total === 0) { showToast('当前没有可清空的本地数据', 'info'); return; } if(confirm(`即将清空 ${total} 条本地数据。清空前将自动导出备份，是否继续？`) && confirm('请再次确认：备份下载后将清空浏览器本地数据。')) { backupLocalData(); userDB = {events:[], replacements:[]}; saveDB(); mlog('clear', { total }); showToast(`已备份并清空 ${total} 条本地数据`, 'ok'); } }
@@ -2245,6 +2491,10 @@ function loadLLMConfigToForm() {
 }
 function syncLLMConfigStatus() {
   const config = readLLMConfigFromStorage();
+  if(llmServerStatus?.serverKey && !config.apiKey) {
+    setLLMStatus('已就绪：未填本地 API Key，模型调用将走服务端代理（密钥不出浏览器）。', 'ok');
+    return;
+  }
   if(config.baseUrl && config.apiKey && config.model) {
     setLLMStatus('已载入配置：' + config.model + '（' + config.baseUrl + '）', 'ok');
     return;
@@ -2254,6 +2504,37 @@ function syncLLMConfigStatus() {
   if(!config.apiKey) missing.push('API Key');
   if(!config.model) missing.push('模型');
   setLLMStatus(missing.length ? '未完成配置：还缺 ' + missing.join('、') + '；当前可用规则分析' : '未配置模型', 'info');
+}
+// 服务端模型接口状态（/api/llm/status）：{ serverKey, baseUrl, model }，绝不包含密钥本身。
+let llmServerStatus = null;
+function usingServerLLM(config = getLLMFormConfig()) {
+  return Boolean(llmServerStatus?.serverKey) && !config.apiKey;
+}
+async function refreshLLMServerStatus() {
+  if(!cloudStorageEnabled()) return;
+  try {
+    const response = await fetch('/api/llm/status');
+    if(!response.ok) return;
+    llmServerStatus = await response.json();
+  } catch {
+    llmServerStatus = null;
+    window.__llmServerKey = false;
+    return;
+  }
+  // 助手模块（独立 IIFE）通过该标志感知服务端密钥模式
+  window.__llmServerKey = Boolean(llmServerStatus?.serverKey);
+  updateLLMServerHint();
+  syncLLMConfigStatus();
+}
+function updateLLMServerHint() {
+  if(!llmServerStatus?.serverKey) return;
+  const saved = readLLMConfigFromStorage();
+  const keyInput = document.getElementById('llm-api-key');
+  if(keyInput && !keyInput.value && !saved.apiKey) {
+    keyInput.placeholder = '留空即使用服务端密钥（推荐）';
+    const note = keyInput.closest('.form-group')?.querySelector('.llm-note');
+    if(note) note.textContent = '服务端已配置模型密钥：API Key 留空即走服务端代理，密钥不会出现在浏览器；也可填写自己的 Key 直连服务商。';
+  }
 }
 function applyLLMProviderPreset() {
   const provider = document.getElementById('llm-provider').value;
@@ -2267,14 +2548,18 @@ function buildLLMContext() {
   const localCodes = [...new Set(userDB.events.map(e => e.code))].slice(0, 8);
   const recentEvents = userDB.events.slice(-8).map(e => `${e.date} ${e.code} ${e.type}: ${e.desc}`).join('\n') || '暂无本地录入事件';
   const lifecycle = Object.entries(LIFECYCLE_DATA).slice(0, 4).map(([code, d]) => `${code}: ${d.name}, ${d.spec}, 投运/记录 ${d.install}, 风险 ${d.risk}`).join('\n');
-  return [
+  const parts = [
     '系统：锅炉炉管全生命周期管理系统，覆盖 1#/2# 机组炉管台账、寿命跟踪、预警与检修记录。',
     '总览：单炉管管理单元 5139；水冷壁 722；过热器系统 2681；再热+省煤器 1736。',
     `当前实际预警：\n${formatDashboardWarningsForPrompt()}`,
     `本地录入：事件 ${userDB.events.length} 条，更换 ${userDB.replacements.length} 条；涉及管码：${localCodes.join(', ') || '暂无'}`,
     `寿命样例：\n${lifecycle}`,
     `最近本地事件：\n${recentEvents}`
-  ].join('\n\n');
+  ];
+  if(Array.isArray(lastLLMVisualInsights) && lastLLMVisualInsights.length) {
+    parts.push(`总览可视化分析结论（本地规则计算，可作为解读依据）：\n${lastLLMVisualInsights.map(i => `- ${i}`).join('\n')}`);
+  }
+  return parts.join('\n\n');
 }
 function buildLLMMessages(promptText) {
   return [
@@ -2485,23 +2770,63 @@ function clearLLMResult() {
   renderLLMResult('模型返回的深度分析会整理成报告显示在这里。');
   setLLMStatus('结果已清空。', 'info');
 }
+
+/* 总览深度分析面板：本地可视化分析（复用助手分析引擎，图表作为大模型解读的数据依据） */
+let lastLLMVisualInsights = [];
+function runLLMVisualAnalysis() {
+  const view = document.getElementById('llm-viz-view');
+  const module = window.BTAssistantAnalysis;
+  if(!view) return;
+  if(!module || typeof module.runAnalysis !== 'function') {
+    view.innerHTML = '<div class="llm-note">可视化分析组件未加载，请刷新页面。</div>';
+    return;
+  }
+  const query = document.getElementById('llm-viz-type')?.value || '壁厚趋势';
+  const spec = module.parseAnalysis(query, {});
+  const snapshot = typeof collectAssistantSnapshot === 'function' ? collectAssistantSnapshot() : { events: userDB.events || [], replacements: userDB.replacements || [] };
+  const result = spec ? module.runAnalysis(spec, snapshot) : null;
+  if(!result || !result.ok) {
+    view.innerHTML = '<div class="llm-note">当前数据不足以生成「' + escapeHTML(query) + '」，请先在「数据录入」导入测厚/事件数据。</div>';
+    lastLLMVisualInsights = [];
+    return;
+  }
+  lastLLMVisualInsights = result.insights || [];
+  let chartSvg = '';
+  try { chartSvg = module.chartSvg(result.chart, { emptyText: '暂无可绘制的数据' }); } catch (err) { chartSvg = ''; }
+  const metricsHtml = (result.metrics || []).map(m =>
+    `<div class="llm-viz-metric"><span class="k">${escapeHTML(m.label)}</span><span class="v">${escapeHTML(String(m.value))}</span></div>`).join('');
+  const insightsHtml = (result.insights || []).map(i => `<li>${escapeHTML(i)}</li>`).join('');
+  view.innerHTML = `
+    <div class="llm-viz-title">${escapeHTML(result.title || query)} · 样本 ${result.sampleSize ?? 0} 条</div>
+    ${metricsHtml ? `<div class="llm-viz-metrics">${metricsHtml}</div>` : ''}
+    ${chartSvg ? `<figure class="llm-viz-chart">${chartSvg}</figure>` : ''}
+    ${insightsHtml ? `<ul class="llm-viz-insights">${insightsHtml}</ul>` : ''}`;
+}
 async function discoverLLMModels(options = {}) {
   const config = getLLMFormConfig();
-  if(!config.baseUrl) throw new Error('请填写 API Base URL。');
-  if(!config.apiKey) throw new Error('请填写 API Key。');
+  const useServer = usingServerLLM(config);
+  if(!useServer) {
+    if(!config.baseUrl) throw new Error('请填写 API Base URL。');
+    if(!config.apiKey) throw new Error('请填写 API Key，或在服务端配置 LLM_API_KEY 后留空。');
+  }
   if(!options.silent) {
-    setLLMStatus('正在识别可用模型...', 'info');
+    setLLMStatus(useServer ? '正在通过服务端识别可用模型...' : '正在识别可用模型...', 'info');
     renderLLMResult('正在请求 /models 获取模型列表...');
   }
-  const response = await fetch(`${config.baseUrl}/models`, { headers: { Authorization: `Bearer ${config.apiKey}` } });
+  const response = useServer
+    ? await fetch('/api/llm/models')
+    : await fetch(`${config.baseUrl}/models`, { headers: { Authorization: `Bearer ${config.apiKey}` } });
   const raw = await response.text();
   let data;
   try { data = raw ? JSON.parse(raw) : {}; } catch (err) { throw new Error(`模型列表接口返回非JSON内容：${raw.slice(0, 240)}`); }
-  if(!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message || raw.slice(0, 240) || '模型列表请求失败'}`);
+  if(!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message || data.error || raw.slice(0, 240) || '模型列表请求失败'}`);
   const models = extractLLMModels(data);
   if(models.length === 0) throw new Error('接口已响应，但未在 /models 返回中找到可用模型 id。');
   const previous = JSON.parse(localStorage.getItem(LLM_CONFIG_KEY) || '{}');
-  const selected = previous.model && models.includes(previous.model) ? previous.model : models[0];
+  const serverDefault = llmServerStatus?.model;
+  const selected = (previous.model && models.includes(previous.model)) ? previous.model
+    : (serverDefault && models.includes(serverDefault)) ? serverDefault
+    : models[0];
   renderLLMModelOptions(models, selected);
   localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify({ ...config, model: selected, models }));
   if(!options.silent) {
@@ -2528,24 +2853,31 @@ async function ensureLLMModelSelected() {
 }
 async function sendLLMMessages(messages, maxTokens = 1800, options = {}) {
   const config = await ensureLLMModelSelected();
-  if(!config.baseUrl) throw new Error('请填写 API Base URL。');
-  if(!config.apiKey) throw new Error('请填写 API Key。');
   if(!config.model) throw new Error('未识别到可用模型。');
   localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(config));
   const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 0);
   const controller = timeoutMs && typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  const payload = { model: config.model, messages, temperature: config.temperature, max_tokens: maxTokens };
+  const useServer = usingServerLLM(config);
   try {
-    const response = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({ model: config.model, messages, temperature: config.temperature, max_tokens: maxTokens }),
-      signal: controller ? controller.signal : undefined
-    });
+    const response = useServer
+      ? await fetch('/api/llm/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller ? controller.signal : undefined
+        })
+      : await fetch(`${config.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+          body: JSON.stringify(payload),
+          signal: controller ? controller.signal : undefined
+        });
     const raw = await response.text();
     let data;
     try { data = raw ? JSON.parse(raw) : {}; } catch (err) { throw new Error(`接口返回非JSON内容：${raw.slice(0, 240)}`); }
-    if(!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message || raw.slice(0, 240) || '接口请求失败'}`);
+    if(!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message || data.error || raw.slice(0, 240) || '接口请求失败'}`);
     const text = extractLLMResponseText(data);
     if(!text) throw new Error('接口返回成功，但未找到 choices[0].message.content。');
     return text;
@@ -2568,6 +2900,11 @@ async function callLLMChatCompletions(promptText, maxTokens = 1800) {
 
 async function callAssistantChatCompletions(messages, maxTokens = 600) {
   return sendLLMMessages(messages, maxTokens, { timeoutMs: 8000 });
+}
+
+// 视觉/文档识别调用：图片与长文档解析耗时明显更长，给独立的长超时。
+async function callVisionLLM(messages, maxTokens = 3000) {
+  return sendLLMMessages(messages, maxTokens, { timeoutMs: 90000 });
 }
 async function testLLMConnection() {
   setLLMStatus('正在测试连接...', 'info');
@@ -3246,7 +3583,7 @@ renderComponent('ww');
 renderHeaders();
 loadLifecycle();
 renderMatrix();
-renderDMTable();
+renderDataManagerTables();
 updateLifecycleDropdown();
 populateAIThicknessTargets();
 loadLLMConfigToForm();
@@ -3254,3 +3591,5 @@ renderDashboardWarnings(); syncDashboardSnapshot();
 renderMaintenancePlan();
 loadAuthSession();
 bootstrapCloudStorage();
+refreshLLMServerStatus();
+runLLMVisualAnalysis();

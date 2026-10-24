@@ -153,7 +153,9 @@
 
   function llmConfigured() {
     var config = llmConfig();
-    return Boolean(config && config.baseUrl && config.apiKey && config.model);
+    if (config && config.baseUrl && config.apiKey && config.model) return true;
+    // 服务端密钥模式：模型未选时 sendLLMMessages 会自动识别，这里只放行
+    return Boolean(global.__llmServerKey);
   }
 
   function snapshot(options) {
@@ -462,6 +464,55 @@
     render();
   }
 
+  /* ---------------- 对话导出（Markdown） ---------------- */
+
+  function operationToMarkdown(op) {
+    if (!op || typeof op !== 'object') return '';
+    var lines = ['**[' + text(op.tool) + '] ' + text(op.title || '') + '**'];
+    if (op.detail) lines.push('- ' + text(op.detail));
+    (op.metrics || []).forEach(function (metric) {
+      lines.push('- ' + text(metric && metric.label) + '：' + text(metric && metric.value));
+    });
+    (op.warnings || []).forEach(function (warning) { lines.push('- ⚠ ' + text(warning)); });
+    return lines.join('\n');
+  }
+
+  function exportConversation() {
+    // 历史会话仅持久化文本；当前活动消息（含操作卡片、附件）信息最全，以其为准
+    var list = state.messages;
+    if (!list.length) { reply('当前会话没有可导出的内容。'); return; }
+    var conversationTitle = '';
+    for (var i = 0; i < state.conversations.length; i += 1) {
+      if (state.conversations[i].id === state.activeConversationId) { conversationTitle = text(state.conversations[i].title); break; }
+    }
+    var parts = [
+      '# AI 数据助手对话导出',
+      '',
+      '- 系统：锅炉炉管全生命周期管理系统',
+      '- 会话：' + (conversationTitle || '当前会话') + '（' + list.length + ' 条消息）',
+      '- 导出时间：' + new Date().toLocaleString('zh-CN', { hour12: false }),
+      ''
+    ];
+    list.forEach(function (message) {
+      if (!message || typeof message !== 'object') return;
+      var isUser = message.role === 'user';
+      parts.push('## ' + (isUser ? '👤 用户' : '🤖 助手') + ' · ' + text(message.createdAt));
+      if (message.attachment && message.attachment.name) parts.push('> 附件：' + text(message.attachment.name));
+      if (text(message.text)) parts.push(text(message.text));
+      var op = operationToMarkdown(message.operation);
+      if (op) { parts.push(''); parts.push(op); }
+      parts.push('');
+    });
+    var content = parts.join('\n');
+    var stamp = new Date().toISOString().slice(0, 10);
+    if (typeof global.downloadBlob === 'function') {
+      global.downloadBlob('AI助手对话_' + stamp + '.md', content, 'text/markdown;charset=utf-8;');
+      reply('对话已导出为 Markdown 文件（含操作摘要与警告）。表格数据可在对话中用「导出数据」指令导出 Excel。');
+    } else {
+      reply('导出组件未就绪，请刷新页面后重试。');
+    }
+  }
+
   /* ---------------- 清洗与导入 ---------------- */
 
   function cleaningContext(snap) {
@@ -524,20 +575,83 @@
     return head + '存在错误行，请按提示修正后再导入，或直接导出问题明细核对。';
   }
 
+  /* 按清洗报告把可导入行切成「干净行（直接导入）/ 警告行（人工确认）」 */
+  function splitCleanRowsByWarnings(cleanRows, report) {
+    var header = Array.isArray(cleanRows) && cleanRows.length ? cleanRows[0] : [];
+    var data = Array.isArray(cleanRows) ? cleanRows.slice(1) : [];
+    var indexes = report && Array.isArray(report.rowIndexes) ? report.rowIndexes : [];
+    var flaggedNums = {};
+    (report && Array.isArray(report.checks) ? report.checks : []).forEach(function (check) {
+      if (check && (check.severity === 'warning' || check.severity === 'error')) {
+        (check.rows || []).forEach(function (rowNumber) { flaggedNums[rowNumber] = true; });
+      }
+    });
+    var autoRows = [];
+    var flaggedRows = [];
+    data.forEach(function (row, i) {
+      var rowNumber = indexes[i];
+      if (rowNumber !== undefined && flaggedNums[rowNumber]) flaggedRows.push(row);
+      else autoRows.push(row);
+    });
+    return { header: header, autoRows: autoRows, flaggedRows: flaggedRows };
+  }
+
+  function describeSplitCleaning(report, split, autoImported) {
+    var summary = report && report.summary ? report.summary : {};
+    var parts = [];
+    if (autoImported) parts.push(split.autoRows.length + ' 行干净数据已直接导入');
+    if (split.flaggedRows.length) parts.push(split.flaggedRows.length + ' 行有警告待确认');
+    if (summary.errorCount) parts.push(summary.errorCount + ' 行错误已跳过');
+    if (summary.duplicateRows) parts.push('丢弃重复 ' + summary.duplicateRows + ' 行');
+    return parts.join('，') + '。';
+  }
+
   function runCleaning(rows, fileName, sheetName) {
     var result = cleanRowsFor(rows, fileName, sheetName);
     if (!result) {
       reply('清洗组件没有加载成功，请刷新页面后重试。');
       return null;
     }
-    state.pendingCleaning = {
-      report: result.report,
-      cleanRows: Array.isArray(result.cleanRows) ? result.cleanRows : []
-    };
-    pushAssistant({
-      text: describeCleaning(result.report),
-      cleaning: attachCleaningActions(result.report)
-    });
+    var report = result.report;
+    var cleanRows = Array.isArray(result.cleanRows) ? result.cleanRows : [];
+    var split = splitCleanRowsByWarnings(cleanRows, report);
+
+    /* 兜底模式（只读角色 / 数据集未识别）维持原整表确认流程；
+       编辑者 + 已识别数据集：干净行直接导入，警告行留下待确认 */
+    var manualMode = currentRole() === 'viewer' || report.datasetType === 'unknown';
+    var autoOutcome = null;
+
+    if (!manualMode && split.autoRows.length > 0) {
+      autoOutcome = runImportGrid([split.header].concat(split.autoRows), report);
+      if (!autoOutcome.ok) autoOutcome = null; /* 组件未就绪时退回整表确认 */
+    }
+
+    if (!manualMode && autoOutcome) {
+      if (split.flaggedRows.length > 0) {
+        var flaggedReport = {};
+        Object.keys(report).forEach(function (key) { flaggedReport[key] = report[key]; });
+        flaggedReport.summary = {};
+        Object.keys(report.summary || {}).forEach(function (key) { flaggedReport.summary[key] = report.summary[key]; });
+        flaggedReport.summary.cleanRows = split.flaggedRows.length;
+        flaggedReport.summary.importable = true;
+        state.pendingCleaning = { report: flaggedReport, cleanRows: [split.header].concat(split.flaggedRows) };
+        pushAssistant({
+          text: describeSplitCleaning(report, split, true),
+          cleaning: attachCleaningActions(flaggedReport)
+        });
+      } else {
+        state.pendingCleaning = null;
+        state.pendingFile = null;
+        pushAssistant({ text: describeSplitCleaning(report, split, true) });
+      }
+      pushAssistant({ operation: autoOutcome.operation, text: autoOutcome.summary });
+    } else {
+      state.pendingCleaning = { report: report, cleanRows: cleanRows };
+      pushAssistant({
+        text: describeCleaning(report),
+        cleaning: attachCleaningActions(report)
+      });
+    }
     render();
     return result;
   }
@@ -546,8 +660,36 @@
     if (!file) return;
     var name = text(file.name) || '未命名文件';
     var extension = fileExtension(name);
+    var docs = global.BTAssistantDocs;
+    var docKind = docs && docs.isImageFile(name) ? 'image' : docs && docs.isPdfFile(name) ? 'pdf' : '';
+    if (docKind) {
+      setBusy(true);
+      render();
+      var extracting = docKind === 'image' ? docs.imageToRows(file) : docs.pdfToRows(file);
+      extracting.then(function (parsed) {
+        setBusy(false);
+        var rows = parsed.rows || [];
+        if (rows.length < 2) {
+          render();
+          reply('识别完成，但内容里没有表格数据行（至少需要一行表头和一行数据）。' + (parsed.notes ? '备注：' + parsed.notes : ''));
+          return;
+        }
+        state.pendingFile = { name: name, size: file.size || 0, rows: rows, sheetName: parsed.sheetName || '文档识别' };
+        pushUser({
+          text: '上传文件：' + name + (parsed.notes ? '（识别备注：' + parsed.notes + '）' : ''),
+          attachment: { name: name, size: file.size || 0 }
+        });
+        render();
+        runCleaning(rows, name, parsed.sheetName || '文档识别');
+      }).catch(function (err) {
+        setBusy(false);
+        render();
+        reply('识别失败：' + (err && err.message ? err.message : String(err)));
+      });
+      return;
+    }
     if (extension !== 'csv' && extension !== 'xlsx' && extension !== 'xls') {
-      reply('只支持 CSV / Excel（.csv/.xlsx/.xls）文件。可以先在「数据录入」页下载 CSV 模板再填写。');
+      reply('只支持 CSV / Excel / 图片（png/jpg/webp）/ PDF 文件。可以先在「数据录入」页下载模板再填写。');
       return;
     }
     setBusy(true);
@@ -602,43 +744,52 @@
       reply('现在没有可导入的清洗结果，请先上传文件或重新清洗。');
       return;
     }
-    var report = state.pendingCleaning.report;
-    var rows = state.pendingCleaning.cleanRows;
+    var outcome = runImportGrid(state.pendingCleaning.cleanRows, state.pendingCleaning.report);
+    if (!outcome.ok) {
+      reply(outcome.error);
+      return;
+    }
+    state.pendingCleaning = null;
+    state.pendingFile = null;
+    reply(outcome.summary, { operation: outcome.operation });
+  }
+
+  /* 实际执行导入（写入 + 记录 lastImport），自动导入与手动确认共用。
+     返回 { ok:true, summary, operation } 或 { ok:false, error }；不改动 pendingCleaning。 */
+  function runImportGrid(rows, report) {
     var datasetType = report.datasetType;
-    var result = null;
     if (datasetType === 'material_library') {
       var beforeLibrary = snapshot().materialLibrary;
-      if (typeof global.importMaterialRows !== 'function') { reply('材料库导入失败：写入组件没有就绪，请刷新页面。'); return; }
-      result = asAssistantSource(function () { return global.importMaterialRows(rows, { reason: 'import' }); });
-      if (!result) { reply('材料库导入失败：写入组件没有就绪，请刷新页面。'); return; }
+      if (typeof global.importMaterialRows !== 'function') return { ok: false, error: '材料库导入失败：写入组件没有就绪，请刷新页面。' };
+      var materialResult = asAssistantSource(function () { return global.importMaterialRows(rows, { reason: 'import' }); });
+      if (!materialResult) return { ok: false, error: '材料库导入失败：写入组件没有就绪，请刷新页面。' };
       state.lastImport = {
         kind: 'material_library',
         createdAt: nowIso(),
         fileName: report.fileName || '',
         before: beforeLibrary,
-        imported: result.imported || 0
+        imported: materialResult.imported || 0
       };
       writeJSON(LAST_IMPORT_KEY, state.lastImport);
-      state.pendingCleaning = null;
-      state.pendingFile = null;
-      reply('材料库导入完成：更新/新增 ' + (result.imported || 0) + ' 条记录。', {
+      return {
+        ok: true,
+        summary: '材料库导入完成：更新/新增 ' + (materialResult.imported || 0) + ' 条记录。',
         operation: {
           tool: 'data.import',
           datasetType: datasetType,
           title: '材料库导入完成',
           detail: '已写入本浏览器并排队同步云端（若已登录）。',
-          metrics: [{ label: '写入记录', value: String(result.imported || 0) }],
+          metrics: [{ label: '写入记录', value: String(materialResult.imported || 0) }],
           warnings: [],
           status: 'done',
           resultTone: 'success',
           secondaryActions: [{ id: 'undo-last-import', label: '撤销这次导入', tone: 'ghost' }]
         }
-      });
-      return;
+      };
     }
-    if (typeof global.importLifecycleRows !== 'function') { reply('导入失败：写入组件没有就绪，请刷新页面。'); return; }
-    result = asAssistantSource(function () { return global.importLifecycleRows(rows, { batchFilter: 'all' }); });
-    if (!result) { reply('导入失败：写入组件没有就绪，请刷新页面。'); return; }
+    if (typeof global.importLifecycleRows !== 'function') return { ok: false, error: '导入失败：写入组件没有就绪，请刷新页面。' };
+    var result = asAssistantSource(function () { return global.importLifecycleRows(rows, { batchFilter: 'all' }); });
+    if (!result) return { ok: false, error: '导入失败：写入组件没有就绪，请刷新页面。' };
     state.lastImport = {
       kind: 'events',
       createdAt: nowIso(),
@@ -650,12 +801,12 @@
       skippedDuplicates: result.skippedDuplicates || 0
     };
     writeJSON(LAST_IMPORT_KEY, state.lastImport);
-    state.pendingCleaning = null;
-    state.pendingFile = null;
     var summary = '导入完成：新增事件 ' + state.lastImport.importedEvents + ' 条、更换 ' + state.lastImport.importedReplacements + ' 条';
     if (state.lastImport.skippedDuplicates) summary += '，跳过重复 ' + state.lastImport.skippedDuplicates + ' 条';
     if (result.skippedMismatch) summary += '，机组不匹配 ' + result.skippedMismatch + ' 条';
-    reply(summary + '。', {
+    return {
+      ok: true,
+      summary: summary + '。',
       operation: {
         tool: 'data.import',
         datasetType: datasetType,
@@ -671,7 +822,7 @@
         resultTone: 'success',
         secondaryActions: [{ id: 'undo-last-import', label: '撤销这次导入', tone: 'ghost' }]
       }
-    });
+    };
   }
 
   function undoLastImport() {
@@ -1280,8 +1431,64 @@
       note: opts.note || '',
       advice: opts.advice || '',
       tool: 'data.analyze',
-      actions: [{ id: 'export-analysis', label: '导出分析明细', tone: 'ghost' }]
+      actions: [
+        { id: 'analysis-deep-read', label: 'AI 深度解读', tone: 'ghost' },
+        { id: 'export-analysis', label: '导出分析明细', tone: 'ghost' }
+      ]
     };
+  }
+
+  /* 让大模型基于最新一份分析报告给出失效机理与检修建议（数值审计兜底防编造） */
+  function deepReadLastAnalysis() {
+    var analysis = state.lastAnalysis;
+    if (!analysis || !analysis.chart) { reply('现在没有可解读的分析报告，请先发起一次分析（例如「近两年壁厚趋势」）。'); return; }
+    if (!llmConfigured() || typeof global.callAssistantChatCompletions !== 'function') {
+      reply('深度解读需要配置大模型：请在总览「模型接口配置」填写 API Key（或由管理员配置服务端密钥）并识别模型。当前报告的规则洞察仍然可用。');
+      return;
+    }
+    setBusy(true);
+    render();
+    var chart = analysis.chart || {};
+    var seriesText = (chart.series || []).map(function (item) {
+      var nums = (item.values || []).filter(function (v) { return typeof v === 'number'; });
+      if (!nums.length) return item.name + '：无数据';
+      return item.name + '：' + nums[0].toFixed(2) + ' → ' + nums[nums.length - 1].toFixed(2) +
+        '（' + nums.length + ' 点，最低 ' + Math.min.apply(null, nums).toFixed(2) + '）';
+    }).join('\n');
+    var table = analysis.table || {};
+    var tableText = (table.rows || []).slice(0, 10).map(function (row) {
+      return (table.columns || []).map(function (col) { return col + '=' + (row[col] === undefined ? '' : row[col]); }).join('，');
+    }).join('\n');
+    var prompt = [
+      '以下是一份锅炉炉管系统自动生成的分析报告，请基于给定数据输出深度解读。',
+      '要求：1) 不编造报告之外的任何数值；2) 分三节输出：失效机理判断、检修/复检建议（按优先级排序）、需要补充的数据；3) 每条结论注明依据的数据点。',
+      '',
+      '报告标题：' + text(analysis.title),
+      '指标：' + (analysis.metrics || []).map(function (m) { return m.label + '=' + m.value; }).join('，'),
+      '时间轴：' + (chart.categories || []).slice(0, 24).join('、'),
+      '各系列首末值：\n' + seriesText,
+      chart.threshold ? '预警线：' + chart.threshold.label : '',
+      '规则洞察：\n' + (analysis.insights || []).join('\n'),
+      '明细（前 10 行）：\n' + tableText
+    ].filter(Boolean).join('\n');
+    global.callAssistantChatCompletions([
+      { role: 'system', content: '你是电站锅炉受热面寿命管理专家。基于给定报告数据解读，禁止编造数值，不确定处明确标注需要复核。' },
+      { role: 'user', content: prompt }
+    ], 900).then(function (raw) {
+      setBusy(false);
+      var auditNote = '';
+      if (typeof global.auditLLMText === 'function') {
+        try {
+          var audit = global.auditLLMText(raw, prompt);
+          if (audit && !audit.ok && !audit.skipped) auditNote = '\n\n⚠ 数值审计：' + audit.count + ' 处数值未在报告中找到依据，请核对。';
+        } catch (err) { /* 审计失败不阻断展示 */ }
+      }
+      reply(raw + auditNote);
+    }).catch(function (err) {
+      setBusy(false);
+      render();
+      reply('深度解读失败：' + (err && err.message ? err.message : String(err)));
+    });
   }
 
   function executeAnalysis(intent, message) {
@@ -1712,6 +1919,7 @@
     if (actionId === 'export-issues') { exportIssueRows(); return; }
     if (actionId === 'export-query') { exportQueryResult(); return; }
     if (actionId === 'export-analysis') { exportAnalysisResult(); return; }
+    if (actionId === 'analysis-deep-read') { deepReadLastAnalysis(); return; }
     if (actionId === 'edit-confirm') { confirmEdit(); return; }
     if (actionId === 'edit-cancel') { state.pendingEdit = null; reply('已取消本次修改，没有写入任何数据。'); return; }
     if (actionId === 'undo-last-edit') { undoLastEdit(); return; }
@@ -1827,6 +2035,7 @@
     if (event.kind === 'select-history') { openConversation(event.conversationId); return; }
     if (event.kind === 'delete-history') { deleteConversation(event.conversationId); return; }
     if (event.kind === 'new-chat') { startNewConversation(); return; }
+    if (event.kind === 'export-chat') { exportConversation(); return; }
     if (event.kind === 'open-settings') { openModelSettings(); return; }
   }
 

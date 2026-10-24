@@ -390,7 +390,7 @@
     var width = num(opts.width) || 460;
     var height = num(opts.height) || 200;
     return [
-      '<svg class="assistant-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="' + esc(opts.label || '图表') + '" preserveAspectRatio="none">',
+      '<svg class="assistant-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="' + esc(opts.label || '图表') + '" preserveAspectRatio="xMidYMid meet">',
       '  <text x="' + (width / 2) + '" y="' + (height / 2) + '" text-anchor="middle" fill="var(--text-ghost)" font-size="12">' + esc(opts.text || '暂无可绘制的数据') + '</text>',
       '</svg>'
     ].join('\n');
@@ -530,9 +530,12 @@
     var x = 12;
     for (var i = 0; i < series.length && i < 4; i += 1) {
       var color = PALETTE[i % PALETTE.length];
+      /* 长名称（如管段编码）截断，保证 4 个图例都放得下 */
+      var name = String(series[i].name);
+      if (name.length > 10) name = name.slice(0, 9) + '…';
       lines.push('  <rect x="' + x + '" y="' + (y - 8) + '" width="8" height="8" rx="2" fill="' + color + '" />');
-      lines.push('  <text x="' + (x + 12) + '" y="' + y + '" fill="var(--text-dim)" font-size="10">' + esc(series[i].name) + '</text>');
-      x += 16 + String(series[i].name).length * 10 + 14;
+      lines.push('  <text x="' + (x + 12) + '" y="' + y + '" fill="var(--text-dim)" font-size="10">' + esc(name) + '</text>');
+      x += 16 + name.length * 10 + 14;
     }
     return lines;
   }
@@ -759,7 +762,56 @@
     var dimension = spec.dimension === 'year' || spec.dimension === 'quarter' ? spec.dimension : 'month';
     var isCount = spec.metric === 'count' || spec.metric === 'replacements';
     var field = spec.metric === 'hardness' ? 'hardness' : 'thickness';
-    var grouped = groupRows(rows, function (row) { return dimensionKeyOf(row, dimension); });
+
+    /* 数值型指标只统计有数值的记录：金相/无损等无厚度事件不再制造空时间桶 */
+    var metricRows = rows;
+    if (!isCount) {
+      metricRows = rows.filter(function (row) {
+        return row[field] !== null && row[field] !== undefined && isFinite(row[field]);
+      });
+    }
+
+    /* 按月跨度超过 2 年自动升为按年，避免几十个稀疏月份桶 */
+    if (dimension === 'month' && metricRows.length) {
+      var monthKeys = {};
+      metricRows.forEach(function (row) { if (row.month) monthKeys[row.month] = true; });
+      if (Object.keys(monthKeys).length > 24) dimension = 'year';
+    }
+
+    /* 分系列策略：多管混合平均会抹掉不同管段的劣化差异。
+       2~3 根管 → 按管分线；管更多 → 按受热面（≤4）分线；再多退回整体平均。 */
+    var seriesMode = 'average';
+    var seriesKeyFn = null;
+    var seriesLabelFn = null;
+    if (!isCount && metricRows.length) {
+      var codeSet = {};
+      var shortSeen = {};
+      metricRows.forEach(function (row) { codeSet[row.code || ''] = true; });
+      var codeCount = Object.keys(codeSet).filter(Boolean).length;
+      if (codeCount >= 2 && codeCount <= 3) {
+        seriesMode = 'tube';
+        seriesKeyFn = function (row) { return row.code || ''; };
+        seriesLabelFn = function (code) {
+          /* 取「屏号-管号」作为短名：识别度最高且图例放得下；段数不足时退回末两段 */
+          var parts = String(code).split('-');
+          var short = parts.length >= 4 ? parts.slice(-3, -1).join('-') : (parts.length >= 2 ? parts.slice(-2).join('-') : code);
+          if (shortSeen[short]) short = code; /* 短名冲突时退回全码，避免图例混淆 */
+          shortSeen[short] = true;
+          return short;
+        };
+      } else if (codeCount > 3) {
+        var sysSet = {};
+        metricRows.forEach(function (row) { if (row.sys) sysSet[row.sys] = true; });
+        var sysCount = Object.keys(sysSet).length;
+        if (sysCount >= 2 && sysCount <= 4) {
+          seriesMode = 'surface';
+          seriesKeyFn = function (row) { return row.sys || ''; };
+          seriesLabelFn = function (sys) { return sysLabelOf(sys) || sys || '未知'; };
+        }
+      }
+    }
+
+    var grouped = groupRows(metricRows, function (row) { return dimensionKeyOf(row, dimension); });
     var categories = [];
     var avgValues = [];
     var minValues = [];
@@ -772,14 +824,46 @@
       avgValues.push(values.length ? mean(values) : null);
       minValues.push(values.length ? Math.min.apply(null, values) : null);
     }
+
+    /* 阈值线：所有记录的名义壁厚一致时才画（不同规格混画一条线会误导） */
+    var threshold = null;
+    if (spec.metric !== 'hardness' && spec.metric !== 'count' && spec.metric !== 'replacements' && metricRows.length) {
+      var nominalSet = {};
+      var nominalValue = null;
+      metricRows.forEach(function (row) {
+        if (row.nominal) { nominalSet[row.nominal] = true; nominalValue = row.nominal; }
+      });
+      if (Object.keys(nominalSet).length === 1 && nominalValue) {
+        threshold = { value: nominalValue * 0.8, label: '预警线 ' + fixed(nominalValue * 0.8, 2) };
+      }
+    }
+
     var metricLabel = spec.metric === 'hardness' ? '平均硬度' : '平均壁厚';
     var unitText = spec.metric === 'hardness' ? 'HB' : 'mm';
     var series = [];
     if (isCount) {
       series.push({ name: spec.dataset === 'replacements' ? '更换记录数' : '事件数', values: counts });
-    } else {
+    } else if (seriesMode === 'average') {
       series.push({ name: metricLabel, values: avgValues });
       if (spec.metric === 'thickness') series.push({ name: '最低壁厚', values: minValues });
+    } else {
+      var subGroups = groupRows(metricRows, seriesKeyFn);
+      var labels = {};
+      for (var sg = 0; sg < subGroups.keys.length; sg += 1) {
+        var key = subGroups.keys[sg];
+        labels[key] = seriesLabelFn(key);
+      }
+      for (var sg2 = 0; sg2 < subGroups.keys.length; sg2 += 1) {
+        var key2 = subGroups.keys[sg2];
+        var sub = groupRows(subGroups.map[key2], function (row) { return dimensionKeyOf(row, dimension); });
+        var values2 = categories.map(function (catKey) {
+          var subBucket = sub.map[catKey];
+          if (!subBucket) return null;
+          var nums = numbersOf(subBucket, field);
+          return nums.length ? mean(nums) : null;
+        });
+        series.push({ name: labels[key2], values: values2, key: key2 });
+      }
     }
     var chart = {
       type: 'line',
@@ -790,6 +874,7 @@
       yLabel: isCount ? '条' : unitText,
       ariaLabel: (isCount ? '记录数' : metricLabel) + '按' + (dimension === 'year' ? '年' : '月') + '变化趋势'
     };
+    if (threshold) chart.threshold = threshold;
 
     var insights = [];
     if (isCount) {
@@ -820,9 +905,11 @@
         insights.push('平均' + (spec.metric === 'hardness' ? '硬度' : '壁厚') + '从 ' + fixed(first, 2) + unitText + ' 变为 ' +
           fixed(lastV, 2) + unitText + '，累计' + (change >= 0 ? '上升 ' : '下降 ') + fixed(Math.abs(change), 2) + unitText +
           (first ? '（' + pct(change / Math.abs(first), 1) + '）' : '') + '。');
-        var globalMin = Math.min.apply(null, validAvg);
-        insights.push('各期均值最低为 ' + fixed(globalMin, 2) + unitText + '，出现在 ' +
-          categories[avgValues.indexOf(globalMin)] + '。');
+        if (seriesMode === 'average') {
+          var globalMin = Math.min.apply(null, validAvg);
+          insights.push('各期均值最低为 ' + fixed(globalMin, 2) + unitText + '，出现在 ' +
+            categories[avgValues.indexOf(globalMin)] + '。');
+        }
         var lowCount = 0;
         for (var q = 0; q < rows.length; q += 1) {
           if (rows[q].thinning !== null && rows[q].thinning >= 0.2) lowCount += 1;
@@ -831,15 +918,39 @@
       } else {
         insights.push('这批记录里没有可用的' + (spec.metric === 'hardness' ? '硬度' : '壁厚') + '数值，无法计算趋势。');
       }
+      /* 分线模式：指出减薄最快的管段/受热面，以及已越过预警线的 */
+      if (seriesMode !== 'average') {
+        var fastest = null;
+        var breached = [];
+        series.forEach(function (item) {
+          var pts = item.values
+            .map(function (v, idx) { return { v: v, cat: categories[idx] }; })
+            .filter(function (pt) { return typeof pt.v === 'number'; });
+          if (pts.length >= 2) {
+            var drop = pts[0].v - pts[pts.length - 1].v;
+            if (!fastest || drop > fastest.drop) fastest = { name: item.name, drop: drop, from: pts[0].v, to: pts[pts.length - 1].v };
+          }
+          if (threshold && pts.length && pts[pts.length - 1].v <= threshold.value) {
+            breached.push(item.name + '（最新 ' + fixed(pts[pts.length - 1].v, 2) + unitText + '）');
+          }
+        });
+        if (fastest && fastest.drop > 0) {
+          insights.push((seriesMode === 'tube' ? '减薄最快的管段：' : '减薄最快的受热面：') + fastest.name + '，从 ' +
+            fixed(fastest.from, 2) + unitText + ' 降到 ' + fixed(fastest.to, 2) + unitText + '（-' + fixed(fastest.drop, 2) + unitText + '）。');
+        }
+        if (breached.length) insights.push('已低于预警线：' + breached.join('、') + '，建议优先安排复测。');
+      }
     }
-    if (rows.length && categories.length < 2) insights.push('只有 1 个时间段有数据，趋势判断意义有限；建议补充历史数据后再看走势。');
+    if (metricRows.length && categories.length < 2) insights.push('只有 1 个时间段有数据，趋势判断意义有限；建议补充历史数据后再看走势。');
 
     var metrics = [
       { label: '记录数', value: intText(rows.length) },
       { label: '时间段', value: String(categories.length) }
     ];
+    if (seriesMode === 'tube') metrics.push({ label: '管段', value: String(series.length) });
+    if (seriesMode === 'surface') metrics.push({ label: '受热面', value: String(series.length) });
     if (!isCount) {
-      var allValues = numbersOf(rows, field);
+      var allValues = numbersOf(metricRows, field);
       metrics.push({ label: '均值', value: allValues.length ? fixed(mean(allValues), 2) + unitText : '—' });
       metrics.push({ label: '最低', value: allValues.length ? fixed(Math.min.apply(null, allValues), 2) + unitText : '—', tone: 'warn' });
     } else if (categories.length) {

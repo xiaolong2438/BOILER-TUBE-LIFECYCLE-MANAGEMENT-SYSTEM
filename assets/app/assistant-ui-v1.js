@@ -172,6 +172,7 @@
       '      </div>',
       '    </div>',
       '    <div class="assistant-head-actions">',
+      '      <button type="button" class="assistant-icon-btn" id="assistantExportChat" data-assistant="export-chat" aria-label="导出对话" title="导出当前对话（Markdown）">⇩</button>',
       '      <button type="button" class="assistant-icon-btn" id="assistantHistoryBtn" data-assistant="history" aria-label="会话历史" aria-controls="assistantHistory" aria-expanded="false" title="会话历史">☰</button>',
       '      <button type="button" class="assistant-icon-btn" id="assistantNewChat" data-assistant="new-chat" aria-label="新建会话" title="新建会话">＋</button>',
       '      <button type="button" class="assistant-icon-btn assistant-icon-btn--close" id="assistantClose" data-assistant="close" aria-label="关闭助手面板" title="关闭（Esc）">×</button>',
@@ -186,9 +187,9 @@
       '    <span class="assistant-typing-dot" aria-hidden="true"></span>',
       '  </div>',
       '  <div class="assistant-composer">',
-      '    <label class="assistant-attach" id="assistantAttach" data-assistant="attach" for="assistantFile" role="button" tabindex="0" aria-label="上传 CSV 或 Excel 文件" title="上传 CSV / Excel">上传</label>',
-      '    <input class="assistant-file" id="assistantFile" type="file" accept=".csv,.xlsx,.xls" tabindex="-1" aria-hidden="true" />',
-      '    <textarea class="assistant-input" id="assistantInput" rows="1" maxlength="2000" placeholder="用一句话说明需求，例如：查询 1 号炉 HSH 的测厚记录" aria-label="向 AI 数据助手提问"></textarea>',
+      '    <label class="assistant-attach" id="assistantAttach" data-assistant="attach" for="assistantFile" role="button" tabindex="0" aria-label="上传表格 / 图片 / PDF 文件" title="上传 CSV / Excel / 图片 / PDF">上传</label>',
+      '    <input class="assistant-file" id="assistantFile" type="file" accept=".csv,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.pdf" tabindex="-1" aria-hidden="true" />',
+      '    <textarea class="assistant-input" id="assistantInput" rows="1" maxlength="2000" placeholder="用一句话说明需求；表格/图片/PDF 可直接拖入本窗口" aria-label="向 AI 数据助手提问"></textarea>',
       '    <button type="button" class="assistant-send" id="assistantSend" data-assistant="send" aria-label="发送">↑</button>',
       '  </div>',
       '  <footer class="assistant-foot">',
@@ -900,6 +901,11 @@
         if (prompt) emit({ kind: 'send', text: prompt });
         return;
       }
+      if (action === 'export-chat') {
+        if (event.preventDefault) event.preventDefault();
+        emit({ kind: 'export-chat' });
+        return;
+      }
       if (action === 'history') {
         if (event.preventDefault) event.preventDefault();
         emit({ kind: 'toggle-history' });
@@ -967,6 +973,50 @@
       stickToBottom = isAtBottom();
     }
 
+    /* 拖拽：文件拖到助手面板任意位置即触发上传（与点“上传”同一条链路） */
+    var dragDepth = 0;
+
+    function onPanelDragEnter(event) {
+      if (!event || !event.dataTransfer) return;
+      var kinds = event.dataTransfer.types;
+      var hasFiles = false;
+      if (kinds && typeof kinds.indexOf === 'function') hasFiles = kinds.indexOf('Files') >= 0;
+      else if (kinds && typeof kinds.contains === 'function') hasFiles = kinds.contains('Files');
+      if (!hasFiles) return;
+      if (event.preventDefault) event.preventDefault();
+      dragDepth += 1;
+      if (els.panel && typeof els.panel.classList !== 'undefined') els.panel.classList.add('is-dragover');
+    }
+
+    function onPanelDragOver(event) {
+      if (!event || !event.dataTransfer) return;
+      if (event.preventDefault) event.preventDefault();
+      if (event.dataTransfer.dropEffect) {
+        try { event.dataTransfer.dropEffect = 'copy'; } catch (err) { /* 只读场景忽略 */ }
+      }
+    }
+
+    function onPanelDragLeave(event) {
+      if (event && event.preventDefault) event.preventDefault();
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0 && els.panel && typeof els.panel.classList !== 'undefined') {
+        els.panel.classList.remove('is-dragover');
+      }
+    }
+
+    function onPanelDrop(event) {
+      if (!event) return;
+      if (event.preventDefault) event.preventDefault();
+      if (event.stopPropagation) event.stopPropagation();
+      dragDepth = 0;
+      if (els.panel && typeof els.panel.classList !== 'undefined') els.panel.classList.remove('is-dragover');
+      var files = event.dataTransfer && event.dataTransfer.files;
+      var file = files && files.length ? files[0] : null;
+      if (!file) return;
+      if (currentBusy()) return;
+      emit({ kind: 'file', file: file });
+    }
+
     function onDocKeyDown(event) {
       if (!event) return;
       if (event.key !== 'Escape' && event.key !== 'Esc') return;
@@ -996,6 +1046,12 @@
     if (els.messages && typeof els.messages.addEventListener === 'function') {
       els.messages.addEventListener('scroll', onMessagesScroll);
     }
+    if (els.panel && typeof els.panel.addEventListener === 'function') {
+      els.panel.addEventListener('dragenter', onPanelDragEnter);
+      els.panel.addEventListener('dragover', onPanelDragOver);
+      els.panel.addEventListener('dragleave', onPanelDragLeave);
+      els.panel.addEventListener('drop', onPanelDrop);
+    }
     if (typeof doc.addEventListener === 'function') {
       doc.addEventListener('keydown', onDocKeyDown);
     }
@@ -1019,6 +1075,12 @@
         if (els.attach && typeof els.attach.removeEventListener === 'function') els.attach.removeEventListener('keydown', onAttachKeyDown);
         if (els.file && typeof els.file.removeEventListener === 'function') els.file.removeEventListener('change', onFileChange);
         if (els.messages && typeof els.messages.removeEventListener === 'function') els.messages.removeEventListener('scroll', onMessagesScroll);
+        if (els.panel && typeof els.panel.removeEventListener === 'function') {
+          els.panel.removeEventListener('dragenter', onPanelDragEnter);
+          els.panel.removeEventListener('dragover', onPanelDragOver);
+          els.panel.removeEventListener('dragleave', onPanelDragLeave);
+          els.panel.removeEventListener('drop', onPanelDrop);
+        }
         if (typeof doc.removeEventListener === 'function') doc.removeEventListener('keydown', onDocKeyDown);
         if (host && host.parentNode && typeof host.parentNode.removeChild === 'function') host.parentNode.removeChild(host);
         if (mountedRoots.get(root) === controller) mountedRoots.delete(root);

@@ -147,17 +147,68 @@ check("按机组对比时不能被「1 号炉」这类条件过滤成单组", ()
 
 /* ---------------- 各类分析 ---------------- */
 
-check("runAnalysis 趋势：按月聚合、给出均值与结论", () => {
+check("runAnalysis 趋势：多受热面按受热面分线、画预警线", () => {
   const spec = A.parseAnalysis("壁厚趋势", {});
   const result = A.runAnalysis(spec, buildSnapshot());
   assert.ok(result.ok);
   assert.equal(result.chart.type, "line");
   assert.ok(result.chart.categories.length >= 6, "按月应当有多个时间点");
-  assert.ok(result.chart.series.length >= 1);
+  assert.equal(result.chart.series.length, 4, "快照含 4 个受热面，应按受热面分线而不是混成一条平均线");
+  assert.ok(result.chart.threshold && result.chart.threshold.value === 6, "名义壁厚 7.5 统一时应画 80% 预警线");
   const insightText = result.insights.join(" ");
   assert.match(insightText, /平均壁厚/);
-  assert.match(insightText, /各期均值最低/);
+  assert.doesNotMatch(insightText, /各期均值最低/, "分线模式下不再输出混合均值的『各期均值最低』结论");
+  assert.ok(result.metrics.some((m) => m.label === "受热面"));
   assert.ok(result.metrics.some((m) => m.label === "记录数"));
+});
+
+check("runAnalysis 趋势：按管分线并指出减薄最快与越线管段", () => {
+  const events = [];
+  let ts = 1;
+  /* 3 根管、同一规格（名义 7.5），水冷壁慢减薄、高过快减薄、第三根已穿预警线 */
+  const tubes = [
+    { code: "1-WW-FR-001-0042-000", base: 7.4, decay: 0.1 },
+    { code: "1-HSH-O-005-0003-000", base: 7.3, decay: 0.45 },
+    { code: "1-WW-RR-001-0088-000", base: 7.2, decay: 0.2 }
+  ];
+  tubes.forEach((tube) => {
+    for (let year = 2021; year <= 2025; year += 1) {
+      events.push(event({
+        ts: ts++,
+        code: tube.code,
+        date: year + "-04-15",
+        type: "测厚",
+        thickness: Number((tube.base - tube.decay * (year - 2021)).toFixed(2)),
+        spec: "Φ51×7.5"
+      }));
+    }
+  });
+  const spec = A.parseAnalysis("壁厚趋势", {});
+  const result = A.runAnalysis(spec, { events: events, replacements: [] });
+  assert.ok(result.ok);
+  assert.equal(result.chart.series.length, 3, "3 根管应按管分线");
+  assert.equal(result.chart.series[0].name, "005-0003", "管段系列按编码排序，用「屏号-管号」短码命名");
+  assert.ok(result.chart.threshold.value === 6, "统一名义壁厚画 80% 预警线");
+  const insightText = result.insights.join(" ");
+  assert.match(insightText, /减薄最快的管段：005-0003/, "应指出减薄最快的管段（高过 7.3→5.5）");
+  assert.match(insightText, /已低于预警线/, "最新值穿线的管段应点名");
+  assert.ok(result.metrics.some((m) => m.label === "管段"));
+});
+
+check("runAnalysis 趋势：无数值事件不制造空时间桶", () => {
+  const events = [
+    event({ ts: 3, code: "1-WW-FR-001-0042-000", date: "2024-06-10", type: "金相分析", thickness: undefined, spec: "Φ63.5×7.5" }),
+    event({ ts: 1, code: "1-WW-FR-001-0042-000", date: "2022-04-15", thickness: 7.1 }),
+    event({ ts: 2, code: "1-WW-FR-001-0042-000", date: "2023-04-15", thickness: 6.9 })
+  ];
+  const spec = A.parseAnalysis("壁厚趋势", {});
+  const result = A.runAnalysis(spec, { events: events, replacements: [] });
+  assert.ok(result.ok);
+  assert.deepEqual(
+    Array.from(result.chart.categories),
+    ["2022-04", "2023-04"],
+    "没有厚度值的金相记录不应占据趋势时间桶"
+  );
 });
 
 check("runAnalysis 分布：分箱计数之和等于样本数", () => {

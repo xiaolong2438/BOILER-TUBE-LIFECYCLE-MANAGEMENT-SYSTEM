@@ -1476,3 +1476,33 @@ html[data-theme="light"] .assistant-btn--danger {
     padding: 4px 6px;
   }
 }
+
+/* ============ v1.1 文档识别与拖拽上传 ============ */
+.assistant-panel.is-dragover {
+  outline: 2px dashed var(--accent, #2dd4ff);
+  outline-offset: -8px;
+}
+.assistant-panel.is-dragover .assistant-composer {
+  background: rgba(45, 212, 255, 0.08);
+}
+.assistant-panel.is-dragover::after {
+  content: '松开即上传：表格 / 图片 / PDF';
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  padding: 10px 22px;
+  border-radius: 10px;
+  background: rgba(4, 16, 28, 0.88);
+  border: 1px solid var(--accent, #2dd4ff);
+  color: var(--accent-bright, #5de0ff);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  pointer-events: none;
+  z-index: 30;
+}
+html[data-theme="light"] .assistant-panel.is-dragover::after {
+  background: rgba(255, 255, 255, 0.95);
+  color: #0e7c9e;
+}
