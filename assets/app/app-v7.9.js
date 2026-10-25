@@ -3104,7 +3104,7 @@ function collectAIThicknessTargets() {
       const meta = systemLifecycleData()[code] || {};
       const compInfo = matchComponentFromCode(code);
       const label = meta.name || compInfo?.name || '本地录入管段';
-      if(thicknessData.length >= 2) return { code, label, points: thicknessData.length, latest: thicknessData[thicknessData.length - 1] };
+      if(thicknessData.length >= 1) return { code, label, points: thicknessData.length, latest: thicknessData[thicknessData.length - 1] }; /* 单测点也入列：走行业先验速率预估 */
       return null;
     })
     .filter(Boolean)
@@ -3236,10 +3236,21 @@ function collectAICompositeSignals(code, history = []) {
   const hardnessRate = hardnessModel.slope;
   const hardnessQuality = assessPredictionQuality(hardnessPoints);
   const hardnessTrend = hardnessHistory.length < 2
-    ? (latestHardness ? `单点硬度 ${latestHardness.value}HB，需后续复测形成趋势` : '暂无硬度数据')
-    : `硬度 ${firstHardness.value}HB → ${latestHardness.value}HB，变化 ${hardnessDelta >= 0 ? '+' : ''}${hardnessDelta.toFixed(0)}HB，变化率 ${hardnessRate >= 0 ? '+' : ''}${hardnessRate.toFixed(1)} HB/年`;
+    ? (latestHardness ? `单点硬度 ${latestHardness.value}HB，需后续复测形成趋势${hardnessPriorHint(code)}` : '暂无硬度数据')
+    : `硬度 ${firstHardness.value}HB → ${latestHardness.value}HB，变化 ${hardnessDelta >= 0 ? '+' : ''}${hardnessDelta.toFixed(0)}HB，变化率 ${hardnessRate >= 0 ? '+' : ''}${hardnessRate.toFixed(1)} HB/年` + hardnessPriorHint(code);
   const hardnessForecast = latestHardness && hardnessHistory.length >= 3 && hardnessQuality.reliable
-    ? { oneYear: Math.round(latestHardness.value + hardnessRate), threeYear: Math.round(latestHardness.value + hardnessRate * 3), direction: Math.abs(hardnessRate) < 1 ? '稳定' : hardnessRate < 0 ? '软化' : '硬化', confidence: hardnessQuality.reliable ? hardnessQuality.score : Math.min(54, hardnessQuality.score) }
+    ? (() => {
+        const lastPoint = hardnessPoints[hardnessPoints.length - 1];
+        const bandHalf = Math.max(3, (hardnessModel.residualMad || 0) * 1.4826);
+        const points = [1, 2, 3].map(dt => {
+          const val = latestHardness.value + hardnessRate * dt;
+          const half = bandHalf + Math.max(1.5, Math.abs(hardnessRate) * 0.3 * dt);
+          return { year: Number((lastPoint.year + dt).toFixed(1)), val: Math.round(val), low: Math.round(val - half), high: Math.round(val + half) };
+        });
+        return { oneYear: points[0].val, threeYear: points[2].val, direction: Math.abs(hardnessRate) < 1 ? '稳定' : hardnessRate < 0 ? '软化' : '硬化',
+          confidence: hardnessQuality.reliable ? hardnessQuality.score : Math.min(54, hardnessQuality.score),
+          points, bandHalf: Math.round(bandHalf) };
+      })()
     : null;
   const metallographyKeywords = [...new Set(metallography.flatMap(event => {
     const text = `${event.type || ''} ${event.desc || ''}`;
@@ -3297,6 +3308,85 @@ function assessReplacementWarning(current, thresholdInfo) {
   if(margin <= nearLimit + 1e-9) return { level: 'replace-soon', label: '接近理论厚度·提前更换预警', margin };
   return { level: 'normal', label: '高于理论厚度下限', margin };
 }
+/* 行业经验先验减薄速率（mm/y）：单测点无法拟合趋势时的兜底，随本管实测积累自动退位。
+   区间含义：slow=同类机组偏慢、fast=偏快；均为占位经验值，可按电厂实际修订。 */
+const PRIOR_THINNING_RATES = {
+  WW:  { slow: 0.05, fast: 0.15 }, RSH: { slow: 0.03, fast: 0.08 }, WSH: { slow: 0.03, fast: 0.08 },
+  LSH: { slow: 0.05, fast: 0.12 }, PSH: { slow: 0.06, fast: 0.15 }, ISH: { slow: 0.08, fast: 0.18 },
+  HSH: { slow: 0.08, fast: 0.20 }, LRH: { slow: 0.05, fast: 0.12 }, HRH: { slow: 0.08, fast: 0.20 },
+  ECO: { slow: 0.03, fast: 0.08 }
+};
+/* 材质级先验速率（优先于受热面默认值）：合金成分决定抗氧化/腐蚀能力，减薄速度差异可达数倍 */
+const PRIOR_RATE_MATERIAL_RULES = [
+  { match: /tp347|tp304|304h|347h|tp321/i, label: '奥氏体不锈钢', slow: 0.03, fast: 0.08 },
+  { match: /t91|t92|p91|p92|x10crmovnb|grade 9/i, label: '马氏体耐热钢(T91级)', slow: 0.04, fast: 0.10 },
+  { match: /12cr1mo|15crmo|10crmo|t22|t12|2\.25cr|crmo/i, label: '低合金铬钼钢', slow: 0.05, fast: 0.12 },
+  { match: /20g|sa-210|a210|st45|碳钢/i, label: '碳钢', slow: 0.06, fast: 0.18 }
+];
+/* 材质典型硬度参考区间（HB，母材供货态，依据标准/工程资料 2026-10 核实）：
+   奥氏体: ASME SA-213 规定 ≤192 HBW（TP304H 192HB/200HV/90HRB max），下限为典型供货值；
+   T91级: ASME SA-213 规定 ≤250 HBW；工程下限 180 HBW（P91 母材 180~250HB，见 CN104634679B 及焊接工艺文献）；
+   铬钼钢: GB/T 5310 12Cr1MoVG 退火/高温回火态 ≤179 HBW，正火+回火供货典型 135~180；
+   碳钢: 20# ≤156 HBS（GB/T 699 供货），SA-210C 标准上限 ≤179 HB、典型供货 130~160。 */
+const HARDNESS_MATERIAL_REFERENCE = [
+  { match: /tp347|tp304|304h|347h|tp321/i, label: '奥氏体不锈钢', low: 140, high: 192, direction: '稳定（时效硬化极缓）', rate: '约 ±0.5 HB/年' },
+  { match: /t91|t92|p91|p92|x10crmovnb|grade 9/i, label: '马氏体耐热钢(T91级)', low: 180, high: 250, direction: '稳定（回火马氏体，变化缓慢）', rate: '约 ±0.5 HB/年' },
+  { match: /12cr1mo|15crmo|10crmo|t22|t12|2\.25cr|crmo/i, label: '低合金铬钼钢', low: 135, high: 180, direction: '缓慢软化（珠光体球化）', rate: '约 -0.3~-1 HB/年' },
+  { match: /20g|sa-210|a210|st45|碳钢/i, label: '碳钢', low: 120, high: 160, direction: '软化（球化为主）', rate: '约 -0.5~-2 HB/年' }
+];
+function getHardnessMaterialRef(material) {
+  const text = String(material || '').trim();
+  if(!text) return null;
+  for(let i = 0; i < HARDNESS_MATERIAL_REFERENCE.length; i += 1) {
+    if(HARDNESS_MATERIAL_REFERENCE[i].match.test(text)) return HARDNESS_MATERIAL_REFERENCE[i];
+  }
+  return null;
+}
+function hardnessPriorHint(code) {
+  const material = getTubeMaterialText(code);
+  const ref = getHardnessMaterialRef(material);
+  if(!ref) return '';
+  return `；按材质「${material}」（${ref.label}）经验：典型趋势${ref.direction}，${ref.rate}（先验参考，需复测确认）`;
+}
+function getTubeMaterialText(code) {
+  try {
+    const list = (userDB.events || []).filter(e => e.code === code && e.material);
+    if(list.length) return String(list[list.length - 1].material).trim();
+  } catch (err) { /* 忽略 */ }
+  return '';
+}
+function getPriorThinningRates(code, materialHint) {
+  const material = String(materialHint || getTubeMaterialText(code) || '');
+  for(let i = 0; i < PRIOR_RATE_MATERIAL_RULES.length; i += 1) {
+    const rule = PRIOR_RATE_MATERIAL_RULES[i];
+    if(rule.match.test(material)) return { slow: rule.slow, fast: rule.fast, label: rule.label, basis: 'material' };
+  }
+  const sys = String(code || '').split('-')[1]?.toUpperCase() || '';
+  return { ...(PRIOR_THINNING_RATES[sys] || { slow: 0.05, fast: 0.15 }), label: '', basis: 'surface' };
+}
+/* 两年后劣化预测：实测模式用基准/加速速率，先验模式用先验区间；统一输出区间+裕量+是否触阈 */
+function buildTwoYearForecast(current, threshold, slowRate, fastRate, basis) {
+  if(current === null || current === undefined || !Number.isFinite(Number(current))) return null;
+  const currentVal = Number(current);
+  const twoYearHigh = currentVal - slowRate * 2;  /* 偏慢情景 → 壁厚偏高 */
+  const twoYearLow = currentVal - fastRate * 2;   /* 偏快情景 → 壁厚偏低 */
+  const mid = (twoYearHigh + twoYearLow) / 2;
+  const thresh = Number.isFinite(Number(threshold)) && Number(threshold) > 0 ? Number(threshold) : null;
+  return {
+    basis, /* 'measured' | 'prior' */
+    wallHigh: twoYearHigh, wallLow: twoYearLow, wallMid: mid,
+    margin: thresh !== null ? twoYearLow - thresh : null,
+    touchesThreshold: thresh !== null ? twoYearLow <= thresh : null,
+    certainlyBelow: thresh !== null ? twoYearHigh <= thresh : null
+  };
+}
+function formatTwoYearText(twoYear) {
+  if(!twoYear) return '--';
+  const line = `两年后壁厚 ${twoYear.wallLow.toFixed(2)}~${twoYear.wallHigh.toFixed(2)}mm` + (twoYear.basis === 'prior' ? '（先验）' : '');
+  if(twoYear.margin === null) return line;
+  return line + (twoYear.certainlyBelow ? '，将低于预警阈值' : twoYear.touchesThreshold ? `，偏快情景将触阈（裕量 ${twoYear.margin.toFixed(2)}mm）` : `，裕量 ${twoYear.margin.toFixed(2)}mm`);
+}
+
 function predictThicknessTrendFromHistory(code, history, pipeType) {
   const sorted = [...history].filter(p => positiveThickness(p.val) !== null && p.year !== null && Number.isFinite(Number(p.year))).map(p => ({...p, val: Number(p.val), year: Number(p.year)})).sort((a,b) => a.year - b.year);
   const first = sorted[0], last = sorted[sorted.length - 1];
@@ -3307,7 +3397,44 @@ function predictThicknessTrendFromHistory(code, history, pipeType) {
   if(sorted.length < 2 || !thresholdInfo.matched) {
     const quality = assessPredictionQuality(sorted);
     const compositeSignals = collectAICompositeSignals(code, sorted);
-    const status = ['replace','replace-soon'].includes(replacementWarning.level) ? replacementWarning.label : '数据不足';
+    const status = ['replace','replace-soon'].includes(replacementWarning.level) ? replacementWarning.label : (sorted.length === 1 && thresholdInfo.matched ? '先验预估' : '数据不足');
+
+    /* 单测点 + 规格已匹配：用行业先验速率给出区间预测（含两年后劣化），明确标注非本管实测 */
+    if(sorted.length === 1 && thresholdInfo.matched) {
+      const prior = getPriorThinningRates(code);
+      const priorMedian = (prior.slow + prior.fast) / 2;
+      const horizonEnd = Math.ceil(last.year + 6);
+      const prediction = [];
+      for(let y = Math.ceil(last.year) + 1; y <= horizonEnd; y += 1) {
+        const dt = y - last.year;
+        const p50 = last.val - priorMedian * dt;
+        const band = Math.max(0.03, (prior.fast - prior.slow) * dt / 2);
+        prediction.push({ year: y, val: parseFloat(p50.toFixed(2)), low: parseFloat((p50 - band).toFixed(2)), high: parseFloat((p50 + band).toFixed(2)) });
+      }
+      const slowYear = yearWhenCrosses(last.year, last.val, threshold, prior.slow);
+      const fastYear = yearWhenCrosses(last.year, last.val, threshold, prior.fast);
+      const medianYear = yearWhenCrosses(last.year, last.val, threshold, priorMedian);
+      const twoYear = buildTwoYearForecast(last.val, threshold, prior.slow, prior.fast, 'prior');
+      const trendData = { target: code, current: currentValue, threshold, thresholdInfo, replacementWarning,
+        rateValue: priorMedian, rate: `${prior.slow.toFixed(2)}~${prior.fast.toFixed(2)} mm/y（行业先验${prior.basis === 'material' ? '·' + prior.label : ''}）`, rul: null, rulText: '先验区间', conf: 20, status,
+        history: sorted, prediction, twoYear,
+        thresholdYear: Number.isFinite(slowYear) && Number.isFinite(fastYear) ? `${fastYear.toFixed(0)}~${slowYear.toFixed(0)}（先验）` : '未触及（先验）',
+        p50ThresholdYear: Number.isFinite(medianYear) ? medianYear.toFixed(0) + '（先验）' : '未触及',
+        acceleratedThresholdYear: Number.isFinite(fastYear) ? fastYear.toFixed(0) + '（先验）' : '未触及',
+        baselineThresholdYear: Number.isFinite(slowYear) ? slowYear.toFixed(0) + '（先验）' : '未触及',
+        outliers: [], quality, reliable: false, priorBased: true,
+        modelName: '行业先验速率区间（单测点兜底）' };
+      const composite = buildCompositeAIReport(trendData, compositeSignals);
+      return { ...trendData, compositeRisk: composite.compositeRisk, compositeScore: composite.score, compositeSignals, composite,
+        report: `仅有 1 个测点，无法拟合本管趋势；${prior.basis === 'material' ? `按材质「${getTubeMaterialText(code) || prior.label}」（${prior.label}）行业先验速率 ${prior.slow.toFixed(2)}~${prior.fast.toFixed(2)} mm/y 预估` : `按受热面行业先验速率 ${prior.slow.toFixed(2)}~${prior.fast.toFixed(2)} mm/y 预估（未识别材质，可录入材质后细化）`}。
+${formatTheoryDetails(thresholdInfo)}
+${replacementWarning.label}
+两年后预估：${formatTwoYearText(twoYear)}。
+※ 先验结论仅供参考，积累 2 个及以上测点后自动切换为实测趋势。
+
+${composite.report}` };
+    }
+
     const trendData = { target: code, current: currentValue, threshold, thresholdInfo, replacementWarning,
       rateValue: null, rate: '不可可靠预测', rul: null, rulText: '不可可靠预测', conf: 0, status,
       history: sorted, prediction: [], thresholdYear: '不可可靠预测', p50ThresholdYear: '不可可靠预测',
@@ -3315,7 +3442,11 @@ function predictThicknessTrendFromHistory(code, history, pipeType) {
       modelName: 'Theil-Sen + 近期窗口 + 三情景' };
     const composite = buildCompositeAIReport(trendData, compositeSignals);
     return { ...trendData, compositeRisk: composite.compositeRisk, compositeScore: composite.score, compositeSignals, composite,
-      report: `不可可靠预测：${thresholdInfo.reason || '有效测厚历史不足2个时点'}。\n${formatTheoryDetails(thresholdInfo)}\n${replacementWarning.label}\n\n${composite.report}` };
+      report: `不可可靠预测：${thresholdInfo.reason || '有效测厚历史不足2个时点'}。
+${formatTheoryDetails(thresholdInfo)}
+${replacementWarning.label}
+
+${composite.report}` };
   }
   const model = robustTheilSenModel(sorted);
   const robustRate = Math.max(0, -model.slope);
@@ -3347,10 +3478,12 @@ function predictThicknessTrendFromHistory(code, history, pipeType) {
   const confidence = reliable ? quality.score : Math.min(54, quality.score);
   const rulHours = Number.isFinite(yearsToThreshold) ? Math.max(0, Math.round(yearsToThreshold * 8000)) : 999999;
   const thresholdYearText = reliable && Number.isFinite(conservativeYear) ? conservativeYear.toFixed(1) : '不可可靠预测';
-  const trendReport = `【稳健壁厚减薄趋势预测】\n对象：${code}\n模型：Theil-Sen鲁棒趋势 + 近期窗口 + 三情景退化\n\n数据质量：${quality.points} 个测点，时间跨度 ${quality.span.toFixed(1)} 年，置信度 ${confidence}%\n${reliable ? '' : '结论：当前数据不足以支持可靠寿命预测，仅作趋势筛查。'}\n\n测厚历史：\n${sorted.map(p => `${p.dateStr}：${p.val}mm（${p.source || '记录'}）`).join('\n')}\n\n规格预警阈值：${threshold.toFixed(2)}mm\n阈值来源：${thresholdInfo.source}\n\n趋势预测结果：\n- 当前壁厚：${last.val}mm\n- 稳健减薄速率：${robustRate.toFixed(3)} mm/y\n- 近期减薄速率：${recentRate.toFixed(3)} mm/y\n- 基准评估速率：${conservativeRate.toFixed(3)} mm/y\n- 加速情景速率：${acceleratedRate.toFixed(3)} mm/y\n- P50预计触阈：${Number.isFinite(p50Year) ? p50Year.toFixed(1) : '未触及'} 年\n- 基准预计触阈：${Number.isFinite(conservativeYear) ? conservativeYear.toFixed(1) : '未触及'} 年\n- 加速情景触阈：${Number.isFinite(acceleratedYear) ? acceleratedYear.toFixed(1) : '未触及'} 年\n- 异常候选测点：${outliers.length ? outliers.map(p => p.dateStr).join('、') : '未识别明显异常'}\n\n诊断提示：预测不能替代现场检验；若存在裂纹、鼓包、泄漏、严重蠕变或阈值未匹配，应立即转专业寿命评估。`;
+  const twoYear = buildTwoYearForecast(last.val, threshold, conservativeRate, acceleratedRate, 'measured');
+  const trendReport = `【稳健壁厚减薄趋势预测】\n对象：${code}\n模型：Theil-Sen鲁棒趋势 + 近期窗口 + 三情景退化\n\n数据质量：${quality.points} 个测点，时间跨度 ${quality.span.toFixed(1)} 年，置信度 ${confidence}%\n${reliable ? '' : '结论：当前数据不足以支持可靠寿命预测，仅作趋势筛查。'}\n\n测厚历史：\n${sorted.map(p => `${p.dateStr}：${p.val}mm（${p.source || '记录'}）`).join('\n')}\n\n规格预警阈值：${threshold.toFixed(2)}mm\n阈值来源：${thresholdInfo.source}\n\n趋势预测结果：\n- 当前壁厚：${last.val}mm\n- 稳健减薄速率：${robustRate.toFixed(3)} mm/y\n- 近期减薄速率：${recentRate.toFixed(3)} mm/y\n- 偏乐观评估速率：${conservativeRate.toFixed(3)} mm/y\n- 偏保守速率（防加速劣化）：${acceleratedRate.toFixed(3)} mm/y\n- 最可能触阈（P50）：${Number.isFinite(p50Year) ? p50Year.toFixed(1) : '未触及'} 年\n- 偏乐观估计触阈：${Number.isFinite(conservativeYear) ? conservativeYear.toFixed(1) : '未触及'} 年\n- 偏保守估计触阈（防最坏情况）：${Number.isFinite(acceleratedYear) ? acceleratedYear.toFixed(1) : '未触及'} 年\n- 异常候选测点：${outliers.length ? outliers.map(p => p.dateStr).join('、') : '未识别明显异常'}\n${twoYear ? '两年后预测：' + formatTwoYearText(twoYear) : ''}\n\n诊断提示：预测不能替代现场检验；若存在裂纹、鼓包、泄漏、严重蠕变或阈值未匹配，应立即转专业寿命评估。`;
   const trendData = {
     target: code, current: last.val, threshold, thresholdInfo, replacementWarning, rateValue: conservativeRate, rate: `${conservativeRate.toFixed(3)} mm/y`, rul: reliable ? rulHours : null,
     rulText: reliable ? (rulHours >= 999999 ? '>999,999' : rulHours.toLocaleString()) : '不可可靠预测', conf: confidence, status, history: sorted, prediction,
+    twoYear,
     thresholdYear: thresholdYearText, p50ThresholdYear: Number.isFinite(p50Year) ? p50Year.toFixed(1) : '未触及', acceleratedThresholdYear: Number.isFinite(acceleratedYear) ? acceleratedYear.toFixed(1) : '未触及',
     baselineThresholdYear: Number.isFinite(conservativeYear) ? conservativeYear.toFixed(1) : '未触及', outliers, quality, reliable, modelName: 'Theil-Sen + 近期窗口 + 三情景'
   };
@@ -3358,7 +3491,7 @@ function predictThicknessTrendFromHistory(code, history, pipeType) {
   const composite = buildCompositeAIReport(trendData, compositeSignals);
   return { ...trendData, compositeRisk: composite.compositeRisk, compositeScore: composite.score, compositeSignals, composite, report: `${formatTheoryDetails(thresholdInfo)}\n更换判定：${replacementWarning.label}；实测 ${last.val}mm，裕量 ${replacementWarning.margin.toFixed(2)}mm，提前预警裕量≤0.20mm。\n${trendReport}\n\n${composite.report}` };
 }function buildTrendAnalysisPrompt(data) {
-  return `炉管综合寿命风险大模型深度分析。\n\n分析对象：${data.target}\n\n测厚历史：\n${data.history.map(p => `- ${p.dateStr}: ${p.val}mm (${p.source || '记录'})`).join('\n')}\n\n趋势预测结果：\n- 当前壁厚：${data.current}mm\n- 保守年化减薄速率：${data.rate}\n- 对应规格理论厚度预警值：${data.threshold === null ? '未匹配，不可可靠预测' : data.threshold + 'mm'}\n- ${formatTheoryDetails(data.thresholdInfo)}\n- 更换预警：${data.replacementWarning.label}\n- 阈值来源：${data.thresholdInfo?.source || '未匹配'}\n- P50触阈年份：${data.p50ThresholdYear}\n- 基准触阈估算年份：${data.thresholdYear}（基准情景估算，不代表概率保证）\n- 基准触阈估算小时：${data.rulText}h\n- 趋势评级：${data.status}\n- 本地综合风险：${data.compositeRisk || data.status}\n- 数据置信度：${data.conf}%\n\n硬度历史：\n${data.composite?.hardnessText || '暂无硬度历史'}\n硬度预测：${data.compositeSignals?.hardnessForecast ? `${data.compositeSignals.hardnessForecast.direction}，1年 ${data.compositeSignals.hardnessForecast.oneYear}HB，3年 ${data.compositeSignals.hardnessForecast.threeYear}HB，置信度 ${data.compositeSignals.hardnessForecast.confidence}%` : '数据不足，不能可靠预测'}\n\n金相组织/材料劣化证据：\n${data.composite?.metallographyText || '暂无金相组织记录'}\n\n无损检测、割管取样和检修结论：\n${data.composite?.inspectionText || '暂无无损/割管/检修结论'}\n\n请调用大模型专家能力，在不编造现场数据的前提下，综合减薄趋势、当前厚度、硬度变化、金相组织、裂纹/蠕变/脱碳/球化等证据，输出该炉管综合风险等级、主要失效机理、相邻管排排查范围、复测项目、检修优先级和需要补充的数据。`;
+  return `炉管综合寿命风险大模型深度分析。\n\n分析对象：${data.target}\n\n测厚历史：\n${data.history.map(p => `- ${p.dateStr}: ${p.val}mm (${p.source || '记录'})`).join('\n')}\n\n趋势预测结果：\n- 当前壁厚：${data.current}mm\n- 保守年化减薄速率：${data.rate}\n- 对应规格理论厚度预警值：${data.threshold === null ? '未匹配，不可可靠预测' : data.threshold + 'mm'}\n- ${formatTheoryDetails(data.thresholdInfo)}\n- 更换预警：${data.replacementWarning.label}\n- 阈值来源：${data.thresholdInfo?.source || '未匹配'}\n- 最可能触阈年份（P50）：${data.p50ThresholdYear}\n- 偏乐观估计触阈年份：${data.thresholdYear}（留有余量的估算，不代表概率保证）\n- 偏乐观触阈估算小时：${data.rulText}h\n- 趋势评级：${data.status}\n- 本地综合风险：${data.compositeRisk || data.status}\n- 数据置信度：${data.conf}%\n\n硬度历史：\n${data.composite?.hardnessText || '暂无硬度历史'}\n硬度预测：${data.compositeSignals?.hardnessForecast ? `${data.compositeSignals.hardnessForecast.direction}，1年 ${data.compositeSignals.hardnessForecast.oneYear}HB，3年 ${data.compositeSignals.hardnessForecast.threeYear}HB，置信度 ${data.compositeSignals.hardnessForecast.confidence}%` : '数据不足，不能可靠预测'}\n\n金相组织/材料劣化证据：\n${data.composite?.metallographyText || '暂无金相组织记录'}\n\n无损检测、割管取样和检修结论：\n${data.composite?.inspectionText || '暂无无损/割管/检修结论'}\n\n请调用大模型专家能力，在不编造现场数据的前提下，综合减薄趋势、当前厚度、硬度变化、金相组织、裂纹/蠕变/脱碳/球化等证据，输出该炉管综合风险等级、主要失效机理、相邻管排排查范围、复测项目、检修优先级和需要补充的数据。`;
 }
 async function runDeepAIAnalysisFromTrend(data) {
   const promptBox = document.getElementById('llm-prompt');
@@ -3456,14 +3589,48 @@ function renderHardnessChart(data) {
   if(three) three.textContent = signal.hardnessForecast ? `${signal.hardnessForecast.threeYear} HB` : '--';
   if(conf) conf.textContent = signal.hardnessForecast ? `${signal.hardnessForecast.confidence}%` : '--';
   if(points.length < 1) { svg.innerHTML = '<text x="24" y="44" fill="var(--chart-label)" font-size="14">暂无硬度数据</text>'; return; }
-  const width=980,height=260,p={top:30,right:28,bottom:42,left:58}; const vals=points.map(x=>x.value).concat(signal.hardnessForecast ? [signal.hardnessForecast.oneYear,signal.hardnessForecast.threeYear] : []); const min=Math.min(...vals)-10,max=Math.max(...vals)+10; const minY=Math.min(...points.map(x=>x.year)), maxY=Math.max(...points.map(x=>x.year), points[points.length-1].year + (signal.hardnessForecast ? 3 : 1), minY+1); const xs=y=>p.left+(y-minY)/Math.max(1,maxY-minY)*(width-p.left-p.right); const ys=v=>p.top+(height-p.top-p.bottom)-((v-min)/Math.max(1,max-min))*(height-p.top-p.bottom); const path=points.map((x,i)=>`${i?'L':'M'} ${xs(x.year)} ${ys(x.value)}`).join(' '); svg.innerHTML=`<rect x="${p.left}" y="${p.top}" width="${width-p.left-p.right}" height="${height-p.top-p.bottom}" rx="6" fill="var(--chart-panel)" stroke="var(--chart-panel-stroke)"/><text x="${p.left}" y="18" fill="var(--chart-title)" font-size="14" font-weight="700">Hardness Forecast · HB</text><path d="${path}" fill="none" stroke="var(--chart-orange)" stroke-width="3"/>${points.map(x=>`<circle cx="${xs(x.year)}" cy="${ys(x.value)}" r="5" fill="var(--chart-dot-fill)" stroke="var(--chart-orange)" stroke-width="2"><title>${x.date} ${x.value}HB</title></circle>`).join('')}<line x1="${p.left}" y1="${ys(points[points.length-1].value)}" x2="${width-p.right}" y2="${ys(points[points.length-1].value)}" stroke="var(--chart-orange)" stroke-opacity="0.25" stroke-dasharray="5 5"/><text x="${p.left-8}" y="${p.top+4}" text-anchor="end" fill="var(--chart-label)" font-size="11">${max.toFixed(0)}</text><text x="${p.left-8}" y="${height-p.bottom+4}" text-anchor="end" fill="var(--chart-label)" font-size="11">${min.toFixed(0)}</text>`;
+  const width=980,height=260,p={top:30,right:28,bottom:42,left:58}; const vals=points.map(x=>x.value).concat(signal.hardnessForecast ? [signal.hardnessForecast.oneYear,signal.hardnessForecast.threeYear] : []); const min=Math.min(...vals)-10,max=Math.max(...vals)+10; const minY=Math.min(...points.map(x=>x.year)), maxY=Math.max(...points.map(x=>x.year), points[points.length-1].year + (signal.hardnessForecast ? 3 : 1), minY+1); const xs=y=>p.left+(y-minY)/Math.max(1,maxY-minY)*(width-p.left-p.right); const ys=v=>p.top+(height-p.top-p.bottom)-((v-min)/Math.max(1,max-min))*(height-p.top-p.bottom); const path=points.map((x,i)=>`${i?'L':'M'} ${xs(x.year)} ${ys(x.value)}`).join(' '); const materialRef = getHardnessMaterialRef(getTubeMaterialText(data.target));
+  const hardnessVerdict = signal.hardnessForecast ? `趋势判断：${signal.hardnessForecast.direction}，${signal.hardnessRate.toFixed(1)} HB/年（置信度 ${signal.hardnessForecast.confidence}%）；预计 1 年后 ${signal.hardnessForecast.oneYear} HB、3 年后 ${signal.hardnessForecast.threeYear} HB${materialRef ? '；' + materialRef.label + '典型区间 ' + materialRef.low + '~' + materialRef.high + 'HB' : ''}` : (points.length ? `趋势判断：硬度记录仅 ${points.length} 条（需 3 条以上），暂无法可靠判断${materialRef ? '；按材质（' + materialRef.label + '）经验：' + materialRef.direction + '，' + materialRef.rate : ''}，建议补充检测` : '趋势判断：暂无硬度数据');
+  svg.innerHTML=`<rect x="${p.left}" y="${p.top}" width="${width-p.left-p.right}" height="${height-p.top-p.bottom}" rx="6" fill="var(--chart-panel)" stroke="var(--chart-panel-stroke)"/><text x="${p.left}" y="18" fill="var(--chart-title)" font-size="14" font-weight="700">硬度趋势预测（HB）</text><text x="${p.left}" y="34" fill="var(--chart-label)" font-size="11">${hardnessVerdict}</text><path d="${path}" fill="none" stroke="var(--chart-orange)" stroke-width="3"/>${points.map(x=>`<circle cx="${xs(x.year)}" cy="${ys(x.value)}" r="5" fill="var(--chart-dot-fill)" stroke="var(--chart-orange)" stroke-width="2"><title>${x.date} ${x.value}HB</title></circle>`).join('')}<line x1="${p.left}" y1="${ys(points[points.length-1].value)}" x2="${width-p.right}" y2="${ys(points[points.length-1].value)}" stroke="var(--chart-orange)" stroke-opacity="0.25" stroke-dasharray="5 5"/><text x="${p.left-8}" y="${p.top+4}" text-anchor="end" fill="var(--chart-label)" font-size="11">${max.toFixed(0)}</text><text x="${p.left-8}" y="${height-p.bottom+4}" text-anchor="end" fill="var(--chart-label)" font-size="11">${min.toFixed(0)}</text>`;
   for(let year = Math.ceil(minY); year <= maxY; year++) svg.innerHTML += `<text x="${xs(year)}" y="${height-12}" text-anchor="middle" fill="var(--chart-label)" font-size="11">${year}</text>`;
-  if(signal.hardnessForecast) { const y=points[points.length-1].year; svg.innerHTML += `<path d="M ${xs(y)} ${ys(points[points.length-1].value)} L ${xs(y+1)} ${ys(signal.hardnessForecast.oneYear)} L ${xs(y+3)} ${ys(signal.hardnessForecast.threeYear)}" fill="none" stroke="var(--chart-violet)" stroke-width="3" stroke-dasharray="8 5"/><circle cx="${xs(y+1)}" cy="${ys(signal.hardnessForecast.oneYear)}" r="4" fill="var(--chart-violet)"/><circle cx="${xs(y+3)}" cy="${ys(signal.hardnessForecast.threeYear)}" r="4" fill="var(--chart-violet)"/>`; }
+  if(signal.hardnessForecast) {
+    const y0 = points[points.length - 1].year;
+    const v0 = points[points.length - 1].value;
+    const fp = Array.isArray(signal.hardnessForecast.points) && signal.hardnessForecast.points.length
+      ? signal.hardnessForecast.points
+      : [{ year: y0 + 1, val: signal.hardnessForecast.oneYear, low: signal.hardnessForecast.oneYear, high: signal.hardnessForecast.oneYear },
+         { year: y0 + 2, val: Math.round((signal.hardnessForecast.oneYear + signal.hardnessForecast.threeYear) / 2), low: 0, high: 0 },
+         { year: y0 + 3, val: signal.hardnessForecast.threeYear, low: signal.hardnessForecast.threeYear, high: signal.hardnessForecast.threeYear }];
+    /* 不确定性区间带：由实测残差(MAD)外推，随时间展宽 */
+    const bandTop = [{ x: xs(y0), y: ys(v0) }].concat(fp.map(pt => ({ x: xs(pt.year), y: ys(pt.high) })));
+    const bandBottom = [{ x: xs(y0), y: ys(v0) }].concat(fp.map(pt => ({ x: xs(pt.year), y: ys(pt.low) }))).reverse();
+    const bandPoints = bandTop.concat(bandBottom).map(pt => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ');
+    const pathD = [{ x: xs(y0), y: ys(v0) }].concat(fp.map(pt => ({ x: xs(pt.year), y: ys(pt.val) })))
+      .map((pt, i) => `${i ? 'L' : 'M'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
+    svg.innerHTML += `<polygon points="${bandPoints}" fill="var(--chart-violet)" fill-opacity="0.13" stroke="none"/>` +
+      `<path d="${pathD}" fill="none" stroke="var(--chart-violet)" stroke-width="3" stroke-dasharray="8 5"/>` +
+      fp.map((pt, i) => `<circle cx="${xs(pt.year)}" cy="${ys(pt.val)}" r="4" fill="var(--chart-violet)"><title>${(pt.year - y0).toFixed(0)}年后预测 ${pt.val} HB${pt.low !== pt.high ? `（区间 ${pt.low}~${pt.high}）` : ''}</title></circle>` +
+        `<text x="${xs(pt.year)}" y="${ys(pt.val) - 10}" text-anchor="middle" fill="var(--chart-violet)" font-size="10">${(pt.year - y0).toFixed(0)}年 ${pt.val}</text>`).join('') +
+      `<text x="${xs(y0) + 6}" y="${ys(v0) + 16}" fill="var(--chart-violet)" font-size="10">┄ 预测（带=不确定性区间）</text>`;
+  }
+  if(materialRef && Number.isFinite(ys(materialRef.high)) && Number.isFinite(ys(materialRef.low))) {
+    const yTop = ys(materialRef.high), yBottom = ys(materialRef.low);
+    if(yTop < height - p.bottom && yBottom > p.top) {
+      const clipTop = Math.max(p.top, yTop), clipBottom = Math.min(height - p.bottom, yBottom);
+      svg.innerHTML += `<rect x="${p.left}" y="${clipTop.toFixed(1)}" width="${width - p.left - p.right}" height="${Math.max(2, clipBottom - clipTop).toFixed(1)}" fill="var(--chart-grid)" fill-opacity="0.14" stroke="var(--chart-label)" stroke-opacity="0.25" stroke-dasharray="4 4"/><text x="${width - p.right}" y="${(clipTop - 4).toFixed(1)}" text-anchor="end" fill="var(--chart-label)" font-size="10">${materialRef.label}典型 ${materialRef.low}~${materialRef.high}HB（参考）</text>`;
+    }
+  }
+
 }function renderAIResults(data) {
   document.getElementById('ai-loading').style.display = 'none';
   document.getElementById('ai-results').style.display = 'block';
   document.getElementById('ai-rul').textContent = data.rulText || data.rul.toLocaleString();
   document.getElementById('ai-rate').textContent = data.rate;
+  const twoYearEl = document.getElementById('ai-twoyear');
+  if(twoYearEl) {
+    twoYearEl.textContent = data.twoYear ? formatTwoYearText(data.twoYear) : '--';
+    twoYearEl.style.color = data.twoYear?.certainlyBelow ? 'var(--danger)' : data.twoYear?.touchesThreshold ? 'var(--warn)' : 'var(--ok)';
+  }
   const thresholdEl = document.getElementById('ai-threshold-detail');
   if(thresholdEl) thresholdEl.textContent = formatTheoryDetails(data.thresholdInfo);
   document.getElementById('ai-conf').textContent = data.conf;
@@ -3529,7 +3696,7 @@ function renderAIChart(data) {
     svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-grid)" stroke-opacity="0.08" stroke-width="1" /><text x="${x}" y="${height - 22}" fill="var(--chart-label)" font-size="11" text-anchor="middle">${y}</text>`;
   }
   svg.innerHTML += `<line x1="${padding.left}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}" stroke="var(--chart-grid)" stroke-opacity="0.36" /><line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${plotBottom}" stroke="var(--chart-grid)" stroke-opacity="0.36" />`;
-  svg.innerHTML += `<text x="${padding.left}" y="28" fill="var(--chart-title)" font-size="15" font-weight="700">Wall Thickness Forecast</text><text x="${padding.left}" y="45" fill="var(--chart-label)" font-size="11">unit: mm · threshold by tube specification</text><text x="22" y="${padding.top + 14}" fill="var(--chart-label)" font-size="11" transform="rotate(-90 22 ${padding.top + 14})">厚度 / mm</text>`;
+  svg.innerHTML += `<text x="${padding.left}" y="28" fill="var(--chart-title)" font-size="15" font-weight="700">壁厚减薄趋势预测</text><text x="${padding.left}" y="45" fill="var(--chart-label)" font-size="11">单位 mm · 预警阈值按材料库规格匹配</text><text x="22" y="${padding.top + 14}" fill="var(--chart-label)" font-size="11" transform="rotate(-90 22 ${padding.top + 14})">厚度 / mm</text>`;
   const bandTop = data.prediction.map(p => `${xScale(p.year)},${yScale(p.high)}`).join(' ');
   const bandBottom = [...data.prediction].reverse().map(p => `${xScale(p.year)},${yScale(p.low)}`).join(' ');
   if(data.prediction.length > 1) svg.innerHTML += `<polygon points="${bandTop} ${bandBottom}" fill="url(#aiBand)" stroke="var(--chart-green-line)" stroke-width="1" />`;
@@ -3544,8 +3711,8 @@ function renderAIChart(data) {
   const lastHist = data.history[data.history.length - 1];
   const predPath = `M ${xScale(lastHist.year)} ${yScale(lastHist.val)} ` + data.prediction.map(p => `L ${xScale(p.year)} ${yScale(p.val)}`).join(' ');
   svg.innerHTML += `<path d="${predPath}" fill="none" stroke="var(--chart-green)" stroke-width="3.2" stroke-dasharray="10,6" filter="url(#aiGlow)" />`;
-  data.prediction.forEach(p => svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="4.3" fill="var(--chart-green)"><title>${p.year} P50 ${p.val}mm；区间 ${p.low}~${p.high}mm</title></circle>`);
-  for(const [key, color, label] of [['baseline','var(--chart-orange)','基准情景'],['accelerated','var(--chart-red)','加速情景']]) {
+  data.prediction.forEach(p => svg.innerHTML += `<circle cx="${xScale(p.year)}" cy="${yScale(p.val)}" r="4.3" fill="var(--chart-green)"><title>${p.year} 最可能 ${p.val}mm；区间 ${p.low}~${p.high}mm</title></circle>`);
+  for(const [key, color, label] of [['baseline','var(--chart-orange)','偏乐观情景'],['accelerated','var(--chart-red)','偏保守情景']]) {
     const points = data.prediction.filter(point => Number.isFinite(point[key]));
     if(points.length) svg.innerHTML += `<path d="M ${xScale(lastHist.year)} ${yScale(lastHist.val)} ${points.map(point => `L ${xScale(point.year)} ${yScale(point[key])}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="4 5"><title>${label}</title></path>`;
   }
@@ -3554,23 +3721,23 @@ function renderAIChart(data) {
   svg.innerHTML += `<line x1="${currentX}" y1="${currentY}" x2="${currentX + 54}" y2="${currentY - 34}" stroke="var(--chart-accent)" stroke-opacity="0.48" /><rect x="${currentX + 56}" y="${currentY - 52}" width="126" height="34" rx="5" fill="var(--chart-tip-bg)" stroke="var(--chart-tip-stroke)" /><text x="${currentX + 66}" y="${currentY - 31}" fill="var(--chart-title)" font-size="11">当前 ${lastHist.val.toFixed(2)}mm</text>`;
   if(Number.isFinite(numericP50) && numericP50 <= maxYear) {
     const x = xScale(numericP50);
-    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-green)" stroke-opacity="0.38" stroke-width="1.5" stroke-dasharray="4,5" /><text x="${x+6}" y="${padding.top+16}" fill="var(--chart-green)" font-size="11">P50 ${data.p50ThresholdYear}</text>`;
+    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-green)" stroke-opacity="0.38" stroke-width="1.5" stroke-dasharray="4,5" /><text x="${x+6}" y="${padding.top+16}" fill="var(--chart-green)" font-size="11">最可能 ${data.p50ThresholdYear}</text>`;
   }
   if(Number.isFinite(numericP90) && numericP90 <= maxYear) {
     const x = xScale(numericP90);
-    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-orange)" stroke-opacity="0.68" stroke-width="2" stroke-dasharray="7,5" /><rect x="${Math.min(x + 8, plotRight - 150)}" y="${plotBottom - 36}" width="142" height="26" rx="5" fill="var(--chart-accent-soft)" stroke="var(--chart-orange)" stroke-opacity="0.48" /><text x="${Math.min(x + 16, plotRight - 142)}" y="${plotBottom - 18}" fill="var(--chart-orange)" font-size="11" font-weight="700">基准触阈估算 ${data.thresholdYear}</text>`;
+    svg.innerHTML += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${plotBottom}" stroke="var(--chart-orange)" stroke-opacity="0.68" stroke-width="2" stroke-dasharray="7,5" /><rect x="${Math.min(x + 8, plotRight - 150)}" y="${plotBottom - 36}" width="142" height="26" rx="5" fill="var(--chart-accent-soft)" stroke="var(--chart-orange)" stroke-opacity="0.48" /><text x="${Math.min(x + 16, plotRight - 142)}" y="${plotBottom - 18}" fill="var(--chart-orange)" font-size="11" font-weight="700">偏乐观触阈估算 ${data.thresholdYear}</text>`;
   }
   const panelX = plotRight + 22;
   svg.innerHTML += `<rect x="${panelX}" y="${padding.top}" width="184" height="204" rx="8" fill="url(#panelFill)" stroke="var(--chart-panel-stroke)" />`;
-  svg.innerHTML += `<text x="${panelX + 14}" y="${padding.top + 26}" fill="var(--chart-title)" font-size="13" font-weight="700">ENGINEERING MODEL</text>`;
+  svg.innerHTML += `<text x="${panelX + 14}" y="${padding.top + 26}" fill="var(--chart-title)" font-size="13" font-weight="700">预测模型参数</text>`;
   const panelRows = [
-    ['Method', 'Theil-Sen + MAD'],
-    ['Risk', data.status],
-    ['Rate', data.rate],
-    ['Threshold', `${data.threshold.toFixed(2)} mm`],
-    ['P50 year', data.p50ThresholdYear],
-    ['Baseline', data.thresholdYear],
-    ['Confidence', `${data.conf}%`]
+    ['方法', 'Theil-Sen + MAD'],
+    ['风险评级', data.status],
+    ['减薄速率', data.rate],
+    ['预警阈值', `${data.threshold.toFixed(2)} mm`],
+    ['最可能触阈年', data.p50ThresholdYear],
+    ['偏乐观触阈年', data.thresholdYear],
+    ['置信度', `${data.conf}%`]
   ];
   panelRows.forEach((row, index) => {
     const y = padding.top + 52 + index * 20;
@@ -3578,7 +3745,7 @@ function renderAIChart(data) {
   });
   const hoverPoints = [
     ...data.history.map(p => ({ year: p.year, val: p.val, label: `${p.dateStr} · 实测 ${p.val}mm` })),
-    ...data.prediction.map(p => ({ year: p.year, val: p.val, label: `${p.year} · P50 ${p.val}mm` }))
+    ...data.prediction.map(p => ({ year: p.year, val: p.val, label: `${p.year} · 最可能 ${p.val}mm` }))
   ];
   const tipW = 158, tipH = 30;
   svg.innerHTML += `<g id="aiChartHover" opacity="0" pointer-events="none">
