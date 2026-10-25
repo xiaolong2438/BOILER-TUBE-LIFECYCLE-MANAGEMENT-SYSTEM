@@ -299,7 +299,7 @@ function parseCSVLine(line) {
   result.push(current); return result;
 }
 function csvEscape(value) { return `"${String(value ?? '').replace(/"/g, '""')}"`; }
-function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); localStorage.setItem(LOCAL_DB_AT_KEY, new Date().toISOString()); queueCloudStorageSave('boiler_user_db', userDB); renderDMTable(); renderReplacementTable(); updateLifecycleDropdown(); populateAIThicknessTargets(); renderDashboardWarnings(); syncDashboardSnapshot(); if(typeof runLLMVisualAnalysis === 'function') runLLMVisualAnalysis(); }
+function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); localStorage.setItem(LOCAL_DB_AT_KEY, new Date().toISOString()); queueCloudStorageSave('boiler_user_db', userDB); renderDMTable(); renderReplacementTable(); updateLifecycleDropdown(); populateAIThicknessTargets(); renderDashboardWarnings(); syncDashboardSnapshot(); if(typeof runLLMVisualAnalysis === 'function') runLLMVisualAnalysis(); if(typeof nudgeDemoToggleOnce === 'function') nudgeDemoToggleOnce(); if(typeof applyDemoDataToggle === 'function') applyDemoDataToggle(); }
 /* 维护记录（操作日志）统一入口：日志失败绝不影响主流程 */
 function mlog(kind, payload) {
   try {
@@ -802,6 +802,60 @@ const MATERIAL_LIBRARY = [
 ];
 const SH_HEADERS = [{n:1,name:'顶棚进口集箱',spec:'φ273×45',mat:'20G'},{n:2,name:'高过出口集箱',spec:'φ609.6×110',mat:'12Cr1MoVG'}];
 const RH_HEADERS = [{n:1,name:'低再进口集箱',spec:'φ559×30',mat:'20G'},{n:2,name:'高再出口集箱',spec:'φ711×40',mat:'12Cr1MoVG'}];
+/* 演示数据三态开关（默认自动）：无真实数据显示演示，检测到真实录入即自动隐藏；
+   可强制开（对照演示）/ 强制关。关闭或自动隐藏后，示范管段从预警/档案/搜索/AI 分析中完全消失。 */
+const DEMO_DATA_KEY = 'blcms-demo-data';
+function demoDataPref() {
+  try { const pref = localStorage.getItem(DEMO_DATA_KEY); return pref === 'on' || pref === 'off' ? pref : 'auto'; } catch (err) { return 'auto'; }
+}
+function hasRealTubeData() { return (typeof userDB !== 'undefined' && Array.isArray(userDB.events) && userDB.events.length > 0); }
+function demoDataEnabled() {
+  const pref = demoDataPref();
+  if(pref === 'on') return true;
+  if(pref === 'off') return false;
+  return !hasRealTubeData(); /* 自动：真实数据到位即隐藏演示 */
+}
+function systemLifecycleData() { return demoDataEnabled() ? LIFECYCLE_DATA : {}; }
+function applyDemoDataToggle() {
+  const btn = document.getElementById('demo-data-toggle');
+  if(!btn) return;
+  const pref = demoDataPref();
+  btn.textContent = pref === 'auto' ? '演示·自动' : (pref === 'on' ? '演示·开' : '演示·关');
+  btn.classList.toggle('is-hidden', !demoDataEnabled());
+  btn.title = pref === 'auto'
+    ? '演示数据：自动（' + (demoDataEnabled() ? '当前显示，录入真实数据后自动隐藏' : '已因真实数据自动隐藏') + '），点击强制打开'
+    : pref === 'on' ? '演示数据：强制显示（与真实数据并存），点击强制隐藏' : '演示数据：已强制隐藏，点击恢复自动';
+}
+function refreshAfterDemoToggle() {
+  renderDashboardWarnings();
+  syncDashboardSnapshot();
+  renderMaintenancePlan();
+  updateLifecycleDropdown();
+  renderComponent(document.querySelector('.comp-tab.active')?.dataset.comp || 'ww');
+}
+function toggleDemoData() {
+  const order = ['auto', 'on', 'off'];
+  const next = order[(order.indexOf(demoDataPref()) + 1) % order.length];
+  try { localStorage.setItem(DEMO_DATA_KEY, next); } catch (err) { /* 忽略 */ }
+  applyDemoDataToggle();
+  refreshAfterDemoToggle();
+  const message = next === 'auto'
+    ? '演示数据回到自动：' + (demoDataEnabled() ? '暂无真实数据，显示演示。' : '检测到真实数据，演示已隐藏。')
+    : next === 'on'
+      ? '已强制显示演示数据（与真实数据并存，适合对照讲解）。'
+      : '已强制隐藏演示数据：预警、档案、分析与待处置任务只使用真实录入。';
+  showToast(message, 'info', 6000);
+}
+/* 自动模式下首次出现真实数据时提示一次（演示已被自动隐藏） */
+function nudgeDemoToggleOnce() {
+  if(demoDataPref() !== 'auto' || !hasRealTubeData()) return;
+  try {
+    if(sessionStorage.getItem('blcms-demo-auto')) return;
+    sessionStorage.setItem('blcms-demo-auto', '1');
+  } catch (err) { return; }
+  showToast('检测到真实数据，演示管段已自动隐藏；如需对照可在左下角强制打开。', 'info', 8000);
+}
+
 const LIFECYCLE_DATA = { '2-HSH-E-012-0005-W02': { name: '2号炉高过入口第12屏第5管焊口', spec: 'Φ51×8 · T91', install: '2018-06-15', hours: 58720, status: 'warn', risk: '蠕变损伤68%', timeline: [{date:'2018-06-15',t:'安装',d:'合格'},{date:'2025-12-15',t:'评估',d:'剩余寿命8.2万h'}] }, '1-WW-FR-008-0003-000': { name: '1号炉水冷壁前墙第8排第3管', spec: 'Φ63.5×7.5 · SA-210C', install: '2016-03-10', hours: 72540, status: 'ok', risk: '状态良好', timeline: [{date:'2016-03-10',t:'安装',d:'壁厚7.5'},{date:'2025-11-11',t:'测厚',d:'壁厚6.8'}] }, '2-HRH-M-032-0001-A01': { name: '2号炉高再第32屏外圈管', spec: 'Φ60×4 · TP304H', install: '2017-11-05', hours: 65830, status: 'danger', risk: '壁厚减薄至3.3mm', timeline: [{date:'2017-11-05',t:'安装',d:'壁厚4.0'},{date:'2025-09-15',t:'测厚',d:'壁厚3.3'}] } };
 const matrix = [ {name:'水冷壁-前墙', sys:'WW', zone:'FR', pMin:1, pMax:1, tMin:1, tMax:192, spec:'Φ63.5×7.5 SA-210C、Φ159×18 20G', mat:'按材料库分项', badge:'badge-ww'}, {name:'水冷壁-后墙', sys:'WW', zone:'RR', pMin:1, pMax:1, tMin:1, tMax:192, spec:'Φ63.5×7.5 SA-210C、Φ159×18 20G', mat:'按材料库分项', badge:'badge-ww'}, {name:'水冷壁-左墙', sys:'WW', zone:'FL', pMin:1, pMax:1, tMin:1, tMax:169, spec:'Φ63.5×7.5 SA-210C、Φ159×18 20G', mat:'按材料库分项', badge:'badge-ww'}, {name:'水冷壁-右墙', sys:'WW', zone:'RI', pMin:1, pMax:1, tMin:1, tMax:169, spec:'Φ63.5×7.5 SA-210C、Φ159×18 20G', mat:'按材料库分项', badge:'badge-ww'}, {name:'顶棚过热器', sys:'RSH', zone:'CE', pMin:1, pMax:1, tMin:1, tMax:128, spec:'Φ159×18 20G、Φ48.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-sh'}, {name:'包墙过热器', sys:'WSH', zone:'SL', pMin:1, pMax:1, tMin:1, tMax:260, spec:'Φ51×6 12Cr1MoVG、Φ51×7 12Cr1MoVG、Φ63.5×12 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh'}, {name:'低过-水平段', sys:'LSH', zone:'E', pMin:1, pMax:112, tMin:1, tMax:5, spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh'}, {name:'低过-垂直段', sys:'LSH', zone:'O', pMin:1, pMax:112, tMin:1, tMax:5, spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh'}, {name:'全大屏过热器', sys:'PSH', zone:'M', pMin:1, pMax:24, tMin:1, tMax:14, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh'}, {name:'屏式过热器', sys:'ISH', zone:'E', pMin:1, pMax:21, tMin:1, tMax:13, spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh'}, {name:'高温过热器', sys:'HSH', zone:'O', pMin:1, pMax:32, tMin:1, tMax:12, spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh'}, {name:'低再-水平段', sys:'LRH', zone:'E', pMin:1, pMax:112, tMin:1, tMax:6, spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-rh'}, {name:'低再-垂直段', sys:'LRH', zone:'O', pMin:1, pMax:56, tMin:1, tMax:12, spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-rh'}, {name:'高温再热器', sys:'HRH', zone:'M', pMin:1, pMax:64, tMin:1, tMax:7, spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh'}, {name:'省煤器', sys:'ECO', zone:'IN', pMin:1, pMax:124, tMin:1, tMax:1, spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', mat:'按材料库分项', badge:'badge-eco'} ];
 const CODE_SYSTEMS = [
@@ -923,7 +977,7 @@ function resolveWallThicknessWarning(target) {
   const code = typeof target === 'string' ? target : '';
   const inventory = code ? validateCodeAgainstMatrix(code) : null;
   const component = code ? matchComponentFromCode(code) : null;
-  const lifecycle = code ? LIFECYCLE_DATA[code] : null;
+  const lifecycle = code ? systemLifecycleData()[code] : null;
   const meta = typeof target === 'string'
     ? { sys: getCodeSystem(code), zone: code.split('-')[2], spec: [lifecycle?.spec, inventory?.row?.spec, component?.spec].filter(Boolean).join(' '), material: [lifecycle?.spec, inventory?.row?.mat, component?.mat].filter(Boolean).join(' ') }
     : target;
@@ -1041,7 +1095,7 @@ function setDashboardUnit(unit) {
 function collectDashboardWarnings(options = {}) {
   const limit = Number(options.limit) || 6;
   const retiredCodes = collectRetiredTubeCodes();
-  const systemWarnings = Object.entries(LIFECYCLE_DATA)
+  const systemWarnings = Object.entries(systemLifecycleData())
     .filter(([code]) => !isRetiredTubeCode(code, retiredCodes))
     .map(([code, item]) => {
       const level = classifyWarningLevel(item.risk, item.status);
@@ -1292,9 +1346,31 @@ function renderDashboardWarnings() {
   const warnings = getDashboardScopedWarnings(8);
   if(warnings.length === 0) {
     box.innerHTML = `<div class="command-warning alert-info"><strong>当前无预警</strong><span>${escapeHTML(getDashboardUnitLabel())}暂无需要优先关注的管段</span></div>`;
-    return;
+  } else {
+    box.innerHTML = warnings.map(item => `<button type="button" class="command-warning ${warningClass(item.level)}" onclick="openTubeProfile('${escapeHTML(item.code)}')"><strong>${escapeHTML(item.code)}</strong><span>${escapeHTML(item.text)}</span></button>`).join('');
   }
-  box.innerHTML = warnings.map(item => `<button type="button" class="command-warning ${warningClass(item.level)}" onclick="openTubeProfile('${escapeHTML(item.code)}')"><strong>${escapeHTML(item.code)}</strong><span>${escapeHTML(item.text)}</span></button>`).join('');
+  renderHeroTasks();
+}
+/* 待处置任务：优先由真实预警自动生成 Top3；无预警且演示数据开启时保留内置示例卡 */
+function renderHeroTasks() {
+  const host = document.querySelector('.hero-task-list');
+  if(!host) return;
+  const warnings = getDashboardScopedWarnings(99);
+  if(warnings.length === 0) {
+    if(!demoDataEnabled()) {
+      host.innerHTML = `<div class="hero-task-item" style="cursor:default;"><div class="prio">✓</div><div><div class="title">暂无待处置任务</div><div class="meta">导入检测数据后将按预警自动生成</div></div></div>`;
+    }
+    return; /* 演示开启时保留 HTML 内置的三张示例卡 */
+  }
+  host.innerHTML = warnings.slice(0, 3).map((item, index) => {
+    const prio = item.level === 'HIGH' ? 'P' + Math.min(1 + index, 3) : item.level === 'MEDIUM' ? 'P' + Math.min(2 + index, 3) : 'P3';
+    const tone = item.level === 'HIGH' ? ' danger' : item.level === 'MEDIUM' ? ' warn' : '';
+    const boiler = String(item.code || '')[0] === '2' ? '2' : '1';
+    return `<button type="button" class="hero-task-item${tone}" data-dashboard-boiler="${boiler}" onclick="openTubeProfile('${escapeHTML(item.code)}')" title="打开管段档案 ${escapeHTML(item.code)}"><div class="prio">${prio}</div><div><div class="title">${escapeHTML(item.text)}</div><div class="meta">${escapeHTML(item.code)} · ${escapeHTML(item.source)}</div></div></button>`;
+  }).join('');
+  host.querySelectorAll('[data-dashboard-boiler]').forEach(item => {
+    item.style.display = dashboardUnit === 'all' || item.dataset.dashboardBoiler === dashboardUnit ? '' : 'none';
+  });
 }
 function formatDashboardWarningsForPrompt() {
   const warnings = getDashboardScopedWarnings();
@@ -1304,7 +1380,7 @@ function formatDashboardWarningsForPrompt() {
 }
 function extractThicknessData(code, options = {}) {
   const includeSystem = options.includeSystem !== false;
-  const timelineEvents = includeSystem ? (LIFECYCLE_DATA[code]?.timeline || []).map(item => ({ code, type: item.t || '', date: item.date, desc: item.d || '', source: '系统寿命样例' })) : [];
+  const timelineEvents = includeSystem ? (systemLifecycleData()[code]?.timeline || []).map(item => ({ code, type: item.t || '', date: item.date, desc: item.d || '', source: '系统寿命样例' })) : [];
   const localEvents = userDB.events.filter(e => e.code === code).map(e => ({ ...e, source: '本地录入' }));
   const data = [];
   [...timelineEvents, ...localEvents]
@@ -1391,7 +1467,7 @@ function getTubeProfileData(rawCode) {
   const localEvents = userDB.events
     .filter(e => e.code === code)
     .sort((a,b) => new Date(a.date) - new Date(b.date));
-  let d = LIFECYCLE_DATA[code];
+  let d = systemLifecycleData()[code];
   let source = d ? 'system' : '';
   let badge = d ? 'badge-sh' : 'badge-ww';
   if(!d && localEvents.length > 0) {
@@ -1490,7 +1566,7 @@ function doSearch() {
   const res = document.getElementById('searchResult');
   if(!q) { res.innerHTML = '<div class="alert alert-info">请输入管码关键词进行查询</div>'; return; }
   let matches = []; let matchedCodes = new Set();
-  Object.keys(LIFECYCLE_DATA).forEach(k => { if(k.includes(q)) { matches.push({code:k, data:LIFECYCLE_DATA[k], source: 'system'}); matchedCodes.add(k); } });
+  Object.keys(systemLifecycleData()).forEach(k => { if(k.includes(q)) { matches.push({code:k, data:systemLifecycleData()[k], source: 'system'}); matchedCodes.add(k); } });
   userDB.events.forEach(e => {
     if(e.code.includes(q) && !matchedCodes.has(e.code)) {
         const profile = getTubeProfileData(e.code);
@@ -1546,7 +1622,7 @@ function loadComponentLifecycle(sys, label, boilerFilter = 'all', surfaceFilter 
   const normalizedSys = String(sys || '').toUpperCase();
   const selectedSys = surfaceFilter === 'all' ? 'all' : String(surfaceFilter || normalizedSys).toUpperCase();
   const title = selectedSys === 'all' ? '全部受热面' : (CODE_SYSTEMS.find(item => item.sys === selectedSys)?.label || label || getSysLabel(selectedSys));
-  const systemExamples = Object.entries(LIFECYCLE_DATA)
+  const systemExamples = Object.entries(systemLifecycleData())
     .filter(([code]) => selectedSys === 'all' || getCodeSystem(code) === selectedSys)
     .map(([code, item]) => ({ code, boiler: getCodeBoiler(code), date: item.install, type: '系统样例', desc: item.risk, source: item.name }));
   const localEvents = userDB.events
@@ -1747,12 +1823,15 @@ function getMaterialLibrary() {
   saved.filter(item => !isLegacyMaterialRow(item)).forEach(item => {
     const standard = standardBySampleNo.get(`${String(item.sys || '').toUpperCase()}|${materialSampleNo(item)}`);
     if(standard) {
-      merged.set(materialKey(standard), {
-        ...standard,
-        stockQty: item.stockQty || standard.stockQty || '',
-        totalLengthM: item.totalLengthM || standard.totalLengthM || '',
-        reserveLocation: item.reserveLocation || standard.reserveLocation || ''
-      });
+      /* 页面编辑过的行（_edited）按用户修改全量覆盖标准行；CSV 导入的旧行只回读库存三字段 */
+      merged.set(materialKey(standard), item._edited
+        ? { ...standard, ...item }
+        : {
+            ...standard,
+            stockQty: item.stockQty || standard.stockQty || '',
+            totalLengthM: item.totalLengthM || standard.totalLengthM || '',
+            reserveLocation: item.reserveLocation || standard.reserveLocation || ''
+          });
       return;
     }
     merged.set(materialKey(item), { stockQty:'', totalLengthM:'', reserveLocation:'', remark:'', ...item });
@@ -1853,6 +1932,76 @@ function importMaterialCSV(event) {
   };
   reader.readAsText(file, 'UTF-8'); event.target.value = '';
 }
+function openEditMaterialStock(encodedKey) {
+  if(getAssistantRole() === 'viewer') { showToast('当前为只读账号，不能修改材料记录。', 'warn'); return; }
+  const key = decodeURIComponent(encodedKey);
+  const library = getMaterialLibrary();
+  const index = library.findIndex(item => materialKey(item) === key);
+  if(index < 0) { showToast('没有找到这条材料记录，可能已被重新导入覆盖。', 'warn'); return; }
+  const item = library[index];
+  openDataEditModal(`
+    <div class="data-edit-panel" role="dialog" aria-modal="true" aria-labelledby="materialStockTitle">
+      <div class="data-edit-head">
+        <h3 id="materialStockTitle">编辑材料记录</h3>
+        <button type="button" class="data-edit-close" onclick="closeDataEditModal()" aria-label="关闭">×</button>
+      </div>
+      <p class="data-edit-sub">${escapeHTML(item.component || '')} · ${escapeHTML(item.position || '')} · ${escapeHTML(item.spec || '')}</p>
+      <div class="form-group"><label>部件名称</label><input type="text" id="ms-component" value="${escapeHTML(String(item.component ?? ''))}" /></div>
+      <div class="form-group"><label>系统代码</label><input type="text" id="ms-sys" list="ms-sys-options" value="${escapeHTML(String(item.sys ?? ''))}" /><datalist id="ms-sys-options">${CODE_SYSTEMS.map(s => `<option value="${escapeHTML(s.sys)}">${escapeHTML(s.label)}</option>`).join('')}</datalist></div>
+      <div class="form-group"><label>分段/位置（保留开头序号）</label><input type="text" id="ms-position" value="${escapeHTML(String(item.position ?? ''))}" /></div>
+      <div class="form-group"><label>结构形式</label><input type="text" id="ms-shape" value="${escapeHTML(String(item.shape ?? ''))}" placeholder="例: 直管 / 蛇形管 / U形管" /></div>
+      <div class="form-group"><label>规格型号</label><input type="text" id="ms-spec" value="${escapeHTML(String(item.spec ?? ''))}" placeholder="例: Φ63.5×7.5（多种用、分隔）" oninput="syncMaterialEditSpec()" /></div>
+      <div class="form-group"><label>管径 / 壁厚(mm)（由规格自动识别）</label><input type="text" id="ms-size-preview" readonly style="opacity:.75;" value="${escapeHTML(materialEditSpecPreview(item.spec))}" /></div>
+      <div class="form-group"><label>材质</label><input type="text" id="ms-material" value="${escapeHTML(String(item.material ?? ''))}" placeholder="例: SA-210C" /></div>
+      <div class="form-group"><label>库存根数</label><input type="text" id="ms-stock" value="${escapeHTML(String(item.stockQty ?? ''))}" placeholder="例: 120（可留空）" /></div>
+      <div class="form-group"><label>库存总长度(m)</label><input type="text" id="ms-length" value="${escapeHTML(String(item.totalLengthM ?? ''))}" placeholder="例: 360（可留空）" /></div>
+      <div class="form-group"><label>预留位置</label><input type="text" id="ms-reserve" value="${escapeHTML(String(item.reserveLocation ?? ''))}" placeholder="例: 1号库房B区" /></div>
+      <div class="form-group"><label>备注</label><textarea id="ms-remark" rows="3">${escapeHTML(String(item.remark ?? ''))}</textarea></div>
+      <div style="display:flex; gap:10px; margin-top:6px;">
+        <button class="btn" style="flex:1;" onclick="saveMaterialStockEdit('${escapeHTML(encodedKey)}')">💾 保存修改</button>
+        <button class="btn btn-outline" onclick="closeDataEditModal()">取消</button>
+      </div>
+    </div>`);
+}
+function materialEditSpecPreview(spec) {
+  const size = parseSpecSize(spec);
+  return size.diameter ? `Φ${size.diameter} × ${size.wallThickness || '?'}` : '（按规格自动识别）';
+}
+function syncMaterialEditSpec() {
+  const preview = document.getElementById('ms-size-preview');
+  if(preview) preview.value = materialEditSpecPreview(document.getElementById('ms-spec')?.value || '');
+}
+function saveMaterialStockEdit(encodedKey) {
+  if(getAssistantRole() === 'viewer') { showToast('当前为只读账号，不能修改材料记录。', 'warn'); return; }
+  const key = decodeURIComponent(encodedKey);
+  const fields = {
+    component: (document.getElementById('ms-component')?.value || '').trim(),
+    sys: (document.getElementById('ms-sys')?.value || '').trim().toUpperCase(),
+    position: (document.getElementById('ms-position')?.value || '').trim(),
+    shape: (document.getElementById('ms-shape')?.value || '').trim(),
+    spec: (document.getElementById('ms-spec')?.value || '').trim(),
+    material: (document.getElementById('ms-material')?.value || '').trim(),
+    stockQty: (document.getElementById('ms-stock')?.value || '').trim(),
+    totalLengthM: (document.getElementById('ms-length')?.value || '').trim(),
+    reserveLocation: (document.getElementById('ms-reserve')?.value || '').trim(),
+    remark: (document.getElementById('ms-remark')?.value || '').trim()
+  };
+  const pureNumber = (text) => /^\d+(\.\d+)?$/.test(text);
+  if(!fields.component || !fields.position || !fields.spec) { showToast('部件名称、分段/位置、规格型号不能为空。', 'warn'); return; }
+  if(!CODE_SYSTEMS.some(s => s.sys === fields.sys)) { showToast('系统代码请从列表选择（如 WW、HSH、ECO）。', 'warn'); return; }
+  if(fields.stockQty && !pureNumber(fields.stockQty)) { showToast('库存根数请填数字（如 120），或留空。', 'warn'); return; }
+  if(fields.totalLengthM && !pureNumber(fields.totalLengthM)) { showToast('库存总长度请填数字（米，如 360），或留空。', 'warn'); return; }
+  const library = getMaterialLibrary();
+  const index = library.findIndex(item => materialKey(item) === key);
+  if(index < 0) { showToast('没有找到这条材料记录，可能已被重新导入覆盖。', 'warn'); return; }
+  const size = parseSpecSize(fields.spec);
+  const next = library.map((item, i) => i === index
+    ? { ...item, ...fields, diameter: size.diameter || '', wallThickness: size.wallThickness || '', _edited: true }
+    : item);
+  saveMaterialLibrary(next, { reason: 'manual' });
+  closeDataEditModal();
+  showToast('材料记录已更新并同步（若已登录云端）。', 'ok');
+}
 function renderMaterialLibrary(key) {
   const c = COMPONENTS[key];
   const componentName = MATERIAL_COMPONENT_BY_TAB[key] || c?.name || '';
@@ -1877,20 +2026,21 @@ function renderMaterialLibrary(key) {
       <td>${escapeHTML(materialCell(item.stockQty))}</td>
       <td>${escapeHTML(materialCell(item.totalLengthM))}</td>
       <td style="font-family:inherit; min-width:220px; white-space:normal;">${escapeHTML(materialCell(item.remark))}</td>
+      <td>${getAssistantRole() === 'viewer' ? '' : `<button class="btn btn-outline" style="padding:2px 8px; font-size:11px;" onclick="openEditMaterialStock('${encodeURIComponent(materialKey(item))}')">编辑</button>`}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="14" style="text-align:center; padding:20px;">暂无材料记录，可通过材料库 CSV 导入维护。</td></tr>';
+  }).join('') || '<tr><td colspan="15" style="text-align:center; padding:20px;">暂无材料记录，可通过材料库 CSV 导入维护。</td></tr>';
   document.getElementById('compContent').innerHTML = `
     <div class="card">
       <div class="card-title"><span class="badge ${c?.badge || 'badge-sh'}">${escapeHTML(c?.sys || '')}</span> ${escapeHTML(componentName)} 材料清单</div>
       <div class="info-grid">
         <div class="info-item"><div class="k">材料记录</div><div class="v">${rows.length} 条</div></div>
         <div class="info-item"><div class="k">库存维护项</div><div class="v">${stockRows} 条</div></div>
-        <div class="info-item"><div class="k">维护方式</div><div class="v">CSV 导入/导出</div></div>
+        <div class="info-item"><div class="k">维护方式</div><div class="v">页面编辑 / CSV 导入导出</div></div>
       </div>
     </div>
     <div class="card">
       <div class="card-title">样表分类清单</div>
-      <div class="table-wrap"><table><thead><tr><th>序号</th><th>名称</th><th>外径(mm)</th><th>取用壁厚(mm)</th><th>材料</th><th>设计压力(MPa)</th><th>设计温度(℃)</th><th>直管理论计算厚度(mm)</th><th>弯管半径(mm)</th><th>弯管外侧理论计算厚度(mm)</th><th>规格型号</th><th>库存根数</th><th>库存总长度(m)</th><th>备注</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>序号</th><th>名称</th><th>外径(mm)</th><th>取用壁厚(mm)</th><th>材料</th><th>设计压力(MPa)</th><th>设计温度(℃)</th><th>直管理论计算厚度(mm)</th><th>弯管半径(mm)</th><th>弯管外侧理论计算厚度(mm)</th><th>规格型号</th><th>库存根数</th><th>库存总长度(m)</th><th>备注</th><th>操作</th></tr></thead><tbody>${tableRows}</tbody></table></div>
     </div>`;
 }
 function renderComponent(key) { renderMaterialLibrary(key); }
@@ -1947,7 +2097,7 @@ function collectMaintenanceHistorySignals(boiler = 'all') {
     if(date && (!signals[sys].latestDate || new Date(date) > new Date(signals[sys].latestDate))) signals[sys].latestDate = date;
     if(reason && signals[sys].reasons.length < 4) signals[sys].reasons.push(reason);
   };
-  Object.entries(LIFECYCLE_DATA).forEach(([code, item]) => {
+  Object.entries(systemLifecycleData()).forEach(([code, item]) => {
     if(boiler !== 'all' && getCodeBoiler(code) !== boiler) return;
     const sys = getCodeSystem(code);
     const timelineText = (item.timeline || []).map(t => `${t.t || ''}${t.d || ''}`).join(' ');
@@ -2002,7 +2152,7 @@ function getLatestMaintenanceContext(boiler = 'all') {
     if(!sys) return;
     records.push({ sys, date: date || '', type: type || '检修记录', desc: desc || '', source });
   };
-  Object.entries(LIFECYCLE_DATA).forEach(([code, item]) => {
+  Object.entries(systemLifecycleData()).forEach(([code, item]) => {
     if(boiler !== 'all' && getCodeBoiler(code) !== boiler) return;
     const sys = getCodeSystem(code);
     (item.timeline || []).forEach(t => pushRecord(sys, t.date, t.t, t.d, '系统寿命样例'));
@@ -2174,7 +2324,7 @@ function collectTubeInspectionRecords(boiler = 'all') {
     const old = records.get(normalized);
     if(!old || new Date(candidate.date) > new Date(old.date)) records.set(normalized, candidate);
   };
-  Object.entries(LIFECYCLE_DATA).forEach(([code, item]) => {
+  Object.entries(systemLifecycleData()).forEach(([code, item]) => {
     (item.timeline || []).forEach(event => {
       if(isMaintenanceInspectionRecord(event)) add(code, event.date, event.t, event.d, '系统寿命样例');
     });
@@ -2547,7 +2697,7 @@ function applyLLMProviderPreset() {
 function buildLLMContext() {
   const localCodes = [...new Set(userDB.events.map(e => e.code))].slice(0, 8);
   const recentEvents = userDB.events.slice(-8).map(e => `${e.date} ${e.code} ${e.type}: ${e.desc}`).join('\n') || '暂无本地录入事件';
-  const lifecycle = Object.entries(LIFECYCLE_DATA).slice(0, 4).map(([code, d]) => `${code}: ${d.name}, ${d.spec}, 投运/记录 ${d.install}, 风险 ${d.risk}`).join('\n');
+  const lifecycle = Object.entries(systemLifecycleData()).slice(0, 4).map(([code, d]) => `${code}: ${d.name}, ${d.spec}, 投运/记录 ${d.install}, 风险 ${d.risk}`).join('\n');
   const parts = [
     '系统：锅炉炉管全生命周期管理系统，覆盖 1#/2# 机组炉管台账、寿命跟踪、预警与检修记录。',
     '总览：单炉管管理单元 5139；水冷壁 722；过热器系统 2681；再热+省煤器 1736。',
@@ -2951,7 +3101,7 @@ function collectAIThicknessTargets() {
   return codes
     .map(code => {
       const thicknessData = extractThicknessData(code, { includeSystem: false });
-      const meta = LIFECYCLE_DATA[code] || {};
+      const meta = systemLifecycleData()[code] || {};
       const compInfo = matchComponentFromCode(code);
       const label = meta.name || compInfo?.name || '本地录入管段';
       if(thicknessData.length >= 2) return { code, label, points: thicknessData.length, latest: thicknessData[thicknessData.length - 1] };
@@ -3006,7 +3156,7 @@ function resolveMaterialTheoryThickness(code, pipeType) {
   code = String(code || '').trim().toUpperCase();
   const inventory = validateCodeAgainstMatrix(code)?.row;
   const component = matchComponentFromCode(code);
-  const lifecycle = LIFECYCLE_DATA[code];
+  const lifecycle = systemLifecycleData()[code];
   const events = userDB.events.filter(event => event.code === code)
     .sort((a,b) => new Date(b.date) - new Date(a.date));
   const localSpec = events.find(event => event.spec)?.spec;
@@ -3593,3 +3743,4 @@ loadAuthSession();
 bootstrapCloudStorage();
 refreshLLMServerStatus();
 runLLMVisualAnalysis();
+applyDemoDataToggle();

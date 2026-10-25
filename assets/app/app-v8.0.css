@@ -4513,3 +4513,21 @@ html[data-theme="light"] .boiler-zone:hover {
 .llm-viz-chart svg { width: 100%; height: auto; display: block; }
 .llm-viz-insights { margin: 0; padding-left: 18px; color: var(--text-mid); font-size: 12.5px; line-height: 1.8; }
 .llm-viz-insights li { margin-bottom: 2px; }
+
+/* ---- v8.4.6 顶栏演示数据开关（胶囊按钮，隐藏态半透明） ---- */
+.topbar-demo-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 14px; flex: none;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: var(--bg-2);
+  color: var(--text-dim);
+  font-family: inherit; font-size: 12px; font-weight: 600; letter-spacing: .5px;
+  cursor: pointer; white-space: nowrap;
+  box-shadow: var(--shadow-xs);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.topbar-demo-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.topbar-demo-toggle.is-hidden { opacity: .55; }
+.topbar-demo-toggle.is-hidden:hover { opacity: 1; }
+@media (max-width: 700px) { .topbar-demo-toggle { padding: 0 10px; font-size: 11px; } }
