@@ -4531,3 +4531,27 @@ html[data-theme="light"] .boiler-zone:hover {
 .topbar-demo-toggle.is-hidden { opacity: .55; }
 .topbar-demo-toggle.is-hidden:hover { opacity: 1; }
 @media (max-width: 700px) { .topbar-demo-toggle { padding: 0 10px; font-size: 11px; } }
+
+/* ===== v8.5 专业分析报告：可视化入报告 / 内容编辑 / 保存后导出 ===== */
+.llm-report-view[contenteditable="true"] {
+  outline: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 6px;
+  border-radius: 6px;
+  cursor: text;
+}
+.llm-report-view[contenteditable="true"]:focus {
+  outline-style: solid;
+}
+.llm-report-view[contenteditable="true"] .llm-report-viz h4,
+.llm-report-view[contenteditable="true"] .llm-report-card .k { cursor: text; }
+.llm-view-tab#llm-save-btn.is-dirty {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+}
+.llm-view-tab#llm-edit-tab.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.llm-report-view .llm-report-viz .llm-viz-metrics { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 10px; }
+.llm-report-view .llm-report-viz figure.llm-viz-chart { margin: 6px 0 10px; }
+.llm-report-view .llm-report-viz figure.llm-viz-chart svg { width: 100%; height: auto; display: block; }

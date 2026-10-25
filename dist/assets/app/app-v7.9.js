@@ -2854,13 +2854,20 @@ function renderLLMResult(text) {
   if(raw) raw.textContent = value;
   renderLLMReport(value);
   setLLMViewMode('report');
+  if(window.BTReportPro && typeof window.BTReportPro.onReportReplaced === 'function') window.BTReportPro.onReportReplaced(false);
 }
 function exportLLMReportPDF() {
   const report = document.getElementById('llm-report-view');
   const prompt = document.getElementById('llm-prompt')?.value || '';
   const raw = document.getElementById('llm-result')?.textContent || '';
-  if(!report || !raw || raw.includes('模型返回的深度分析会整理成报告显示在这里')) {
+  if(window.BTReportPro && typeof window.BTReportPro.guardExport === 'function') {
+    if(!window.BTReportPro.guardExport('PDF')) return;
+  } else if(!report || !raw || raw.includes('模型返回的深度分析会整理成报告显示在这里')) {
     showToast('请先生成结构化报告，再导出 PDF。', 'warn');
+    return;
+  }
+  if(!report) {
+    showToast('未找到报告容器，请刷新页面重试。', 'error');
     return;
   }
   const printWindow = window.open('', '_blank');
@@ -2893,6 +2900,15 @@ function exportLLMReportPDF() {
         th, td { border: 1px solid #cbd5e1; padding: 7px; text-align: left; vertical-align: top; word-break: break-word; }
         th { background: #ecfdf5; color: #0f766e; font-weight: 700; }
         .table-wrap { overflow: visible; }
+        ${window.BTDocx ? window.BTDocx.printVarsCss() : ':root{--accent:#0f766e;--text-dim:#475569;--text-faint:#64748b;--text-ghost:#94a3b8;--text-hi:#0f172a;--line:#94a3b8;--line-subtle:#cbd5e1;--danger:#dc2626;--warn:#d97706;--ok:#16a34a;--surface-sunken:#f1f5f9;}'}
+        .llm-report-viz { break-inside: auto; }
+        .llm-viz-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 8px 0 10px; }
+        .llm-viz-metric { border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; }
+        .llm-viz-metric .k { color: #64748b; font-size: 10px; }
+        .llm-viz-metric .v { color: #0f172a; font-weight: 700; font-size: 13px; }
+        figure.llm-viz-chart { margin: 8px 0 12px; break-inside: avoid; }
+        figure.llm-viz-chart svg { width: 100%; height: auto; }
+        ul.llm-viz-insights { margin: 8px 0 0; padding-left: 18px; color: #334155; }
         @media print { .print-hint { display: none; } }
       </style>
     </head>
@@ -2918,6 +2934,7 @@ function exportLLMReportPDF() {
 }
 function clearLLMResult() {
   renderLLMResult('模型返回的深度分析会整理成报告显示在这里。');
+  if(window.BTReportPro && typeof window.BTReportPro.onReportReplaced === 'function') window.BTReportPro.onReportReplaced(true);
   setLLMStatus('结果已清空。', 'info');
 }
 

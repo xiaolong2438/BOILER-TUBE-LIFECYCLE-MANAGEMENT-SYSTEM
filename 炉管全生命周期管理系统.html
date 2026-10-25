@@ -198,13 +198,17 @@
               <option value="数据整体画像">数据整体画像</option>
             </select>
             <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;" onclick="runLLMVisualAnalysis()">刷新</button>
+            <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;" onclick="addLLMVizToReport()">加入报告</button>
           </div>
           <div class="llm-viz-view" id="llm-viz-view"></div>
         </div>
         <div class="llm-view-tabs">
           <button class="llm-view-tab active" id="llm-report-tab" onclick="setLLMViewMode('report')">结构化报告</button>
           <button class="llm-view-tab" id="llm-raw-tab" onclick="setLLMViewMode('raw')">原文</button>
+          <button class="llm-view-tab" id="llm-edit-tab" onclick="toggleLLMReportEdit()">编辑</button>
+          <button class="llm-view-tab" id="llm-save-btn" onclick="saveLLMReportPro()">保存</button>
           <button class="llm-view-tab" onclick="exportLLMReportPDF()">导出PDF</button>
+          <button class="llm-view-tab" onclick="exportLLMReportDOCX()">导出Word</button>
           <button class="llm-view-tab" onclick="exportLLMReportXLSX()">导出Excel</button>
         </div>
         <div class="llm-report-view" id="llm-report-view"><div class="llm-result">模型返回的深度分析会整理成报告显示在这里。</div></div>
@@ -914,5 +918,6 @@
 <script src="assets/app/assistant-docs-v1.js" defer></script>
 <script src="assets/app/assistant-ui-v1.js" defer></script>
 <script src="assets/app/assistant-v1.js" defer></script>
+<script src="assets/app/report-pro-v1.js" defer></script>
 </body>
 </html>
