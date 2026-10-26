@@ -46,6 +46,10 @@
     attachments: null,
     savedAttachments: [],
     savedAttachmentId: null,
+    /* 智能字段匹配：文件名 → 模型给出的列名映射 / 数据集类型，
+       供「再次清洗 / 再次导入」复用，避免重复调用模型 */
+    headerMaps: {},
+    headerDatasetTypes: {},
     mounted: false
   };
   var controller = null;
@@ -1137,6 +1141,102 @@
     }
   }
 
+  /* ---------------- 智能字段匹配（模型映射） ---------------- */
+
+  var LLM_HEADER_MAP_MAX_TOKENS = 900;
+  var LLM_HEADER_UNMATCHED_LIMIT = 20;
+
+  function unmatchedRawHeaders(report) {
+    var mapping = report && Array.isArray(report.headerMapping) ? report.headerMapping : [];
+    var out = [];
+    mapping.forEach(function (item) {
+      if (item && item.level === 'none' && text(item.raw) && out.indexOf(item.raw) < 0) out.push(item.raw);
+    });
+    return out.slice(0, LLM_HEADER_UNMATCHED_LIMIT);
+  }
+
+  function headerModelAvailable() {
+    return llmConfigured() && typeof global.callAssistantChatCompletions === 'function';
+  }
+
+  function datasetLabelOf(type) {
+    var module = core();
+    return module && typeof module.datasetLabel === 'function' ? module.datasetLabel(type) : text(type);
+  }
+
+  /* 给未识别列挑样例值（前两行非空值，截断），帮助模型判断列含义 */
+  function sampleColumnValues(rows, headerRow, rawHeader) {
+    var position = -1;
+    for (var i = 0; i < headerRow.length; i += 1) {
+      if (text(headerRow[i]) === text(rawHeader)) { position = i; break; }
+    }
+    if (position < 0) return [];
+    var samples = [];
+    for (var r = 1; r < rows.length && samples.length < 2; r += 1) {
+      var row = Array.isArray(rows[r]) ? rows[r] : [];
+      var value = text(row[position]).trim();
+      if (value) samples.push(value.slice(0, 24));
+    }
+    return samples;
+  }
+
+  function buildHeaderMapMessages(datasetType, unmatched, rows, headerRow) {
+    var module = core();
+    var catalog = module && typeof module.datasetCatalog === 'function' ? module.datasetCatalog() : [];
+    var schemaLines = catalog.map(function (item) {
+      return '- ' + item.type + '（' + item.label + '）：' + item.headers.join(' / ');
+    });
+    var columnLines = unmatched.map(function (raw) {
+      var samples = sampleColumnValues(rows, headerRow, raw);
+      return '- 「' + raw + '」' + (samples.length ? '（样例值：' + samples.join('、') + '）' : '（无样例数据）');
+    });
+    var system = '你是电站锅炉检验数据台账的字段映射专家。只输出一个 JSON 对象，不要解释、不要 Markdown 代码块。';
+    var user = [
+      '系统只有两类数据集，标准列名如下：',
+      schemaLines.join('\n'),
+      '',
+      '一份待导入文件里有以下列名无法识别：',
+      columnLines.join('\n'),
+      '',
+      '请判断：',
+      '1. datasetType：这份文件更可能是 "events"（寿命事件/检测记录）还是 "material_library"（受热面材料库）？判断不了填 ""。',
+      '2. map：每个未识别列名对应的标准列名。能确定语义的才给映射（例如「实测壁厚值」→「厚度(mm)」）；',
+      '   不确定、无对应关系或纯备注类的填 ""。宁可不映射，也不要猜。',
+      '输出格式：{"datasetType":"events或material_library或空","map":{"原始列名":"标准列名或空"}}'
+    ].join('\n');
+    return [
+      { role: 'system', content: system },
+      { role: 'user', content: user }
+    ];
+  }
+
+  /* 模型映射结果 → {map, datasetType}；只保留合法映射，全部非法返回 null */
+  function parseHeaderModelReply(raw) {
+    var source = text(raw).replace(/^\x60\x60\x60(json)?\s*/i, '').replace(/\x60\x60\x60\s*$/, '').trim();
+    var start = source.indexOf('{');
+    var end = source.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    var parsed = null;
+    try { parsed = JSON.parse(source.slice(start, end + 1)); } catch (err) { return null; }
+    if (!parsed || typeof parsed !== 'object') return null;
+    var map = {};
+    if (parsed.map && typeof parsed.map === 'object') {
+      Object.keys(parsed.map).forEach(function (raw) {
+        var target = text(parsed.map[raw]).trim();
+        if (raw && target) map[raw] = target;
+      });
+    }
+    var datasetType = '';
+    if (parsed.datasetType === 'events' || parsed.datasetType === 'material_library') datasetType = parsed.datasetType;
+    if (!Object.keys(map).length && !datasetType) return null;
+    return { map: map, datasetType: datasetType };
+  }
+
+  function llmMapHeaders(datasetType, unmatched, rows, headerRow) {
+    var messages = buildHeaderMapMessages(datasetType, unmatched, rows, headerRow);
+    return global.callAssistantChatCompletions(messages, LLM_HEADER_MAP_MAX_TOKENS).then(parseHeaderModelReply);
+  }
+
   /* ---------------- 清洗与导入 ---------------- */
 
   function cleaningContext(snap) {
@@ -1159,6 +1259,7 @@
     if (!module || typeof module.cleanRows !== 'function') return null;
     var snap = snapshot();
     var context = cleaningContext(snap);
+    var key = text(fileName);
     return module.cleanRows({
       rows: rows,
       fileName: fileName,
@@ -1166,7 +1267,9 @@
       knownCodes: context.knownCodes,
       retiredCodes: context.retiredCodes,
       matrixRows: context.matrixRows,
-      units: context.units
+      units: context.units,
+      headerMap: state.headerMaps[key] || null,
+      datasetType: state.headerDatasetTypes[key] || undefined
     });
   }
 
@@ -1234,8 +1337,48 @@
     var result = cleanRowsFor(rows, fileName, sheetName);
     if (!result) {
       reply('清洗组件没有加载成功，请刷新页面后重试。');
-      return null;
+      return Promise.resolve(null);
     }
+    /* 智能字段匹配：本地模糊映射没认出的列（或整个数据集没认出），
+       配置了模型就再让模型判一次。模型结果按文件名缓存，再次清洗不再重复调用。 */
+    var key = text(fileName);
+    var unmatched = unmatchedRawHeaders(result.report);
+    var needsModel = !state.headerMaps[key] && unmatched.length > 0 && headerModelAvailable();
+    var needsModelForDataset = !state.headerMaps[key] &&
+      result.report.datasetType === 'unknown' &&
+      Array.isArray(rows) && rows.length > 0 && text(rows[0] && rows[0][0]).trim() !== '' &&
+      headerModelAvailable();
+    if (!needsModel && !needsModelForDataset) {
+      return Promise.resolve(applyCleaningResult(result));
+    }
+    var headerRow = Array.isArray(rows) && rows.length ? rows[0] : [];
+    pushAssistant({ text: needsModel
+      ? '有 ' + unmatched.length + ' 个列名没认出来，正在用模型智能匹配字段…'
+      : '表头不是标准模板，正在用模型识别数据集与字段…' });
+    render();
+    return llmMapHeaders(result.report.datasetType, unmatched, rows, headerRow).then(function (mapped) {
+      if (mapped && (Object.keys(mapped.map).length || mapped.datasetType)) {
+        state.headerMaps[key] = mapped.map;
+        if (mapped.datasetType) state.headerDatasetTypes[key] = mapped.datasetType;
+        var retried = cleanRowsFor(rows, fileName, sheetName);
+        if (retried) {
+          result = retried;
+          var parts = [];
+          if (mapped.datasetType) parts.push('数据集识别为「' + datasetLabelOf(mapped.datasetType) + '」');
+          if (Object.keys(mapped.map).length) parts.push('匹配字段 ' + Object.keys(mapped.map).length + ' 个');
+          reply('模型智能匹配完成：' + parts.join('、') + '，已按映射结果重新清洗。');
+          return applyCleaningResult(result);
+        }
+      }
+      reply('模型没有给出可用的字段匹配结果，按本地清洗结果继续。');
+      return applyCleaningResult(result);
+    }, function (err) {
+      reply('模型字段匹配失败：' + (err && err.message ? err.message : String(err)) + '（已按本地清洗结果继续）。');
+      return applyCleaningResult(result);
+    });
+  }
+
+  function applyCleaningResult(result) {
     var report = result.report;
     var cleanRows = Array.isArray(result.cleanRows) ? result.cleanRows : [];
     var split = splitCleanRowsByWarnings(cleanRows, report);
@@ -1285,11 +1428,14 @@
     var name = text(file.name) || '未命名文件';
     var extension = fileExtension(name);
     var docs = global.BTAssistantDocs;
-    var docKind = docs && docs.isImageFile(name) ? 'image' : docs && docs.isPdfFile(name) ? 'pdf' : '';
+    var isWord = docs && typeof docs.isDocxFile === 'function' && docs.isDocxFile(name);
+    var docKind = docs && docs.isImageFile(name) ? 'image' : docs && docs.isPdfFile(name) ? 'pdf' : isWord ? 'word' : '';
     if (docKind) {
       setBusy(true);
       render();
-      var extracting = docKind === 'image' ? docs.imageToRows(file) : docs.pdfToRows(file);
+      var extracting = docKind === 'image' ? docs.imageToRows(file)
+        : docKind === 'word' ? docs.docxToRows(file)
+        : docs.pdfToRows(file);
       extracting.then(function (parsed) {
         setBusy(false);
         var rows = parsed.rows || [];
@@ -1312,7 +1458,7 @@
         } else {
           registerAttachment({
             name: name,
-            kind: 'pdf',
+            kind: docKind === 'word' ? 'word' : 'pdf',
             rows: rows,
             sheetName: parsed.sheetName || '文档识别',
             notes: text(parsed.notes),
@@ -1332,8 +1478,12 @@
       });
       return;
     }
+    if (extension === 'doc') {
+      reply('旧版 .doc 是二进制格式，助手无法直接识别。请在 Word 里「另存为」.docx，或把表格截图后用图片识别上传。');
+      return;
+    }
     if (extension !== 'csv' && extension !== 'xlsx' && extension !== 'xls') {
-      reply('只支持 CSV / Excel / 图片（png/jpg/webp）/ PDF 文件。可以先在「数据录入」页下载模板再填写。');
+      reply('只支持 CSV / Excel / Word（.docx）/ 图片（png/jpg/webp）/ PDF 文件。可以先在「数据录入」页下载模板再填写。');
       return;
     }
     setBusy(true);

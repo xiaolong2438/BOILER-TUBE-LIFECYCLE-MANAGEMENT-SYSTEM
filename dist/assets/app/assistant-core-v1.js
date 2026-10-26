@@ -130,6 +130,123 @@
     ALIAS_LOOKUP[datasetType] = lookup;
   });
 
+  /* ---------------- 智能表头匹配（模糊兜底） ----------------
+   * 精确别名未命中时按两级兜底：包含关系（「实测壁厚值」含「壁厚」）→
+   * 编辑距离相似度。同一原始列匹配到多个标准列且得分并列时不映射，
+   * 宁可不映射（列原样保留）也不错误归并。 */
+
+  var HEADER_AGGRESSIVE_STRIP_RE = /[^a-z0-9\u4e00-\u9fa5]/g;
+  var FUZZY_CONTAIN_MIN_LEN = 2;
+  var FUZZY_CONTAIN_MIN_SCORE = 0.5;
+  var FUZZY_EDIT_MIN_SCORE = 0.6;
+
+  /* 激进归一：先常规 normalizeText，再去括号单位（厚度(mm)→厚度）与全部标点/空白 */
+  function aggressiveHeaderKey(value) {
+    return normalizeText(value)
+      .replace(/[（(][^（）()]*[）)]/g, '')
+      .replace(HEADER_AGGRESSIVE_STRIP_RE, '');
+  }
+
+  function levenshtein(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    var prev = [];
+    for (var j = 0; j <= b.length; j += 1) prev.push(j);
+    for (var i = 1; i <= a.length; i += 1) {
+      var current = [i];
+      for (var k = 1; k <= b.length; k += 1) {
+        var cost = a.charAt(i - 1) === b.charAt(k - 1) ? 0 : 1;
+        current[k] = Math.min(current[k - 1] + 1, prev[k] + 1, prev[k - 1] + cost);
+      }
+      prev = current;
+    }
+    return prev[b.length];
+  }
+
+  function stringSimilarity(a, b) {
+    if (!a && !b) return 1;
+    var longer = a.length >= b.length ? a : b;
+    var shorter = a.length >= b.length ? b : a;
+    if (!longer.length) return 1;
+    return 1 - levenshtein(shorter, longer) / longer.length;
+  }
+
+  /* 收集某数据集全部「标准列 → 别名列表」，供模糊匹配遍历 */
+  function headerAliasPairs(datasetType) {
+    var group = HEADER_ALIASES[datasetType];
+    var pairs = [];
+    if (!group) return pairs;
+    Object.keys(group).forEach(function (canonical) {
+      group[canonical].forEach(function (alias) {
+        pairs.push({ canonical: canonical, alias: alias });
+      });
+    });
+    return pairs;
+  }
+
+  /* 在候选里挑唯一最高分：并列或低于阈值返回 null，避免歧义误映射 */
+  function pickBestCandidate(candidates, minScore) {
+    var best = null;
+    var bestScore = 0;
+    var tie = false;
+    candidates.forEach(function (candidate) {
+      if (candidate.score > bestScore) { best = candidate; bestScore = candidate.score; tie = false; }
+      else if (candidate.score === bestScore && best && candidate.canonical !== best.canonical) tie = true;
+    });
+    if (!best || tie || bestScore < minScore) return null;
+    return best;
+  }
+
+  function fuzzyMatchHeader(datasetType, rawHeader) {
+    var headerKey = aggressiveHeaderKey(rawHeader);
+    if (!headerKey) return null;
+    var pairs = headerAliasPairs(datasetType);
+    var containCandidates = [];
+    var editCandidates = [];
+    pairs.forEach(function (pair) {
+      var aliasKey = aggressiveHeaderKey(pair.alias);
+      if (!aliasKey) return;
+      if (aliasKey === headerKey) return; /* 相等说明精确层应该已命中，跳过 */
+      var shorter = Math.min(aliasKey.length, headerKey.length);
+      var longer = Math.max(aliasKey.length, headerKey.length);
+      if (longer && (headerKey.indexOf(aliasKey) >= 0 || aliasKey.indexOf(headerKey) >= 0)) {
+        if (shorter >= FUZZY_CONTAIN_MIN_LEN) {
+          containCandidates.push({ canonical: pair.canonical, score: shorter / longer });
+          return;
+        }
+      }
+      if (headerKey.length >= 3 && aliasKey.length >= 3) {
+        editCandidates.push({ canonical: pair.canonical, score: stringSimilarity(aliasKey, headerKey) });
+      }
+    });
+    var best = pickBestCandidate(containCandidates, FUZZY_CONTAIN_MIN_SCORE);
+    if (best) return { canonical: best.canonical, level: 'fuzzy', score: best.score };
+    best = pickBestCandidate(editCandidates, FUZZY_EDIT_MIN_SCORE);
+    if (best) return { canonical: best.canonical, level: 'fuzzy', score: best.score };
+    return null;
+  }
+
+  /* 表头归一（带层级）：override（模型映射结果）> 精确别名 > 模糊匹配 > 原样 */
+  function canonicalHeaderWithLevel(datasetType, rawHeader, override) {
+    var raw = String(rawHeader === null || rawHeader === undefined ? '' : rawHeader).replace(/^\uFEFF/, '').trim();
+    if (!raw) return { canonical: '', level: 'exact' };
+    var type = normalizeDatasetType(datasetType);
+    if (type !== 'unknown' && override && typeof override === 'object') {
+      var mapped = override[normalizeText(raw)];
+      if (mapped && DATASET_REGISTRY[type].headers.indexOf(mapped) >= 0) {
+        return { canonical: mapped, level: 'model' };
+      }
+    }
+    var lookup = ALIAS_LOOKUP[type];
+    if (!lookup) return { canonical: raw, level: 'none' };
+    var key = normalizeText(raw);
+    if (lookup[key]) return { canonical: lookup[key], level: 'exact' };
+    var fuzzy = fuzzyMatchHeader(type, raw);
+    if (fuzzy) return { canonical: fuzzy.canonical, level: 'fuzzy' };
+    return { canonical: raw, level: 'none' };
+  }
+
   /* ---------------- 工具目录 ---------------- */
 
   var TOOL_SPECS = [
@@ -245,6 +362,14 @@
     if (!isFinite(n)) return '0000';
     var text = String(Math.trunc(n));
     while (text.length < 4) text = '0' + text;
+    return text;
+  }
+
+  function pad3(value) {
+    var n = Number(value);
+    if (!isFinite(n)) return '000';
+    var text = String(Math.trunc(n));
+    while (text.length < 3) text = '0' + text;
     return text;
   }
 
@@ -381,6 +506,80 @@
   }
 
   /* ============================================================
+   * 智能编码匹配（台账 / 矩阵相似码建议）
+   * ============================================================ */
+
+  var MATRIX_EXPAND_LIMIT = 30000;  /* 矩阵展开的编码数量上限，防止异常矩阵拖垮清洗 */
+  var CODE_SUGGEST_MIN_SCORE = 0.82; /* 低于该相似度不给出建议，避免把合法新码误报成疑似错码 */
+
+  /* 台账矩阵 → 基础编码集合（seq 固定 000）：1-WW-FR-008-0003-000。
+     用于判断「这个编码在台账里是否存在」，以及给疑似错码找最近的真实编码。 */
+  function expandMatrixCodes(matrixRows, units) {
+    var out = [];
+    var seen = {};
+    var rows = Array.isArray(matrixRows) ? matrixRows : [];
+    var unitList = normalizeUnits(units);
+    rows.forEach(function (row) {
+      if (!row || typeof row !== 'object' || out.length >= MATRIX_EXPAND_LIMIT) return;
+      var sys = String(row.sys || '').toUpperCase();
+      var zone = String(row.zone || '').toUpperCase();
+      var pMin = toNumber(row.pMin);
+      var pMax = toNumber(row.pMax);
+      var tMin = toNumber(row.tMin);
+      var tMax = toNumber(row.tMax);
+      if (!sys || !zone || pMin === null || pMax === null || tMin === null || tMax === null) return;
+      unitList.forEach(function (unit) {
+        for (var panel = pMin; panel <= pMax && out.length < MATRIX_EXPAND_LIMIT; panel += 1) {
+          for (var tube = tMin; tube <= tMax && out.length < MATRIX_EXPAND_LIMIT; tube += 1) {
+            var code = unit + '-' + sys + '-' + zone + '-' + pad3(panel) + '-' + pad4(tube) + '-000';
+            if (!seen[code]) { seen[code] = true; out.push(code); }
+          }
+        }
+      });
+    });
+    return out;
+  }
+
+  /* 疑似错码 → 最近的候选编码。只在「机组号 + 系统代码」相同的候选里找
+     （跨系统的编码差异太大，相似度没有参考意义），返回 { code, similarity } 或 null。 */
+  function suggestSimilarCode(code, candidateList, minScore) {
+    var target = normalizeCode(code).toUpperCase();
+    if (!target) return null;
+    var targetKey = target.replace(/-/g, '');
+    var targetParts = target.split('-');
+    var threshold = typeof minScore === 'number' ? minScore : CODE_SUGGEST_MIN_SCORE;
+    var best = null;
+    var list = Array.isArray(candidateList) ? candidateList : [];
+    for (var i = 0; i < list.length; i += 1) {
+      var candidate = normalizeCode(list[i]).toUpperCase();
+      if (!candidate || candidate === target) continue;
+      var candidateParts = candidate.split('-');
+      /* 前缀过滤：机组号或系统代码不同的候选直接跳过，也把计算量压下来 */
+      if (targetParts.length >= 2 && candidateParts.length >= 2 &&
+          (targetParts[0] !== candidateParts[0] || targetParts[1] !== candidateParts[1])) continue;
+      var score = stringSimilarity(targetKey, candidate.replace(/-/g, ''));
+      if (!best || score > best.similarity) {
+        best = { code: candidate, similarity: score };
+        if (score >= 0.999) break;
+      }
+    }
+    if (!best || best.similarity < threshold) return null;
+    return best;
+  }
+
+  function buildTubeCodeLedger(knownCodes, matrixRows, units) {
+    var list = [];
+    var seen = {};
+    var pushCandidate = function (value) {
+      var code = normalizeCode(value).toUpperCase();
+      if (code && !seen[code]) { seen[code] = true; list.push(code); }
+    };
+    if (Array.isArray(knownCodes)) knownCodes.forEach(pushCandidate);
+    expandMatrixCodes(matrixRows, units).forEach(pushCandidate);
+    return { list: list, set: seen };
+  }
+
+  /* ============================================================
    * 内部小工具
    * ============================================================ */
 
@@ -479,11 +678,8 @@
   function canonicalHeader(datasetType, rawHeader) {
     var raw = String(rawHeader === null || rawHeader === undefined ? '' : rawHeader).replace(/^\uFEFF/, '').trim();
     if (!raw) return '';
-    var type = normalizeDatasetType(datasetType);
-    var lookup = ALIAS_LOOKUP[type];
-    if (!lookup) return raw;
-    var key = normalizeText(raw);
-    return lookup[key] || raw;
+    var resolved = canonicalHeaderWithLevel(datasetType, raw);
+    return resolved.canonical || raw;
   }
 
   function buildHeaderIndex(datasetType, headers) {
@@ -496,12 +692,27 @@
     return index;
   }
 
+  /* 数据集检测专用：只认精确别名，避免模糊匹配把无关表格误判成台账 */
+  function buildExactHeaderIndex(datasetType, headers) {
+    var list = Array.isArray(headers) ? headers : [];
+    var index = {};
+    var lookup = ALIAS_LOOKUP[normalizeDatasetType(datasetType)];
+    if (!lookup) return index;
+    list.forEach(function (header, position) {
+      var raw = String(header === null || header === undefined ? '' : header).replace(/^\uFEFF/, '').trim();
+      if (!raw) return;
+      var canonical = lookup[normalizeText(raw)];
+      if (canonical && index[canonical] === undefined) index[canonical] = position;
+    });
+    return index;
+  }
+
   function resolveDatasetType(headers, fileName) {
     try {
       var headerList = Array.isArray(headers) ? headers : [];
       if (headerList.length) {
-        var eventsIndex = buildHeaderIndex('events', headerList);
-        var materialIndex = buildHeaderIndex('material_library', headerList);
+        var eventsIndex = buildExactHeaderIndex('events', headerList);
+        var materialIndex = buildExactHeaderIndex('material_library', headerList);
         var materialMatched = materialIndex['部件名称'] !== undefined &&
           materialIndex['规格型号'] !== undefined &&
           materialIndex['材质'] !== undefined;
@@ -685,6 +896,8 @@
     var units = normalizeUnits(source.units);
     var retiredCodes = makeCodeSet(source.retiredCodes);
     var matrixRows = normalizeMatrixRows(source.matrixRows);
+    /* 台账候选集：系统里已有的管段编码 + 台账矩阵展开出的基础编码，供智能编码匹配使用 */
+    var ledger = buildTubeCodeLedger(source.knownCodes, matrixRows, units);
     var rows = rowsInput.map(rowToCells);
     var rawFirstHeader = rows.length && rows[0].length ? String(rowsInput[0] && rowsInput[0][0] !== undefined ? rowsInput[0][0] : '') : '';
     var hasBom = /^\uFEFF/.test(rawFirstHeader);
@@ -694,10 +907,31 @@
     var datasetType = declaredType;
     if (datasetType === 'unknown') datasetType = resolveDatasetType(headerRow, fileName);
     var known = datasetType !== 'unknown';
-    var canonicalHeaders = headerRow.map(function (header) {
-      return canonicalHeader(known ? datasetType : 'unknown', header);
+    /* 模型映射结果（headerMap）：原始列名 -> 标准列名；只接受该数据集真实存在的列名 */
+    var headerOverride = {};
+    if (known && source.headerMap && typeof source.headerMap === 'object') {
+      Object.keys(source.headerMap).forEach(function (raw) {
+        var target = normalizeText(source.headerMap[raw]);
+        var canonical = DATASET_REGISTRY[datasetType].headers.filter(function (name) {
+          return normalizeText(name) === target;
+        })[0];
+        if (canonical) headerOverride[normalizeText(raw)] = canonical;
+      });
+    }
+    var canonicalHeaders = [];
+    var headerMapping = headerRow.map(function (header, position) {
+      var resolved = known
+        ? canonicalHeaderWithLevel(datasetType, header, headerOverride)
+        : { canonical: header, level: 'exact' };
+      canonicalHeaders.push(resolved.canonical);
+      return { position: position, raw: header, canonical: resolved.canonical, level: resolved.level };
     });
-    var colIndex = buildHeaderIndex(known ? datasetType : 'unknown', headerRow);
+    /* 列索引按映射后的标准列名构建（同一标准列取首次出现的位置） */
+    var colIndex = {};
+    headerMapping.forEach(function (item) {
+      if (!item.canonical) return;
+      if (colIndex[item.canonical] === undefined) colIndex[item.canonical] = item.position;
+    });
 
     var normalizations = [];
     var checks = [];
@@ -736,6 +970,8 @@
     var retiredSamples = [];
     var outOfRangeRows = [];
     var outOfRangeSamples = [];
+    var unknownLedgerRows = [];
+    var unknownLedgerSamples = [];
     var duplicateDroppedRows = [];
 
     var lastNonEmptyHeader = -1;
@@ -858,6 +1094,13 @@
           retiredRows.push(rowNumber);
           if (retiredSamples.length < 5) retiredSamples.push(code);
         }
+        /* 智能编码匹配：编码不在台账（已有记录 + 矩阵展开）时，找最相似的真实编码给建议。
+           更换产生的新管码（-R1 后缀）先剥掉后缀再比对基础码。 */
+        var codeSuggestion = null;
+        if (code && !retiredCodes[code] && ledger.list.length) {
+          var baseCode = code.replace(/-R\d+$/i, '');
+          if (!ledger.set[baseCode]) codeSuggestion = suggestSimilarCode(baseCode, ledger.list);
+        }
         if (code && matrixRows.length) {
           var codeParts = code.split('-');
           if (codeParts.length >= 5) {
@@ -879,9 +1122,18 @@
               });
               if (!inRange) {
                 outOfRangeRows.push(rowNumber);
-                if (outOfRangeSamples.length < 5) outOfRangeSamples.push(code);
+                if (outOfRangeSamples.length < 5) {
+                  outOfRangeSamples.push(codeSuggestion
+                    ? code + '（近似：' + codeSuggestion.code + '，相似度 ' + Math.round(codeSuggestion.similarity * 100) + '%）'
+                    : code);
+                }
               }
             }
+          }
+        } else if (code && codeSuggestion) {
+          unknownLedgerRows.push(rowNumber);
+          if (unknownLedgerSamples.length < 5) {
+            unknownLedgerSamples.push(code + ' ≈ ' + codeSuggestion.code + '（相似度 ' + Math.round(codeSuggestion.similarity * 100) + '%）');
           }
         }
 
@@ -947,6 +1199,53 @@
       cleanRowsList.push(materialRow);
       rowIndexes.push(rowNumber);
     });
+
+    /* ---------------- 输出列重排 ----------------
+     * 页面导入（importLifecycleRows / importMaterialRows）按列位置取数
+     * （第 0 列=数据分类、第 1 列=炉号……），因此清洗输出必须重排成模板顺序：
+     * 已映射的标准列在前（按模板序），未识别列按原始顺序附在末尾。 */
+    var fuzzyMappedHeaders = [];
+    var unmappedHeaders = [];
+    if (known) {
+      headerMapping.forEach(function (item) {
+        if (item.level === 'fuzzy' || item.level === 'model') fuzzyMappedHeaders.push(item);
+        else if (item.level === 'none' && item.raw) unmappedHeaders.push(item);
+      });
+    }
+    if (known && cleanRowsList.length) {
+      var templateHeaders = DATASET_REGISTRY[datasetType].headers;
+      /* 标准列名 → 首次出现的原始列位置 */
+      var positionByCanonical = {};
+      headerMapping.forEach(function (item) {
+        if (item.canonical && positionByCanonical[item.canonical] === undefined) {
+          positionByCanonical[item.canonical] = item.position;
+        }
+      });
+      /* 模板列全量输出（缺列补空列占位，保证页面按位置导入不错位），未识别列附在末尾 */
+      var columnOrder = templateHeaders.map(function (name) {
+        return positionByCanonical[name] !== undefined ? positionByCanonical[name] : -1;
+      });
+      var extraPositions = [];
+      headerMapping.forEach(function (item) {
+        if (columnOrder.indexOf(item.position) < 0) extraPositions.push(item.position);
+      });
+      columnOrder = columnOrder.concat(extraPositions);
+
+      var pickColumn = function (cells, position) {
+        if (position < 0) return '';
+        var value = cells && position < cells.length ? cells[position] : '';
+        return String(value === null || value === undefined ? '' : value);
+      };
+      var reorderedHeader = templateHeaders.slice();
+      extraPositions.forEach(function (position) {
+        reorderedHeader.push(headerMapping[position].canonical);
+      });
+      cleanRowsList = cleanRowsList.map(function (cells) {
+        return columnOrder.map(function (position) { return pickColumn(cells, position); });
+      });
+      headerRow = reorderedHeader;
+      canonicalHeaders = reorderedHeader.slice();
+    }
 
     /* 组装检查项 */
     if (known && missingHeaderNames.length) {
@@ -1017,10 +1316,32 @@
         '共 ' + outOfRangeRows.length + ' 行编码的屏/管圈超出台账矩阵范围。',
         outOfRangeRows, '对照「炉管台账」中的屏号/管圈号核对。', outOfRangeSamples);
     }
+    if (unknownLedgerRows.length) {
+      pushCheck(checks, 'unknown_code', 'warning', '编码未在台账中找到',
+        '共 ' + unknownLedgerRows.length + ' 行管段编码在台账（已有记录 + 矩阵范围）中不存在，但找到了高度相似的编码，疑似录入笔误；行仍会导入，请逐条核对。',
+        unknownLedgerRows, '对照「炉管台账」核对屏号/管圈号/管序号；确属新管请先用编码生成器登记。', unknownLedgerSamples);
+    }
     if (extraHeaderColumns > 0) {
       pushCheck(checks, 'extra_columns', 'info', '表头末尾存在空列',
         '表头末尾有 ' + extraHeaderColumns + ' 个空列，已忽略。', [], '删除多余列可以让文件更易读。');
       normalizations.push('已忽略表头末尾 ' + extraHeaderColumns + ' 个空列');
+    }
+    if (fuzzyMappedHeaders.length || unmappedHeaders.length) {
+      var mappingDetails = fuzzyMappedHeaders.map(function (item) {
+        return '「' + item.raw + '」→「' + item.canonical + '」' + (item.level === 'model' ? '（模型匹配）' : '（智能匹配）');
+      });
+      var mappingDetail = mappingDetails.length
+        ? '已把 ' + mappingDetails.length + ' 列映射到标准字段：' + mappingDetails.join('、') + '。'
+        : '';
+      if (unmappedHeaders.length) {
+        mappingDetail += (mappingDetail ? ' ' : '') + unmappedHeaders.length + ' 个列名未识别（'
+          + unmappedHeaders.slice(0, 5).map(function (item) { return '「' + item.raw + '」'; }).join('、')
+          + (unmappedHeaders.length > 5 ? '等' : '') + '），已原样保留在结果末尾，不会写入台账字段。';
+      }
+      pushCheck(checks, 'header_mapping', 'info', '字段智能匹配', mappingDetail, [],
+        unmappedHeaders.length
+          ? '把列名改成模板列名（或配置模型后重新上传）可完整入库；未识别列仅随清洗结果导出。'
+          : '映射按列名相似度判断，导入前请在预览中抽查数值列是否对位。');
     }
     if (!known) {
       pushCheck(checks, 'unknown_type', 'warning', '未识别数据集',
@@ -1062,6 +1383,7 @@
       },
       checks: checks,
       normalizations: normalizations,
+      headerMapping: headerMapping,
       rowIndexes: rowIndexes,
       headers: canonicalHeaders
     };
@@ -1871,10 +2193,16 @@
     getDataset: getDataset,
     datasetLabel: datasetLabel,
     canonicalHeader: canonicalHeader,
+    canonicalHeaderWithLevel: canonicalHeaderWithLevel,
+    fuzzyMatchHeader: fuzzyMatchHeader,
     buildHeaderIndex: buildHeaderIndex,
     resolveDatasetType: resolveDatasetType,
     detectDatasetType: detectDatasetType,
     normalizeDatasetType: normalizeDatasetType,
+    expandMatrixCodes: expandMatrixCodes,
+    suggestSimilarCode: suggestSimilarCode,
+    buildTubeCodeLedger: buildTubeCodeLedger,
+    stringSimilarity: stringSimilarity,
     toolCatalog: toolCatalog,
     toolSpec: toolSpec,
     toolsForRole: toolsForRole,

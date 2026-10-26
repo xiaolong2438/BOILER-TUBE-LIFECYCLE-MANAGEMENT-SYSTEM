@@ -460,7 +460,7 @@ window.runAssistantTests = async function () {
   await test('T3 boundary: model failures (bad JSON retry / all-fail reject / maxFiles)', async () => {
     const docs = window.BTAssistantDocs;
     assert(docs && typeof docs.imagesToRows === 'function', 'T1 契约未实现：imagesToRows 缺失');
-    assert(docs.version === 'v2', 'T1 契约未实现：BTAssistantDocs.version 应为 v2，实际 ' + docs.version);
+    assert(docs.version === 'v3', 'T1 契约未实现：BTAssistantDocs.version 应为 v3，实际 ' + docs.version);
     const restoreConfig = enableVisionConfig();
 
     /* 1) 第一次坏 JSON、第二次合法 → 恰好重试 1 次并成功 */

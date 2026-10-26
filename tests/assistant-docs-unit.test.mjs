@@ -94,15 +94,18 @@ const gridJson = (headers, rows, extra) => JSON.stringify(Object.assign({ header
 
 /* ---------------- 导出契约 ---------------- */
 
-check("导出 v2 冻结契约要求的全部键", () => {
+check("导出 v3 冻结契约要求的全部键", () => {
   const { docs } = createHarness();
-  assert.equal(docs.version, "v2");
-  ["imageToRows", "pdfToRows", "imagesToRows", "mergeGrids", "normalizeGrid", "normalizeCell", "normalizeDate", "normalizeNumber"].forEach((name) => {
+  assert.equal(docs.version, "v3");
+  ["imageToRows", "pdfToRows", "docxToRows", "imagesToRows", "mergeGrids", "normalizeGrid", "normalizeCell", "normalizeDate", "normalizeNumber"].forEach((name) => {
     assert.equal(typeof docs[name], "function", name + " 必须是函数");
   });
   assert.equal(typeof docs.isImageFile, "function");
   assert.equal(docs.isImageFile("a.PNG"), true);
   assert.equal(docs.isPdfFile("a.pdf"), true);
+  assert.equal(typeof docs.isDocxFile, "function");
+  assert.equal(docs.isDocxFile("a.DOCX"), true);
+  assert.equal(docs.isDocxFile("a.doc"), false);
 });
 
 /* ---------------- normalizeCell / normalizeDate / normalizeNumber ---------------- */

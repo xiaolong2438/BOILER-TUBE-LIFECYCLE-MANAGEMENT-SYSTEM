@@ -43,7 +43,7 @@ check("接线层依赖附件模块并保留既有门面与入口字符串", () =
   has(wiringSource, "import-again", "重复导入保护必须有「再次导入」动作");
   has(wiringSource, "markAttachmentImported(", "导入成功后必须记录 importedAt");
   /* 既有断言字符串逐字保留（其他测试依赖） */
-  has(wiringSource, "var docKind = docs && docs.isImageFile(name) ? 'image' : docs && docs.isPdfFile(name) ? 'pdf' : ''");
+  has(wiringSource, "? 'image' : docs && docs.isPdfFile(name) ? 'pdf' : isWord ? 'word' : ''");
   has(wiringSource, "if (event.kind === 'files') { handleFiles(event.files); return; }");
   has(wiringSource, "runCleaning(rows, batchName, sheetName);");
   has(wiringSource, "return Boolean(global.__llmServerKey)");
@@ -80,7 +80,9 @@ check("UI 层新增附件条渲染与派发", () => {
   has(uiSource, "data-attachment-action=\"remove\"");
   has(uiSource, "emit({ kind: 'remove-attachment', id: attachmentId })");
   has(uiSource, "emit({ kind: 'select-attachment', id: attachmentId })");
-  has(uiSource, 'multiple accept=".csv,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.pdf"', "既有 accept 字符串不得改动");
+  has(uiSource, 'multiple accept=".csv,.xlsx,.xls,.docx,.doc,.png,.jpg,.jpeg,.webp,.pdf"', "accept 必须包含 Word 与既有类型");
+  has(wiringSource, "isWord ? 'word'", "Word 文件必须单独分流");
+  has(wiringSource, "docs.isDocxFile(name)", "Word 判定必须走 docs 层 isDocxFile");
   [
     "assistantLauncher", "assistantPanel", "assistantClose", "assistantHistoryBtn", "assistantNewChat",
     "assistantTitle", "assistantStatus", "assistantMessages", "assistantQuick", "assistantInput",

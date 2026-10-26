@@ -17,6 +17,7 @@ const css = read("assets/app/assistant-v1.css");
 assert.match(docs, /global\.BTAssistantDocs/, "docs module should attach window.BTAssistantDocs");
 assert.match(docs, /imageToRows: imageToRows/, "image extraction entry should be exported");
 assert.match(docs, /pdfToRows: pdfToRows/, "pdf extraction entry should be exported");
+assert.match(docs, /docxToRows: docxToRows/, "word extraction entry should be exported");
 assert.match(docs, /严禁编造任何数值、编号或日期/, "vision prompt must forbid fabricating data");
 assert.match(docs, /type: 'image_url'/, "vision message format should be used");
 assert.match(docs, /downscaleToJpegDataUrl/, "images should be downscaled before sending");
@@ -24,7 +25,7 @@ assert.match(docs, /function dropPhantomColumns\(rows\)/, "phantom empty columns
 assert.match(docs, /return dropPhantomColumns\(clustered\)/, "clustered rows must pass through phantom-column cleanup");
 
 // 接线层：图片/PDF 进入与 CSV 相同的清洗-导入管线；服务端密钥模式可用。
-assert.match(wiring, /var docKind = docs && docs\.isImageFile\(name\) \? 'image' : docs && docs\.isPdfFile\(name\) \? 'pdf' : ''/, "handleFile should route image/pdf");
+assert.match(wiring, /docs && docs\.isPdfFile\(name\) \? 'pdf' : isWord \? 'word' : ''/, "handleFile should route image/pdf/word");
 assert.match(wiring, /runCleaning\(rows, name, parsed\.sheetName/, "extracted grid should feed the shared cleaning pipeline");
 assert.match(wiring, /return Boolean\(global\.__llmServerKey\)/, "server-key mode should unlock assistant LLM features");
 assert.match(wiring, /function exportConversation\(\)/, "conversation export should exist");
@@ -39,7 +40,7 @@ assert.match(wiring, /var manualMode = currentRole\(\) === 'viewer' \|\| report\
 assert.match(wiring, /行干净数据已直接导入/, "assistant must report the auto-imported row count");
 
 // UI：文件选择与拖拽双入口。
-assert.match(ui, /accept="\.csv,\.xlsx,\.xls,\.png,\.jpg,\.jpeg,\.webp,\.pdf"/, "file input should accept images and pdf");
+assert.match(ui, /accept="\.csv,\.xlsx,\.xls,\.docx,\.doc,\.png,\.jpg,\.jpeg,\.webp,\.pdf"/, "file input should accept word, images and pdf");
 assert.match(ui, /data-assistant="export-chat"/, "export chat button should exist");
 assert.match(ui, /addEventListener\('dragenter', onPanelDragEnter\)/, "panel should accept drag-enter");
 assert.match(ui, /addEventListener\('drop', onPanelDrop\)/, "panel should accept drop");
@@ -56,10 +57,27 @@ assert.match(html, /assistant-docs-v1\.js/, "docs module should be loaded");
 assert.match(html, /pdf\.js\/3\.11\.174\/pdf\.min\.js/, "pdf.js should be loaded from CDN");
 assert.match(css, /\.assistant-panel\.is-dragover/, "drag-over highlight should be styled");
 
-/* ---------------- v2 提炼层契约：多图批量 / 规范化 / 输出修复 / 不确定单元格 ---------------- */
+/* ---------------- v3 契约：Word 识别 + 智能字段/编码匹配 ---------------- */
+
+// 文档识别层：Word 走零依赖 ZIP + OOXML 表格提取，无表格时文本交模型兜底。
+assert.match(docs, /function parseDocxDocument\(xmlText\)/, "docx XML should be parsed by a self-contained tokenizer");
+assert.match(docs, /DecompressionStream\('deflate-raw'\)/, "deflate entries should use the native DecompressionStream");
+assert.match(docs, /word\/document\.xml/, "docx pipeline must read the main document part");
+assert.match(docs, /'Word 智能提取'/, "docx text fallback should be labeled separately from PDF");
+assert.match(docs, /w:gridSpan/, "gridSpan columns should be padded to keep alignment");
+
+// 接线层：模型兜底的字段映射 + 按文件名缓存，重清洗不重复调用模型。
+assert.match(wiring, /function llmMapHeaders\(/, "LLM header mapping should exist");
+assert.match(wiring, /state\.headerMaps\[key\] = mapped\.map/, "model mapping must be cached per file");
+assert.match(wiring, /headerMap: state\.headerMaps\[key\] \|\| null/, "cleaning must consume cached header mapping");
+assert.match(wiring, /datasetType: state\.headerDatasetTypes\[key\] \|\| undefined/, "declared dataset type must be replayable");
+assert.match(wiring, /旧版 \.doc 是二进制格式/, "legacy .doc should get a conversion hint");
+
+// 领域层：模糊表头匹配 + 列重排 + 编码相似建议。
+assert.match(wiring, /runCleaning\(rows, name, parsed\.sheetName/, "extracted grid should feed the shared cleaning pipeline");
 
 // 文档识别层对外契约：v2 版本号与新增能力必须可被调用方依赖。
-assert.match(docs, /version: 'v2'/, "docs module should report v2");
+assert.match(docs, /version: 'v3'/, "docs module should report v3");
 ["imagesToRows", "mergeGrids", "normalizeGrid", "normalizeCell"].forEach((name) => {
   assert.ok(docs.indexOf(name + ": " + name) >= 0, "v2 API should export " + name);
 });
@@ -76,7 +94,7 @@ assert.match(wiring, /handleFiles: handleFiles,/, "wiring facade should expose h
 assert.match(wiring, /runCleaning\(rows, batchName, sheetName\)/, "merged batch grid must reuse the shared cleaning pipeline");
 
 // UI：多选入口与单/多文件分流。
-assert.match(ui, /multiple accept="\.csv,\.xlsx,\.xls,\.png,\.jpg,\.jpeg,\.webp,\.pdf"/, "file input should allow multi-select without changing accept");
+assert.match(ui, /multiple accept="\.csv,\.xlsx,\.xls,\.docx,\.doc,\.png,\.jpg,\.jpeg,\.webp,\.pdf"/, "file input should allow multi-select including Word");
 assert.match(ui, /emit\(\{ kind: 'files', files: files \}\)/, "multiple files should be dispatched as one batch event");
 
 console.log("ok - assistant ingests images/PDF via vision+pdf.js, batches multi-image extraction through normalization, then reuses the cleaning pipeline");

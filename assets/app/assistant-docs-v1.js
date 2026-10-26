@@ -1,5 +1,5 @@
 /* ============================================================
- * AI 数据助手 · 文档识别层 v2（图片 / PDF → 待清洗表格）
+ * AI 数据助手 · 文档识别层 v3（图片 / PDF / Word → 待清洗表格）
  *
  * v1 职责：把现场常见的非结构化来源（拍照记录、检验报告 PDF）转换成
  *          与 CSV/Excel 上传完全一致的 {rows, sheetName, notes} 结构，
@@ -14,10 +14,14 @@
  *   3. 模型输出不是合法 JSON 时，自动发起一次「修复」请求（最多一次）。
  *   4. 模型返回 uncertain（不确定单元格坐标）时置空对应单元格，并在备注里
  *      提示人工核对。
+ * v3 增补 Word（.docx）支持：ZIP 手工解析 + DecompressionStream 解压 +
+ *   轻量 OOXML tokenizer 提取 w:tbl 表格（零第三方依赖、浏览器/Node 一致）；
+ *   多表合并走 mergeGrids；无表格时正文交给大模型兜底提取。
  *
  * 依赖：图片走视觉大模型（app 层的 callVisionLLM）；
  *       PDF 走 pdf.js 文本层（CDN 预载），仅文本扫描版支持，
- *       扫描图片型 PDF 会提示改用截图/拍照走图片识别。
+ *       扫描图片型 PDF 会提示改用截图/拍照走图片识别；
+ *       Word 走浏览器原生 DecompressionStream，未配置模型时无表格文档不能兜底。
  * 挂载：window.BTAssistantDocs
  * ============================================================ */
 (function (global) {
@@ -611,18 +615,19 @@
     return max >= 2 && grid.filter(function (row) { return row.length >= Math.max(2, max - 1); }).length >= grid.length - 1;
   }
 
-  function extractTableFromTextViaLLM(pdfText, fileName) {
+  function extractTableFromTextViaLLM(pdfText, fileName, sourceLabel) {
+    var label = text(sourceLabel) || 'PDF';
     if(!visionLLMAvailable()) {
-      return Promise.reject(new Error('这份 PDF 的文本层没有可识别的表格，且未配置大模型，无法做兜底提取。可尝试截图后用图片识别。'));
+      return Promise.reject(new Error('这份' + label + '的文本层没有可识别的表格，且未配置大模型，无法做兜底提取。可尝试截图后用图片识别。'));
     }
     var messages = [
       { role: 'system', content: '你是严谨的工业数据录入助手，只输出 JSON。' },
       { role: 'user', content: [
-        { type: 'text', text: IMAGE_PROMPT + '\n\n以下是从 PDF《' + fileName + '》提取的文本内容（可能乱序，请按语义恢复表格行列）：\n\n' + pdfText.slice(0, PDF_TEXT_CHAR_LIMIT) }
+        { type: 'text', text: IMAGE_PROMPT + '\n\n以下是从' + label + '《' + fileName + '》提取的文本内容（可能乱序，请按语义恢复表格行列）：\n\n' + pdfText.slice(0, PDF_TEXT_CHAR_LIMIT) }
       ] }
     ];
     return requestGrid(messages, VISION_MAX_TOKENS).then(function (grid) {
-      return buildGridResult(grid, 'PDF 智能提取');
+      return buildGridResult(grid, label + ' 智能提取');
     });
   }
 
@@ -656,14 +661,289 @@
     });
   }
 
+  /* ---------------- Word（.docx）：ZIP 解压 + OOXML 表格提取 ----------------
+   * .docx 是 ZIP 容器，正文在 word/document.xml。这里不依赖任何第三方库：
+   * ZIP 手工解析（EOCD → 中央目录 → 本地头），deflate 用浏览器原生的
+   * DecompressionStream('deflate-raw')；XML 用轻量 tokenizer 提取 w:tbl 表格，
+   * 浏览器与 Node 行为完全一致。没有表格时把正文文字交给大模型兜底提取。 */
+
+  function isDocxFile(name) { return extensionOf(name) === 'docx'; }
+
+  var ZIP_EOCD_SIG = 0x06054b50;
+  var ZIP_CENTRAL_SIG = 0x02014b50;
+  var ZIP_LOCAL_SIG = 0x04034b50;
+  var ZIP_EOCD_MAX_SCAN = 65558;   /* EOCD 最长 22 字节 + 每条目注释上限 65535 */
+  var DOCX_ENTRY_NAME = 'word/document.xml';
+
+  function findEOCD(view) {
+    for (var i = view.byteLength - 22; i >= Math.max(0, view.byteLength - ZIP_EOCD_MAX_SCAN); i -= 1) {
+      if (view.getUint32(i, true) === ZIP_EOCD_SIG) return i;
+    }
+    return -1;
+  }
+
+  /* 解析 ZIP 中央目录：文件名 → { method, compressedSize, localOffset } */
+  function parseZipEntries(buffer) {
+    var view = new DataView(buffer);
+    var eocd = findEOCD(view);
+    if (eocd < 0) throw new Error('这不是有效的 DOCX 文件（找不到 ZIP 目录），请确认文件没有损坏。');
+    var count = view.getUint16(eocd + 10, true);
+    var offset = view.getUint32(eocd + 16, true);
+    var decoder = new TextDecoder('utf-8');
+    var entries = {};
+    for (var i = 0; i < count; i += 1) {
+      if (offset + 46 > view.byteLength || view.getUint32(offset, true) !== ZIP_CENTRAL_SIG) {
+        throw new Error('DOCX 的 ZIP 目录损坏，无法解析。');
+      }
+      var method = view.getUint16(offset + 10, true);
+      var compressedSize = view.getUint32(offset + 20, true);
+      var nameLen = view.getUint16(offset + 28, true);
+      var extraLen = view.getUint16(offset + 30, true);
+      var commentLen = view.getUint16(offset + 32, true);
+      var localOffset = view.getUint32(offset + 42, true);
+      var name = decoder.decode(new Uint8Array(buffer, offset + 46, nameLen));
+      entries[name.replace(/^\/+/, '')] = { method: method, compressedSize: compressedSize, localOffset: localOffset };
+      offset += 46 + nameLen + extraLen + commentLen;
+    }
+    return entries;
+  }
+
+  function collectStream(stream) {
+    if (typeof global.Response === 'function') {
+      return new global.Response(stream).arrayBuffer().then(function (buffer) {
+        return new Uint8Array(buffer);
+      });
+    }
+    var reader = stream.getReader();
+    var chunks = [];
+    function pump() {
+      return reader.read().then(function (result) {
+        if (result.done) {
+          var total = 0;
+          chunks.forEach(function (chunk) { total += chunk.length; });
+          var out = new Uint8Array(total);
+          var offset = 0;
+          chunks.forEach(function (chunk) { out.set(chunk, offset); offset += chunk.length; });
+          return out;
+        }
+        chunks.push(result.value);
+        return pump();
+      });
+    }
+    return pump();
+  }
+
+  /* deflate-raw 解压（ZIP method 8）；环境不支持时给出可操作的中文提示 */
+  function inflateRaw(bytes) {
+    if (typeof global.DecompressionStream !== 'function' || typeof global.ReadableStream !== 'function') {
+      throw new Error('当前浏览器不支持解压 DOCX，请改用较新版本的 Chrome / Edge，或把内容另存为 CSV / 截图后用图片识别。');
+    }
+    var stream = new global.ReadableStream({
+      start: function (controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      }
+    }).pipeThrough(new global.DecompressionStream('deflate-raw'));
+    return collectStream(stream);
+  }
+
+  function readZipEntry(buffer, entries, name) {
+    var entry = entries[name];
+    if (!entry) return null;
+    var view = new DataView(buffer);
+    var p = entry.localOffset;
+    if (p + 30 > view.byteLength || view.getUint32(p, true) !== ZIP_LOCAL_SIG) {
+      throw new Error('DOCX 内部数据损坏（本地文件头无效）。');
+    }
+    var nameLen = view.getUint16(p + 26, true);
+    var extraLen = view.getUint16(p + 28, true);
+    var dataStart = p + 30 + nameLen + extraLen;
+    if (dataStart + entry.compressedSize > view.byteLength) {
+      throw new Error('DOCX 内部数据损坏（数据长度越界）。');
+    }
+    var raw = new Uint8Array(buffer, dataStart, entry.compressedSize);
+    if (entry.method === 0) return Promise.resolve(raw);
+    if (entry.method !== 8) {
+      return Promise.reject(new Error('DOCX 使用了不支持的压缩方式（method ' + entry.method + '）。'));
+    }
+    return inflateRaw(raw);
+  }
+
+  var XML_ENTITY_RE = /&(?:lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/g;
+
+  function decodeXmlText(value) {
+    return String(value === null || value === undefined ? '' : value).replace(XML_ENTITY_RE, function (entity) {
+      if (entity === '&lt;') return '<';
+      if (entity === '&gt;') return '>';
+      if (entity === '&quot;') return '"';
+      if (entity === '&apos;') return "'";
+      if (entity === '&amp;') return '&';
+      var code = entity.charAt(2) === 'x' || entity.charAt(2) === 'X'
+        ? parseInt(entity.slice(3, -1), 16)
+        : parseInt(entity.slice(2, -1), 10);
+      return isFinite(code) && code > 0 ? String.fromCodePoint(code) : entity;
+    });
+  }
+
+  var XML_TAG_RE = /<\/?[A-Za-z][^>]*>/g;
+  var XML_TAG_NAME_RE = /^<\/?([A-Za-z0-9:]+)/;
+
+  function xmlAttr(tag, attr) {
+    var matched = new RegExp(attr + '\\s*=\\s*("([^"]*)"|\'([^\']*)\')').exec(tag);
+    if (!matched) return '';
+    return matched[2] !== undefined ? matched[2] : matched[3];
+  }
+
+  /* document.xml → { tables: [ [ [单元格,...], ... ], ... ], lines: [正文段落] }。
+     只提取顶层的 w:tbl（嵌套表格随父单元格忽略）；w:gridSpan 补空列对齐；
+     单元格内多段落合并为一段文字。不依赖 DOMParser，浏览器 / Node 行为一致。 */
+  function parseDocxDocument(xmlText) {
+    var tables = [];
+    var lines = [];
+    var tblDepth = 0;
+    var table = null;
+    var row = null;
+    var cell = null;
+    var cellSpan = 1;
+    var paragraph = null;
+    var inT = false;
+    var tBuffer = '';
+    var lastTagEnd = 0;
+    var match;
+
+    function flushT() {
+      if (!inT) return;
+      var piece = decodeXmlText(tBuffer);
+      if (cell) cell.parts.push(piece);
+      else if (paragraph) paragraph.push(piece);
+      tBuffer = '';
+      inT = false;
+    }
+
+    XML_TAG_RE.lastIndex = 0;
+    while ((match = XML_TAG_RE.exec(xmlText)) !== null) {
+      var tag = match[0];
+      if (inT) tBuffer += xmlText.slice(lastTagEnd, match.index);
+      lastTagEnd = XML_TAG_RE.lastIndex;
+      var isClose = tag.charAt(1) === '/';
+      var isSelfClose = tag.charAt(tag.length - 2) === '/';
+      var nameMatch = XML_TAG_NAME_RE.exec(tag);
+      var name = nameMatch ? nameMatch[1] : '';
+
+      if (name === 'w:t') {
+        if (isClose || isSelfClose) flushT();
+        else { flushT(); inT = true; tBuffer = ''; }
+        continue;
+      }
+      flushT();
+
+      if (name === 'w:tbl') {
+        if (isClose) {
+          tblDepth = Math.max(0, tblDepth - 1);
+          if (tblDepth === 0) { table = null; row = null; cell = null; }
+        } else if (!isSelfClose) {
+          tblDepth += 1;
+          if (tblDepth === 1) { table = []; tables.push(table); }
+        }
+        continue;
+      }
+      if (name === 'w:tr') {
+        if (tblDepth === 1 && table) {
+          if (isClose) { if (row) { table.push(row); row = null; } cell = null; }
+          else if (!isSelfClose) { row = []; }
+        }
+        continue;
+      }
+      if (name === 'w:tc') {
+        if (tblDepth === 1 && row) {
+          if (isClose) {
+            var cellText = cell ? cell.parts.join('').replace(/\s+/g, ' ').trim() : '';
+            row.push(cellText);
+            for (var pad = 1; pad < cellSpan; pad += 1) row.push('');
+            cellSpan = 1;
+            cell = null;
+          } else if (!isSelfClose) {
+            cell = { parts: [] };
+          }
+        }
+        continue;
+      }
+      if (name === 'w:gridSpan' && cell && !isClose) {
+        var span = parseInt(xmlAttr(tag, 'w:val'), 10);
+        if (isFinite(span) && span > 1) cellSpan = Math.min(span, 64);
+        continue;
+      }
+      if (name === 'w:p') {
+        if (isClose || isSelfClose) {
+          if (cell) cell.parts.push(' ');
+          else if (tblDepth === 0 && paragraph) {
+            var line = paragraph.join('').replace(/\s+/g, ' ').trim();
+            if (line) lines.push(line);
+            paragraph = null;
+          }
+        } else if (!isSelfClose && tblDepth === 0 && !cell) {
+          paragraph = [];
+        }
+        continue;
+      }
+    }
+    flushT();
+    return { tables: tables, lines: lines };
+  }
+
+  function gridWidth(grid) {
+    var width = 0;
+    grid.forEach(function (row) { width = Math.max(width, cellArray(row).length); });
+    return width;
+  }
+
+  function docxToRows(file) {
+    var name = text(file && file.name) || 'document.docx';
+    return readFileAsArrayBuffer(file).then(function (buffer) {
+      if (!buffer) throw new Error('读取 Word 文件失败。');
+      var entries = parseZipEntries(buffer);
+      var entryName = Object.keys(entries).filter(function (key) { return key === DOCX_ENTRY_NAME; })[0];
+      if (!entryName) throw new Error('这不是标准的 Word 文档（缺少正文部分），请另存为 .docx 后重试。');
+      return readZipEntry(buffer, entries, entryName);
+    }).then(function (bytes) {
+      var xml = new TextDecoder('utf-8').decode(bytes);
+      var parsed = parseDocxDocument(xml);
+      var usable = parsed.tables.filter(function (grid) {
+        return grid.length >= 2 && gridWidth(grid) >= 2;
+      });
+      if (usable.length) {
+        var merged = mergeGrids(usable.map(function (grid) { return normalizeGrid(grid); }));
+        return {
+          rows: merged.rows,
+          sheetName: 'Word 表格',
+          notes: '从 Word 提取 ' + usable.length + ' 个表格；' + merged.notes
+        };
+      }
+      var bodyText = parsed.lines.join('\n').trim();
+      if (bodyText.length > 40) {
+        return extractTableFromTextViaLLM(bodyText, name, 'Word').then(function (result) {
+          return {
+            rows: result.rows,
+            sheetName: 'Word 智能提取',
+            notes: text(result.notes)
+          };
+        });
+      }
+      throw new Error('Word 里没有找到表格或可提取的文字内容，请检查文档内容。');
+    });
+  }
+
   /* ---------------- 导出 ---------------- */
 
   global.BTAssistantDocs = {
-    version: 'v2',
+    version: 'v3',
     isImageFile: isImageFile,
     isPdfFile: isPdfFile,
+    isDocxFile: isDocxFile,
     imageToRows: imageToRows,
     pdfToRows: pdfToRows,
+    docxToRows: docxToRows,
+    parseDocxDocument: parseDocxDocument,
     imageToDataUrl: imageToDataUrl,
     imagesToRows: imagesToRows,
     mergeGrids: mergeGrids,

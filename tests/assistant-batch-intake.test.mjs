@@ -18,7 +18,7 @@ const wiringSource = read("assets/app/assistant-v1.js");
 const uiSource = read("assets/app/assistant-ui-v1.js");
 const coreSource = read("assets/app/assistant-core-v1.js");
 
-const IMAGE_ACCEPT = ".csv,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.pdf";
+const IMAGE_ACCEPT = ".csv,.xlsx,.xls,.docx,.doc,.png,.jpg,.jpeg,.webp,.pdf";
 const MIXED_TIP = "请一次只上传同一类型文件；多张图片可以一起选择";
 const BATCH_LIMIT = 8;
 
