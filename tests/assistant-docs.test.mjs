@@ -56,4 +56,27 @@ assert.match(html, /assistant-docs-v1\.js/, "docs module should be loaded");
 assert.match(html, /pdf\.js\/3\.11\.174\/pdf\.min\.js/, "pdf.js should be loaded from CDN");
 assert.match(css, /\.assistant-panel\.is-dragover/, "drag-over highlight should be styled");
 
-console.log("ok - assistant ingests images/PDF via vision+pdf.js with drag-and-drop, then reuses the cleaning pipeline");
+/* ---------------- v2 提炼层契约：多图批量 / 规范化 / 输出修复 / 不确定单元格 ---------------- */
+
+// 文档识别层对外契约：v2 版本号与新增能力必须可被调用方依赖。
+assert.match(docs, /version: 'v2'/, "docs module should report v2");
+["imagesToRows", "mergeGrids", "normalizeGrid", "normalizeCell"].forEach((name) => {
+  assert.ok(docs.indexOf(name + ": " + name) >= 0, "v2 API should export " + name);
+});
+assert.match(docs, /"uncertain":\[\[数据行号,列号\],\.\.\.\]/, "vision prompt should request uncertain cell coordinates");
+assert.match(docs, /请只输出一个 JSON 对象/, "unparsable model output should trigger a JSON repair request");
+assert.match(docs, /return \{ rows: normalizeGrid\(gridRows\), sheetName: sheetName, notes: notes \}/, "extracted grids must pass through field normalization");
+assert.match(docs, /严禁编造任何数值、编号或日期/, "repair prompt must keep the anti-fabrication rule");
+
+// 接入层：多文件入口与批量接线，识别结果必须回到既有清洗链路。
+assert.match(wiring, /var MAX_BATCH_IMAGES = 8;/, "batch image cap should be declared");
+assert.match(wiring, /if \(event\.kind === 'files'\) \{ handleFiles\(event\.files\); return; \}/, "dispatch should route batch file events");
+assert.match(wiring, /return docs\.imagesToRows\(files, \{/, "batch path should call docs.imagesToRows");
+assert.match(wiring, /handleFiles: handleFiles,/, "wiring facade should expose handleFiles");
+assert.match(wiring, /runCleaning\(rows, batchName, sheetName\)/, "merged batch grid must reuse the shared cleaning pipeline");
+
+// UI：多选入口与单/多文件分流。
+assert.match(ui, /multiple accept="\.csv,\.xlsx,\.xls,\.png,\.jpg,\.jpeg,\.webp,\.pdf"/, "file input should allow multi-select without changing accept");
+assert.match(ui, /emit\(\{ kind: 'files', files: files \}\)/, "multiple files should be dispatched as one batch event");
+
+console.log("ok - assistant ingests images/PDF via vision+pdf.js, batches multi-image extraction through normalization, then reuses the cleaning pipeline");

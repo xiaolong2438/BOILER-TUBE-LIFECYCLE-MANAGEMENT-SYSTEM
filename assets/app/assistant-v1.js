@@ -19,6 +19,8 @@
   var MAX_MESSAGES = 60;
   var MAX_QUERY_ROWS = 12;
   var MAX_IMPORT_ROWS = 5000;
+  /* 批量图片上限：8 张（与 docs.imagesToRows 的 maxFiles 默认值保持一致），避免一次拖入过多图片把模型额度耗光 */
+  var MAX_BATCH_IMAGES = 8;
   var LLM_MAX_TOKENS = 420;
   /* 规则置信度低于该阈值时才让模型参与判意图：全量模型优先会给「帮助」这类明确指令平白加一次往返 */
   var LLM_INTENT_CONFIDENCE_FLOOR = 0.6;
@@ -730,6 +732,98 @@
       setBusy(false);
       render();
       reply('读取文件失败：' + (err && err.message ? err.message : String(err)));
+    });
+  }
+
+  /* ---------------- 多文件入口（批量图片） ---------------- */
+
+  function fileListToArray(fileList) {
+    var files = [];
+    if (!fileList) return files;
+    if (typeof fileList.length === 'number') {
+      for (var i = 0; i < fileList.length; i += 1) {
+        if (fileList[i]) files.push(fileList[i]);
+      }
+      return files;
+    }
+    /* 容错：调用方直接传单个 File（没有 length）时按一个文件处理 */
+    if (fileList.name) files.push(fileList);
+    return files;
+  }
+
+  function isBatchImage(docs, file) {
+    if (!docs || typeof docs.isImageFile !== 'function') return false;
+    return Boolean(docs.isImageFile(text(file && file.name)));
+  }
+
+  /* 一次选中/拖入多个文件时的分流入口：
+     多张图片 → docs.imagesToRows 批量识别 → 与单文件共用 runCleaning 链路（确认导入 / 撤销都照旧）；
+     单个文件 → 转调 handleFile；混合类型 → 明确提示，不进清洗；空列表 → 直接返回。 */
+  function handleFiles(fileList) {
+    var files = fileListToArray(fileList);
+    if (!files.length) return; /* 空列表：不提示、不置忙，保持无副作用 */
+    if (files.length === 1) { handleFile(files[0]); return; } /* 单文件保持既有入口语义 */
+
+    var docs = global.BTAssistantDocs;
+    var allImages = true;
+    for (var i = 0; i < files.length; i += 1) {
+      if (!isBatchImage(docs, files[i])) { allImages = false; break; }
+    }
+    if (!allImages) {
+      reply('请一次只上传同一类型文件；多张图片可以一起选择。');
+      return;
+    }
+    if (files.length > MAX_BATCH_IMAGES) {
+      reply('一次最多上传 ' + MAX_BATCH_IMAGES + ' 张图片（当前 ' + files.length + ' 张），请分批上传。');
+      return;
+    }
+    if (!docs || typeof docs.imagesToRows !== 'function') {
+      reply('图片批量识别组件没有加载成功，请刷新页面后重试。');
+      return;
+    }
+
+    var total = files.length;
+    var batchName = '批量图片(' + total + '张).png';
+    var batchSize = 0;
+    for (var s = 0; s < files.length; s += 1) batchSize += Number(files[s].size) || 0;
+
+    setBusy(true);
+    render();
+    /* 返回 Promise（仅批量路径），调用方与测试可以等待整批识别 + 清洗完成 */
+    return docs.imagesToRows(files, {
+      maxFiles: MAX_BATCH_IMAGES,
+      onProgress: function (index, count, name) {
+        /* 每张开始识别前同步反馈阶段进度；反馈本身失败不能影响识别 */
+        try {
+          pushAssistant({ text: '正在识别第 ' + (index + 1) + '/' + count + ' 张图片…' + (name ? '（' + name + '）' : '') });
+          render();
+        } catch (err) {
+          /* 忽略反馈异常 */
+        }
+      }
+    }).then(function (batch) {
+      setBusy(false);
+      var parsed = batch || {};
+      var rows = Array.isArray(parsed.rows) ? parsed.rows : [];
+      var notes = text(parsed.notes);
+      var sheetName = text(parsed.sheetName) || '图片识别';
+      if (rows.length < 2) {
+        render();
+        reply('识别完成，但内容里没有表格数据行（至少需要一行表头和一行数据）。' + (notes ? '备注：' + notes : ''));
+        return;
+      }
+      state.pendingFile = { name: batchName, size: batchSize, rows: rows, sheetName: sheetName };
+      pushUser({
+        text: '上传文件：' + batchName + (notes ? '（识别备注：' + notes + '）' : ''),
+        attachment: { name: batchName, size: batchSize }
+      });
+      render();
+      /* 复用既有清洗 → 确认导入 → 撤销链路，不另写导入 */
+      runCleaning(rows, batchName, sheetName);
+    }).catch(function (err) {
+      setBusy(false);
+      render();
+      reply('识别失败：' + (err && err.message ? err.message : String(err)));
     });
   }
 
@@ -2030,6 +2124,7 @@
     if (!event || !event.kind) return;
     if (event.kind === 'send') { send(event.text); return; }
     if (event.kind === 'file') { handleFile(event.file); return; }
+    if (event.kind === 'files') { handleFiles(event.files); return; }
     if (event.kind === 'action') { handleAction(event.actionId); return; }
     if (event.kind === 'toggle-history') { state.historyOpen = !state.historyOpen; render(); return; }
     if (event.kind === 'select-history') { openConversation(event.conversationId); return; }
@@ -2094,6 +2189,7 @@
     },
     send: send,
     handleFile: handleFile,
+    handleFiles: handleFiles,
     refresh: function () {
       loadHistory();
       render();

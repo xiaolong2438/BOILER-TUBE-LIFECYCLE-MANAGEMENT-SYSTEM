@@ -188,7 +188,7 @@
       '  </div>',
       '  <div class="assistant-composer">',
       '    <label class="assistant-attach" id="assistantAttach" data-assistant="attach" for="assistantFile" role="button" tabindex="0" aria-label="上传表格 / 图片 / PDF 文件" title="上传 CSV / Excel / 图片 / PDF">上传</label>',
-      '    <input class="assistant-file" id="assistantFile" type="file" accept=".csv,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.pdf" tabindex="-1" aria-hidden="true" />',
+      '    <input class="assistant-file" id="assistantFile" type="file" multiple accept=".csv,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.pdf" tabindex="-1" aria-hidden="true" />',
       '    <textarea class="assistant-input" id="assistantInput" rows="1" maxlength="2000" placeholder="用一句话说明需求；表格/图片/PDF 可直接拖入本窗口" aria-label="向 AI 数据助手提问"></textarea>',
       '    <button type="button" class="assistant-send" id="assistantSend" data-assistant="send" aria-label="发送">↑</button>',
       '  </div>',
@@ -959,14 +959,30 @@
       if (els.file && typeof els.file.click === 'function') els.file.click();
     }
 
+    /* 一次选择/拖入的多个文件按数量分流：1 个走原有单文件事件，多个走批量事件 */
+    function collectFiles(fileList) {
+      var files = [];
+      if (!fileList || typeof fileList.length !== 'number') return files;
+      for (var i = 0; i < fileList.length; i += 1) {
+        if (fileList[i]) files.push(fileList[i]);
+      }
+      return files;
+    }
+
+    function emitFiles(files) {
+      if (!files.length) return;
+      if (currentBusy()) return;
+      if (files.length === 1) { emit({ kind: 'file', file: files[0] }); return; }
+      emit({ kind: 'files', files: files });
+    }
+
     function onFileChange() {
-      var files = els.file && els.file.files;
-      var file = files && files.length ? files[0] : null;
+      var files = collectFiles(els.file && els.file.files);
       if (els.file) {
         try { els.file.value = ''; } catch (err) { /* 某些浏览器禁止清空，忽略 */ }
       }
-      if (!file || currentBusy()) return;
-      emit({ kind: 'file', file: file });
+      /* 清空后再派发，保证同一批文件可以再次选择 */
+      emitFiles(files);
     }
 
     function onMessagesScroll() {
@@ -1010,11 +1026,7 @@
       if (event.stopPropagation) event.stopPropagation();
       dragDepth = 0;
       if (els.panel && typeof els.panel.classList !== 'undefined') els.panel.classList.remove('is-dragover');
-      var files = event.dataTransfer && event.dataTransfer.files;
-      var file = files && files.length ? files[0] : null;
-      if (!file) return;
-      if (currentBusy()) return;
-      emit({ kind: 'file', file: file });
+      emitFiles(collectFiles(event.dataTransfer && event.dataTransfer.files));
     }
 
     function onDocKeyDown(event) {
