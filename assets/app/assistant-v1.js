@@ -24,6 +24,11 @@
   var LLM_MAX_TOKENS = 420;
   /* 规则置信度低于该阈值时才让模型参与判意图：全量模型优先会给「帮助」这类明确指令平白加一次往返 */
   var LLM_INTENT_CONFIDENCE_FLOOR = 0.6;
+  /* 图片追问：视觉模型看不到图就算失败，给独立的长超时；多轮历史只带最近 6 轮、单条 200 字 */
+  var VISION_MAX_TOKENS = 1200;
+  var VISION_TIMEOUT = 60000;
+  var HISTORY_FOR_LLM_TURNS = 6;
+  var HISTORY_TURN_MAX_CHARS = 200;
 
   var state = {
     messages: [],
@@ -36,6 +41,11 @@
     lastImport: null,
     lastEdit: null,
     lastAnalysis: null,
+    /* 会话附件上下文：attachments 为惰性创建的 registry（含明细与原图）；
+       savedAttachments 是历史会话回填的摘要（只有元信息，无明细/原图） */
+    attachments: null,
+    savedAttachments: [],
+    savedAttachmentId: null,
     mounted: false
   };
   var controller = null;
@@ -270,6 +280,7 @@
           id: text(item.id),
           title: text(item.title) || '未命名会话',
           updatedAt: text(item.updatedAt) || nowIso(),
+          attachments: restoreAttachmentsFromSummary(item.attachments),
           messages: Array.isArray(item.messages) ? item.messages.filter(function (msg) {
             return msg && (msg.role === 'user' || msg.role === 'assistant') && text(msg.text);
           }).slice(-MAX_MESSAGES).map(function (msg) {
@@ -292,6 +303,18 @@
         id: conv.id,
         title: conv.title,
         updatedAt: conv.updatedAt,
+        /* 附件只持久化摘要：明细与原图留在内存，历史会话回填展示 */
+        attachments: (Array.isArray(conv.attachments) ? conv.attachments : []).map(function (item) {
+          return {
+            seq: item.seq,
+            name: item.name,
+            kind: item.kind,
+            rowCount: item.rowCount,
+            notes: item.notes,
+            at: item.at,
+            importedAt: item.importedAt
+          };
+        }),
         messages: conv.messages.slice(-MAX_MESSAGES).map(function (msg) {
           return { id: msg.id, role: msg.role, text: msg.text, createdAt: msg.createdAt };
         })
@@ -314,6 +337,7 @@
       return { id: msg.id, role: msg.role, text: msg.text, createdAt: msg.createdAt };
     });
     conv.updatedAt = nowIso();
+    conv.attachments = attachmentStorageSummary();
     if (conv.title === '新会话' || !conv.title) {
       var firstUser = null;
       for (var j = 0; j < conv.messages.length; j += 1) {
@@ -333,6 +357,8 @@
     state.historyOpen = false;
     state.pendingFile = null;
     state.pendingCleaning = null;
+    /* 新会话不继承上一会话的附件：明细与原图一起清空 */
+    clearAttachmentRegistry();
     syncConversation();
     render();
   }
@@ -350,6 +376,12 @@
     state.historyOpen = false;
     state.pendingFile = null;
     state.pendingCleaning = null;
+    /* 历史会话只回填附件摘要：明细与原图不恢复，图片追问会提示重新上传 */
+    clearAttachmentRegistry();
+    state.savedAttachments = restoreAttachmentsFromSummary(conv.attachments);
+    state.savedAttachmentId = state.savedAttachments.length
+      ? state.savedAttachments[state.savedAttachments.length - 1].id
+      : null;
     render();
   }
 
@@ -361,6 +393,594 @@
     }
     saveHistory();
     render();
+  }
+
+  /* ---------------- 会话附件上下文（多轮对话的记忆） ----------------
+     依赖 T1 的 window.BTAssistantAttachments（纯逻辑模块，契约冻结）：
+     本层只做接线——登记上传结果、指代解析、图片追问、离线元信息问答与重复导入保护。
+     模块缺失时，附件相关路径给出中文提示，上传与清洗链路照旧可用。 */
+
+  var ATTACHMENT_KIND_LABELS = { image: '图片', pdf: 'PDF', table: '表格' };
+
+  function attachmentsModule() {
+    return global.BTAssistantAttachments || null;
+  }
+
+  /* registry 惰性创建：模块没加载时不抛错，返回 null 让调用方走提示分支 */
+  function attachmentRegistry() {
+    var module = attachmentsModule();
+    if (!module || typeof module.createRegistry !== 'function') return null;
+    if (!state.attachments) {
+      try {
+        state.attachments = module.createRegistry();
+      } catch (err) {
+        state.attachments = null;
+        return null;
+      }
+    }
+    return state.attachments;
+  }
+
+  function attachmentRecords() {
+    var registry = attachmentRegistry();
+    if (!registry || typeof registry.list !== 'function') return [];
+    try {
+      var list = registry.list();
+      return Array.isArray(list) ? list : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function copyRecordFields(source) {
+    var copy = {};
+    Object.keys(source || {}).forEach(function (key) { copy[key] = source[key]; });
+    return copy;
+  }
+
+  function summarizeAttachment(record) {
+    var item = record && typeof record === 'object' ? record : {};
+    return {
+      id: text(item.id),
+      seq: Number(item.seq) || 0,
+      name: text(item.name) || '未命名附件',
+      kind: text(item.kind) || 'table',
+      rowCount: Number(item.rowCount) || 0,
+      headers: Array.isArray(item.headers) ? item.headers.slice(0, 12).map(text) : [],
+      notes: text(item.notes),
+      size: Number(item.size) || 0,
+      at: text(item.at),
+      importedAt: text(item.importedAt),
+      hasDataUrl: Boolean(text(item.dataUrl)),
+      restored: Boolean(item.restored)
+    };
+  }
+
+  /* 当前附件：优先内存 registry；没有明细时回落到历史会话摘要 */
+  function currentAttachmentRecord() {
+    var registry = attachmentRegistry();
+    if (registry && typeof registry.current === 'function') {
+      try {
+        var record = registry.current();
+        if (record) return record;
+      } catch (err) { /* 落到摘要视图 */ }
+    }
+    var saved = state.savedAttachments;
+    for (var i = 0; i < saved.length; i += 1) {
+      if (saved[i].id === state.savedAttachmentId) return saved[i];
+    }
+    return saved.length ? saved[saved.length - 1] : null;
+  }
+
+  function currentAttachmentId() {
+    var record = currentAttachmentRecord();
+    return record ? text(record.id) : '';
+  }
+
+  function attachmentList() {
+    var activeId = currentAttachmentId();
+    var records = attachmentRecords();
+    if (records.length) {
+      return records.map(function (record) {
+        var item = summarizeAttachment(record);
+        item.current = item.id === activeId;
+        return item;
+      });
+    }
+    return state.savedAttachments.map(function (item) {
+      var copy = copyRecordFields(item);
+      copy.current = text(copy.id) === activeId;
+      return copy;
+    });
+  }
+
+  function attachmentCount() {
+    return attachmentList().length;
+  }
+
+  function attachmentRowsOf(record) {
+    if (!record || !Array.isArray(record.rows) || record.rows.length < 2) return null;
+    return record.rows;
+  }
+
+  function attachmentKindLabel(kind) {
+    return ATTACHMENT_KIND_LABELS[text(kind)] || '附件';
+  }
+
+  function attachmentTimeLabel(value) {
+    var stamp = text(value);
+    if (!stamp) return '';
+    var date = new Date(stamp);
+    if (isNaN(date.getTime())) return stamp;
+    try {
+      return date.toLocaleString('zh-CN', { hour12: false });
+    } catch (err) {
+      return stamp;
+    }
+  }
+
+  function registerAttachment(input) {
+    var registry = attachmentRegistry();
+    if (!registry || typeof registry.add !== 'function' || !input) return null;
+    try {
+      return registry.add(input);
+    } catch (err) {
+      if (global.console && typeof global.console.error === 'function') global.console.error('[AI 助手] 登记会话附件失败', err);
+      return null;
+    }
+  }
+
+  /* 图片附件：识别结果自带压缩原图时直接登记；否则异步补一次压缩。
+     压缩失败只记备注（追问时给明确提示），绝不阻断上传与清洗流程。 */
+  function registerImageAttachment(input, file) {
+    if (text(input && input.dataUrl)) {
+      registerAttachment(input);
+      return;
+    }
+    registerAttachment(input);
+    var docs = global.BTAssistantDocs;
+    if (!file || !docs || typeof docs.imageToDataUrl !== 'function') return;
+    Promise.resolve().then(function () {
+      return docs.imageToDataUrl(file);
+    }).then(function (dataUrl) {
+      if (!text(dataUrl)) return;
+      var copy = copyRecordFields(input);
+      copy.dataUrl = dataUrl;
+      registerAttachment(copy);
+      render();
+    }).catch(function (err) {
+      var reason = err && err.message ? err.message : String(err);
+      if (global.console && typeof global.console.warn === 'function') global.console.warn('[AI 助手] 图片原图压缩失败：' + reason);
+      var copy = copyRecordFields(input);
+      copy.notes = (text(copy.notes) ? text(copy.notes) + '；' : '') + '原图压缩失败：' + reason;
+      registerAttachment(copy);
+    });
+  }
+
+  function clearAttachmentRegistry() {
+    var registry = attachmentRegistry();
+    if (registry && typeof registry.clear === 'function') {
+      try { registry.clear(); } catch (err) { /* 忽略 */ }
+    }
+    state.savedAttachments = [];
+    state.savedAttachmentId = null;
+  }
+
+  /* 持久化只用摘要：明细与原图留在内存，历史会话只回填展示 */
+  function attachmentStorageSummary() {
+    return attachmentList().map(function (item) {
+      return {
+        seq: item.seq,
+        name: item.name,
+        kind: item.kind,
+        rowCount: item.rowCount,
+        notes: item.notes,
+        at: item.at,
+        importedAt: item.importedAt
+      };
+    });
+  }
+
+  function restoreAttachmentsFromSummary(raw) {
+    var list = Array.isArray(raw) ? raw : [];
+    var restored = [];
+    for (var i = 0; i < list.length; i += 1) {
+      var item = list[i] && typeof list[i] === 'object' ? list[i] : null;
+      if (!item || !text(item.name)) continue;
+      var seq = Number(item.seq) || (i + 1);
+      restored.push({
+        id: 'saved-' + seq,
+        seq: seq,
+        name: text(item.name),
+        kind: text(item.kind) || 'table',
+        rowCount: Number(item.rowCount) || 0,
+        headers: [],
+        notes: text(item.notes),
+        size: 0,
+        at: text(item.at),
+        importedAt: text(item.importedAt),
+        hasDataUrl: false,
+        restored: true,
+        current: false
+      });
+    }
+    return restored;
+  }
+
+  function selectAttachment(id) {
+    var target = text(id);
+    if (!target) return null;
+    var records = attachmentRecords();
+    if (records.length) {
+      var record = null;
+      var registry = attachmentRegistry();
+      try { record = registry.select(target); } catch (err) { record = null; }
+      if (!record) {
+        reply('没有找到这个附件（可能已被移除，或被新上传的附件挤出会话）。');
+        return null;
+      }
+      render();
+      return record;
+    }
+    for (var i = 0; i < state.savedAttachments.length; i += 1) {
+      if (state.savedAttachments[i].id === target) {
+        state.savedAttachmentId = target;
+        render();
+        return state.savedAttachments[i];
+      }
+    }
+    reply('没有找到这个附件，可能已经被移除。');
+    return null;
+  }
+
+  function removeAttachment(id) {
+    var target = text(id);
+    if (!target) return false;
+    if (attachmentRecords().length) {
+      var registry = attachmentRegistry();
+      var removed = false;
+      try { removed = Boolean(registry.remove(target)); } catch (err) { removed = false; }
+      if (!removed) { reply('移除失败：没有找到这个附件。'); return false; }
+      render();
+      return true;
+    }
+    var before = state.savedAttachments.length;
+    state.savedAttachments = state.savedAttachments.filter(function (item) { return item.id !== target; });
+    if (state.savedAttachments.length === before) { reply('移除失败：没有找到这个附件。'); return false; }
+    if (state.savedAttachmentId === target) {
+      state.savedAttachmentId = state.savedAttachments.length ? state.savedAttachments[state.savedAttachments.length - 1].id : null;
+    }
+    render();
+    return true;
+  }
+
+  function clearAttachments() {
+    var count = attachmentCount();
+    clearAttachmentRegistry();
+    if (count) reply('已清空会话附件（' + count + ' 个）。重新上传文件会重新登记。');
+    else render();
+  }
+
+  function describeAttachments() {
+    var list = attachmentList();
+    var module = attachmentsModule();
+    var registry = attachmentRegistry();
+    if (list.length && module && registry && typeof module.describeRegistry === 'function') {
+      try {
+        var summary = text(module.describeRegistry(registry));
+        if (summary) return summary;
+      } catch (err) { /* 落到本地兜底 */ }
+    }
+    if (!list.length) return '当前会话还没有附件。';
+    var parts = list.map(function (item, index) {
+      return (index + 1) + ') ' + item.name + '（' + attachmentKindLabel(item.kind)
+        + (item.rowCount > 0 ? '，' + item.rowCount + ' 行' : '')
+        + (item.importedAt ? '，已导入' : '') + '）';
+    });
+    return '会话附件 ' + list.length + ' 个：' + parts.join('；') + '。';
+  }
+
+  /* 送模型的附件摘要（不含 rows 与 dataUrl） */
+  function attachmentsForLlm() {
+    var module = attachmentsModule();
+    var registry = attachmentRegistry();
+    var records = attachmentRecords();
+    if (records.length && module && registry && typeof module.contextForLlm === 'function') {
+      try {
+        var context = module.contextForLlm(registry);
+        if (context && typeof context === 'object') return context;
+      } catch (err) { /* 落到本地兜底 */ }
+    }
+    var currentSeq = null;
+    var compact = attachmentList().map(function (item) {
+      if (item.current) currentSeq = item.seq;
+      return { seq: item.seq, name: item.name, kind: item.kind, rowCount: item.rowCount, headers: item.headers };
+    });
+    return { attachments: compact, current: currentSeq };
+  }
+
+  /* 最近 N 轮 role/text：可选脱敏，单条截断 200 字（送模型的上下文一律瘦身） */
+  function conversationHistoryForLlm(limit, mask) {
+    var maxTurns = typeof limit === 'number' && limit > 0 ? limit : HISTORY_FOR_LLM_TURNS;
+    var list = state.messages.slice();
+    /* 末条通常是本轮刚推送的用户消息，不重复塞进 history */
+    if (list.length && list[list.length - 1] && list[list.length - 1].role === 'user') list = list.slice(0, -1);
+    var picked = list.slice(-maxTurns);
+    var out = [];
+    for (var i = 0; i < picked.length; i += 1) {
+      var body = text(picked[i].text);
+      var line = (mask ? maskSensitive(body) : body).slice(0, HISTORY_TURN_MAX_CHARS);
+      if (!line) continue;
+      out.push({ role: picked[i].role === 'user' ? 'user' : 'assistant', text: line });
+    }
+    return out;
+  }
+
+  function isImageQuestionText(raw) {
+    var module = attachmentsModule();
+    if (!module || typeof module.isImageQuestion !== 'function') return false;
+    try {
+      return Boolean(module.isImageQuestion(text(raw)));
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /* 指代解析：解析不出就返回 null，由调用方回落到“当前附件” */
+  function attachmentReference(raw) {
+    var module = attachmentsModule();
+    var registry = attachmentRegistry();
+    if (!module || !registry || typeof module.resolveReference !== 'function') return null;
+    try {
+      var resolved = module.resolveReference(text(raw), registry);
+      if (resolved && resolved.ok && resolved.record) return resolved.record;
+    } catch (err) { /* 忽略 */ }
+    return null;
+  }
+
+  function attachmentRowCountText(record) {
+    var item = summarizeAttachment(record);
+    if (!item.rowCount) return '附件「' + item.name + '」没有可统计的数据行。';
+    var lines = ['附件「' + item.name + '」（' + attachmentKindLabel(item.kind) + '）共 ' + item.rowCount + ' 行数据'];
+    if (item.headers.length) lines.push('表头：' + item.headers.join(' | '));
+    if (item.importedAt) lines.push('已于 ' + (attachmentTimeLabel(item.importedAt) || item.importedAt) + ' 导入。');
+    return lines.join(String.fromCharCode(10));
+  }
+
+  function attachmentColumnsText(record) {
+    var item = summarizeAttachment(record);
+    if (!item.headers.length) {
+      return '附件「' + item.name + '」的表头没有保留（历史会话只保存摘要）。请重新上传这个文件后再查看列名。';
+    }
+    return '附件「' + item.name + '」共 ' + item.headers.length + ' 列：' + item.headers.join(' | ');
+  }
+
+  /* 附件元信息的离线问答：不需要模型，在规则路由之前接住这类明确问法 */
+  function answerAttachmentMeta(raw) {
+    if (!attachmentCount()) return false;
+    var question = text(raw).replace(/\s+/g, '');
+    if (!question) return false;
+    var aboutAttachments = /附件|文件/.test(question) && !/导出|下载/.test(question);
+    var aboutCurrent = /(这个|这张|该|这份|当前|刚才的|刚上传的|最新的|上一个)(表|表格|图|图片|文件|附件|pdf)/i.test(question);
+    var listing = /(几个|多少|数量|几条|几项|列表|清单|哪些|有什么|列出)/.test(question);
+    var rowQuestion = /(多少行|几行|行数|多少条数据|多少条记录|几条数据|几条记录)/.test(question);
+    var columnQuestion = /(哪些列|什么列|列名|表头|哪些字段|什么字段)/.test(question);
+    var refersToAttachment = aboutAttachments || aboutCurrent || (columnQuestion && question.length <= 12);
+    if (!refersToAttachment) return false;
+    if (!listing && !rowQuestion && !columnQuestion) return false;
+    var record = attachmentReference(question) || currentAttachmentRecord();
+    if (!record) return false;
+    if (rowQuestion) { reply(attachmentRowCountText(record)); return true; }
+    if (columnQuestion) { reply(attachmentColumnsText(record)); return true; }
+    reply(describeAttachments());
+    return true;
+  }
+
+  /* 纯指代切换：只有指代词、没有具体诉求（如「第二张图呢」「换成第一个」） */
+  function isBareAttachmentReference(raw) {
+    var question = text(raw).replace(/\s+/g, '');
+    if (!question) return false;
+    if (/(导入|入库|录入|清洗|导出|下载|查询|查一下|删除|移除|分析|趋势|多少|几行|几个|几列|哪些|什么|为什么|怎么|总结|看看|念一下|读一下|帮助)/.test(question)) return false;
+    return /(呢|吧|切换|换成|换到|看这个|看这张|看第|用这个|用第|切换到)/.test(question) || question.length <= 8;
+  }
+
+  function describeCurrentAttachment() {
+    var record = currentAttachmentRecord();
+    if (!record) return '';
+    var item = summarizeAttachment(record);
+    return '当前附件：' + item.name + '（' + attachmentKindLabel(item.kind)
+      + (item.rowCount > 0 ? '，' + item.rowCount + ' 行' : '') + '）。';
+  }
+
+  /* 规则判为 unknown 时的兜底：只要在问附件本身，就给附件清单而不是「没听懂」 */
+  function attachmentOverviewFallback(raw) {
+    if (!attachmentCount()) return false;
+    var question = text(raw);
+    if (!/附件|文件/.test(question)) return false;
+    reply(describeAttachments());
+    return true;
+  }
+
+  /* 图片追问：视觉重发原图 + 多轮历史；任何前置条件不满足都明确说明，禁止静默降级到规则 */
+  function askAboutImage(message) {
+    var raw = text(message).trim();
+    var module = attachmentsModule();
+    if (!module || typeof module.buildVisionMessages !== 'function') {
+      reply('会话附件组件没有加载成功，暂时无法基于图片追问；请刷新页面后重试。');
+      return null;
+    }
+    var current = currentAttachmentRecord();
+    if (!current) {
+      reply('当前会话还没有附件。请先上传图片（png / jpg / webp），我再用视觉模型看图回答。');
+      return null;
+    }
+    var name = text(current.name) || '未命名图片';
+    if (text(current.kind) !== 'image') {
+      reply('当前附件「' + name + '」是' + attachmentKindLabel(current.kind) + '，不是图片，没法看图回答。可以问「这个表多少行」，或先上传图片再追问。');
+      return null;
+    }
+    if (!text(current.dataUrl)) {
+      reply('当前图片附件「' + name + '」的原图没有保留（历史会话只保存摘要）。请重新上传这张图片后再追问。');
+      return null;
+    }
+    if (!llmConfigured() || typeof global.callVisionLLM !== 'function') {
+      reply('图片追问需要配置支持视觉的大模型：请在总览「模型接口配置」填写 API Key 并选择模型，然后再问一次。');
+      return null;
+    }
+    var messages = null;
+    try {
+      messages = module.buildVisionMessages({
+        history: conversationHistoryForLlm(HISTORY_FOR_LLM_TURNS, false),
+        message: raw,
+        registry: attachmentRegistry(),
+        maxTurns: HISTORY_FOR_LLM_TURNS
+      });
+    } catch (err) {
+      messages = null;
+    }
+    if (!messages || !messages.length) {
+      reply('图片追问失败：没能组装出视觉请求，请重新上传图片后再试。');
+      return null;
+    }
+    setBusy(true);
+    render();
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      setBusy(false);
+      render();
+      reply('图片追问失败：模型调用超时。可以改用「导入」把图片转成数据，或稍后重试。');
+    }, VISION_TIMEOUT);
+    global.callVisionLLM(messages, VISION_MAX_TOKENS).then(function (answer) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      setBusy(false);
+      var body = text(answer).trim() || '（模型没有返回内容）';
+      reply('【基于图片 ' + name + '】' + String.fromCharCode(10) + body);
+    }).catch(function (err) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      setBusy(false);
+      render();
+      reply('图片追问失败：' + ((err && err.message) ? err.message : '未知错误') + '。可以改用「导入」把图片转成数据，或稍后重试。');
+    });
+    return messages;
+  }
+
+  /* 批量图片：逐张登记（results[i] 的 rows 与原图 dataUrl），current 自然落在最后一张 */
+  function registerBatchAttachments(files, results) {
+    var list = Array.isArray(results) ? results : [];
+    var source = fileListToArray(files);
+    var registered = 0;
+    for (var i = 0; i < list.length; i += 1) {
+      var item = list[i] && typeof list[i] === 'object' ? list[i] : null;
+      if (!item || item.ok === false) continue;
+      var file = source[i] || null;
+      registerImageAttachment({
+        name: text(item.name) || ('图片' + (i + 1)),
+        kind: 'image',
+        rows: item.rows,
+        sheetName: text(item.sheetName) || '图片识别',
+        notes: text(item.notes),
+        size: file && file.size ? Number(file.size) || 0 : 0,
+        dataUrl: text(item.dataUrl)
+      }, file);
+      registered += 1;
+    }
+    return registered;
+  }
+
+  /* 登记后给一份清单，明确「之后可以用指代继续问」 */
+  function replyAttachmentRoster() {
+    if (!attachmentCount()) return;
+    var list = attachmentList();
+    var lines = ['已登记 ' + list.length + ' 个会话附件（可在消息区上方切换当前附件）：'];
+    list.forEach(function (item, index) {
+      lines.push((index + 1) + '. ' + item.name + '（' + attachmentKindLabel(item.kind)
+        + (item.rowCount > 0 ? '，' + item.rowCount + ' 行' : '') + '）' + (item.current ? ' · 当前' : ''));
+    });
+    lines.push('接下来可以问「这张图里有几个测点」「第二张图呢」「这个表多少行」，或直接说导入。');
+    pushAssistant({ text: lines.join(String.fromCharCode(10)) });
+    render();
+  }
+
+  /* 导入成功后在附件上打 importedAt：重复导入保护与「已于何时导入」提示都依赖它 */
+  function markAttachmentImported(fileName) {
+    var records = attachmentRecords();
+    if (!records.length) return;
+    var wanted = text(fileName);
+    var target = null;
+    for (var i = 0; i < records.length; i += 1) {
+      if (wanted && text(records[i].name) === wanted) { target = records[i]; break; }
+    }
+    if (!target) {
+      var registry = attachmentRegistry();
+      if (registry && typeof registry.current === 'function') {
+        try { target = registry.current(); } catch (err) { target = null; }
+      }
+    }
+    if (!target || !text(target.id)) return;
+    var stamp = nowIso();
+    try { target.importedAt = stamp; } catch (err) { /* 只读记录走替换分支 */ }
+    var latest = null;
+    var recordsNow = attachmentRecords();
+    for (var k = 0; k < recordsNow.length; k += 1) {
+      if (text(recordsNow[k].id) === text(target.id)) { latest = recordsNow[k]; break; }
+    }
+    if (latest && text(latest.importedAt)) return;
+    var copy = copyRecordFields(target);
+    copy.importedAt = stamp;
+    registerAttachment(copy);
+  }
+
+  function importedAttachment() {
+    var record = currentAttachmentRecord();
+    if (!record || !text(record.importedAt)) return null;
+    if (!attachmentRowsOf(record)) return null;
+    return record;
+  }
+
+  function showRepeatImportGuard(record) {
+    var item = summarizeAttachment(record);
+    var when = attachmentTimeLabel(item.importedAt) || '刚才';
+    var rows = item.rowCount || Math.max(0, (record.rows ? record.rows.length : 1) - 1);
+    pushAssistant({
+      text: '该附件已于 ' + when + ' 导入过（' + rows + ' 行）。如需再次导入，请点下方「再次导入」。',
+      operation: {
+        tool: 'data.import',
+        datasetType: 'unknown',
+        title: '重复导入确认',
+        detail: '再次导入会重新清洗并写入这批数据，可能产生重复记录；建议先到「数据录入」页核对。',
+        metrics: [
+          { label: '附件', value: item.name },
+          { label: '行数', value: String(rows) },
+          { label: '上次导入', value: when }
+        ],
+        warnings: ['再次导入会产生重复记录，请确认确有必要。'],
+        status: 'ready',
+        primaryAction: { id: 'import-again', label: '再次导入' },
+        secondaryActions: [{ id: 'clean-cancel', label: '取消', tone: 'ghost' }]
+      }
+    });
+    render();
+  }
+
+  /* 点「再次导入」之后才重新走 清洗 → 确认导入 */
+  function repeatImportCurrentAttachment() {
+    var record = currentAttachmentRecord();
+    var rows = attachmentRowsOf(record);
+    if (!record || !rows) {
+      reply('再次导入失败：当前附件的明细已不在内存中（可能来自历史会话），请重新上传这个文件后再导入。');
+      return;
+    }
+    var name = text(record.name) || '未命名附件';
+    var sheetName = text(record.sheetName);
+    reply('开始再次导入「' + name + '」：先重新清洗，确认后再写入台账。');
+    state.pendingFile = { name: name, size: Number(record.size) || 0, rows: rows, sheetName: sheetName };
+    runCleaning(rows, name, sheetName);
   }
 
   /* ---------------- 消息 ---------------- */
@@ -444,6 +1064,8 @@
       historyOpen: state.historyOpen,
       configured: llmConfigured(),
       role: currentRole(),
+      attachments: attachmentList(),
+      currentAttachmentId: currentAttachmentId() || null,
       unread: false
     };
   }
@@ -677,6 +1299,26 @@
           return;
         }
         state.pendingFile = { name: name, size: file.size || 0, rows: rows, sheetName: parsed.sheetName || '文档识别' };
+        if (docKind === 'image') {
+          registerImageAttachment({
+            name: name,
+            kind: 'image',
+            rows: rows,
+            sheetName: parsed.sheetName || '图片识别',
+            notes: text(parsed.notes),
+            size: file.size || 0,
+            dataUrl: text(parsed.dataUrl)
+          }, file);
+        } else {
+          registerAttachment({
+            name: name,
+            kind: 'pdf',
+            rows: rows,
+            sheetName: parsed.sheetName || '文档识别',
+            notes: text(parsed.notes),
+            size: file.size || 0
+          });
+        }
         pushUser({
           text: '上传文件：' + name + (parsed.notes ? '（识别备注：' + parsed.notes + '）' : ''),
           attachment: { name: name, size: file.size || 0 }
@@ -722,6 +1364,13 @@
         return;
       }
       state.pendingFile = { name: name, size: file.size || 0, rows: rows, sheetName: parsed.sheetName || '' };
+      registerAttachment({
+        name: name,
+        kind: 'table',
+        rows: rows,
+        sheetName: parsed.sheetName || '',
+        size: file.size || 0
+      });
       pushUser({
         text: '上传文件：' + name,
         attachment: { name: name, size: file.size || 0 }
@@ -813,11 +1462,13 @@
         return;
       }
       state.pendingFile = { name: batchName, size: batchSize, rows: rows, sheetName: sheetName };
+      registerBatchAttachments(files, parsed.results);
       pushUser({
         text: '上传文件：' + batchName + (notes ? '（识别备注：' + notes + '）' : ''),
         attachment: { name: batchName, size: batchSize }
       });
       render();
+      replyAttachmentRoster();
       /* 复用既有清洗 → 确认导入 → 撤销链路，不另写导入 */
       runCleaning(rows, batchName, sheetName);
     }).catch(function (err) {
@@ -865,6 +1516,7 @@
         imported: materialResult.imported || 0
       };
       writeJSON(LAST_IMPORT_KEY, state.lastImport);
+      markAttachmentImported(report.fileName);
       return {
         ok: true,
         summary: '材料库导入完成：更新/新增 ' + (materialResult.imported || 0) + ' 条记录。',
@@ -895,6 +1547,7 @@
       skippedDuplicates: result.skippedDuplicates || 0
     };
     writeJSON(LAST_IMPORT_KEY, state.lastImport);
+    markAttachmentImported(report.fileName);
     var summary = '导入完成：新增事件 ' + state.lastImport.importedEvents + ' 条、更换 ' + state.lastImport.importedReplacements + ' 条';
     if (state.lastImport.skippedDuplicates) summary += '，跳过重复 ' + state.lastImport.skippedDuplicates + ' 条';
     if (result.skippedMismatch) summary += '，机组不匹配 ' + result.skippedMismatch + ' 条';
@@ -1782,9 +2435,16 @@
       headers: Array.isArray(ctx.headers) ? ctx.headers.slice(0, 20) : [],
       counts: ctx.counts || {}
     };
+    /* 多轮上下文：最近 6 轮（脱敏、单条 200 字）+ 会话附件摘要，不改变「必须返回 JSON 意图」的契约 */
+    var payload = {
+      message: maskSensitive(message),
+      context: context,
+      history: conversationHistoryForLlm(HISTORY_FOR_LLM_TURNS, true),
+      attachments: attachmentsForLlm()
+    };
     return [
       { role: 'system', content: system },
-      { role: 'user', content: JSON.stringify({ message: maskSensitive(message), context: context }) }
+      { role: 'user', content: JSON.stringify(payload) }
     ];
   }
 
@@ -1869,6 +2529,13 @@
       runCleaning(state.pendingFile.rows, state.pendingFile.name, state.pendingFile.sheetName);
       return;
     }
+    /* 导入完成后明细仍留在会话附件里：说「清洗」可以直接重跑，不用重新上传 */
+    var attachment = currentAttachmentRecord();
+    var attachmentRows = attachmentRowsOf(attachment);
+    if (attachment && attachmentRows) {
+      runCleaning(attachmentRows, text(attachment.name), text(attachment.sheetName));
+      return;
+    }
     if (intent && intent.reply) reply(intent.reply);
     else requestFileReply();
   }
@@ -1909,6 +2576,18 @@
     }
     if (state.pendingFile) {
       runCleaning(state.pendingFile.rows, state.pendingFile.name, state.pendingFile.sheetName);
+      return;
+    }
+    /* 无待清洗结果但有会话附件：已导入过的先给重复导入保护，没导入过的重新走 清洗 → 确认导入 */
+    var imported = importedAttachment();
+    if (imported) {
+      showRepeatImportGuard(imported);
+      return;
+    }
+    var attachment = currentAttachmentRecord();
+    var attachmentRows = attachmentRowsOf(attachment);
+    if (attachment && attachmentRows) {
+      runCleaning(attachmentRows, text(attachment.name), text(attachment.sheetName));
       return;
     }
     if (intent && intent.reply) reply(intent.reply);
@@ -2003,6 +2682,7 @@
 
   function handleAction(actionId) {
     if (actionId === 'import-confirm') { executeImport(); return; }
+    if (actionId === 'import-again') { repeatImportCurrentAttachment(); return; }
     if (actionId === 'clean-cancel') {
       state.pendingCleaning = null;
       state.pendingFile = null;
@@ -2037,6 +2717,25 @@
       fileName: state.pendingFile ? state.pendingFile.name : '',
       headers: state.pendingFile && state.pendingFile.rows && state.pendingFile.rows[0] ? state.pendingFile.rows[0] : undefined,
       activeDatasetType: state.pendingCleaning && state.pendingCleaning.report ? state.pendingCleaning.report.datasetType : undefined,
+      /* 会话附件上下文：规则层与模型层都能看到「这次会话里有什么附件」 */
+      hasAttachments: attachmentCount() > 0,
+      attachments: attachmentList().map(function (item) {
+        return {
+          seq: item.seq,
+          name: item.name,
+          kind: item.kind,
+          rowCount: item.rowCount,
+          notes: item.notes,
+          importedAt: item.importedAt,
+          current: item.current
+        };
+      }),
+      currentAttachment: (function () {
+        var current = currentAttachmentRecord();
+        if (!current) return null;
+        var item = summarizeAttachment(current);
+        return { seq: item.seq, name: item.name, kind: item.kind, rowCount: item.rowCount };
+      })(),
       counts: {
         events: (snap.events || []).length,
         replacements: (snap.replacements || []).length,
@@ -2063,6 +2762,8 @@
     if (intent.intent === 'query') { executeQuery(intent, message); return; }
     if (intent.intent === 'edit') { handleEditIntent(intent, message); return; }
     if (intent.intent === 'undo') { handleUndoIntent(); return; }
+    /* 规则没听懂时，只要在问附件本身就用附件清单兜底 */
+    if (attachmentOverviewFallback(message || state.lastMessage)) return;
     reply(intent.reply || '没太听懂，可以说「帮助」查看示例。');
   }
 
@@ -2072,6 +2773,26 @@
     pushUser({ text: raw });
     state.lastMessage = raw;
     state.pendingQuery = null;
+    /* 会话附件的两种「优先于规则」路径：
+       1) 真正的图片追问 → 视觉重发原图（不满足条件也要明确说明，禁止静默降级）；
+       2) 附件元信息问答（几个附件 / 这个表多少行 / 有哪些列）→ 本地离线回答 */
+    if (isImageQuestionText(raw)) {
+      /* 「第二张图里有哪些测点」先按指代切换当前附件，再走视觉 */
+      var imageTarget = attachmentReference(raw);
+      if (imageTarget && text(imageTarget.id) && text(imageTarget.id) !== currentAttachmentId()) {
+        selectAttachment(imageTarget.id);
+      }
+      askAboutImage(raw);
+      return;
+    }
+    if (answerAttachmentMeta(raw)) return;
+    var switched = attachmentReference(raw);
+    if (switched && text(switched.id) && isBareAttachmentReference(raw)) {
+      selectAttachment(switched.id);
+      reply('已切换到附件「' + text(switched.name) + '」。' + describeCurrentAttachment()
+        + (text(switched.kind) === 'image' ? '可以直接问「这张图里有几个测点」。' : '可以问「这个表多少行」，或说「导入」。'));
+      return;
+    }
     setBusy(true);
     render();
     var ctx = buildContext();
@@ -2131,6 +2852,9 @@
     if (event.kind === 'delete-history') { deleteConversation(event.conversationId); return; }
     if (event.kind === 'new-chat') { startNewConversation(); return; }
     if (event.kind === 'export-chat') { exportConversation(); return; }
+    if (event.kind === 'select-attachment') { selectAttachment(event.id); return; }
+    if (event.kind === 'remove-attachment') { removeAttachment(event.id); return; }
+    if (event.kind === 'clear-attachments') { clearAttachments(); return; }
     if (event.kind === 'open-settings') { openModelSettings(); return; }
   }
 
@@ -2154,6 +2878,11 @@
       state.messages = first.messages.map(function (msg) {
         return { id: msg.id, role: msg.role, text: msg.text, createdAt: msg.createdAt };
       });
+      /* 上次会话的附件只回填摘要（明细与原图不落盘） */
+      state.savedAttachments = restoreAttachmentsFromSummary(first.attachments);
+      state.savedAttachmentId = state.savedAttachments.length
+        ? state.savedAttachments[state.savedAttachments.length - 1].id
+        : null;
     }
     controller = uiModule.mount({
       root: root,
@@ -2190,6 +2919,9 @@
     send: send,
     handleFile: handleFile,
     handleFiles: handleFiles,
+    listAttachments: function () { return attachmentList(); },
+    selectAttachment: selectAttachment,
+    askAboutImage: askAboutImage,
     refresh: function () {
       loadHistory();
       render();

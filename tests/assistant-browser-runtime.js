@@ -576,6 +576,582 @@ window.runAssistantTests = async function () {
     } finally { stub.restore(); restoreConfig(); }
   });
 
+  /* ================= T3 多轮对话：附件条 / 图片追问 / 指代切换 / 重复导入保护 ================= */
+
+  /* —— 附件条的只读读取（只看用户可见状态，不依赖任何内部状态） —— */
+  function attachmentBarEl() { return document.getElementById('assistantAttachments'); }
+  function attachmentChips() {
+    const bar = attachmentBarEl();
+    if (!bar || !bar.querySelectorAll) return [];
+    return Array.prototype.slice.call(bar.querySelectorAll('.assistant-attachment-chip'));
+  }
+  function attachmentBarHidden() {
+    const bar = attachmentBarEl();
+    return !bar || bar.hidden === true;
+  }
+  function attachmentChipName(chip) {
+    if (!chip) return '';
+    const label = chip.querySelector ? chip.querySelector('.assistant-attachment-label') : null;
+    return String((label ? label.textContent : chip.textContent) || '').trim();
+  }
+  function attachmentChipNames() { return attachmentChips().map(attachmentChipName); }
+  function currentAttachmentChip() {
+    const chips = attachmentChips();
+    for (let i = 0; i < chips.length; i += 1) {
+      if (chips[i].classList && chips[i].classList.contains('is-current')) return chips[i];
+    }
+    return null;
+  }
+  /* 门面 listAttachments 的紧凑视图（记录里含 rows，禁止直接序列化进报告） */
+  function attachmentMetaList() {
+    const api = window.BTAssistant;
+    if (!api || typeof api.listAttachments !== 'function') return null;
+    const list = api.listAttachments();
+    if (!Array.isArray(list)) return null;
+    return list.map((raw) => {
+      const item = raw || {};
+      return {
+        id: String(item.id || ''), seq: Number(item.seq) || 0, name: String(item.name || ''),
+        kind: String(item.kind || ''), rowCount: Number(item.rowCount) || 0,
+        importedAt: String(item.importedAt || ''), hasDataUrl: Boolean(item.hasDataUrl),
+        restored: Boolean(item.restored), current: Boolean(item.current)
+      };
+    });
+  }
+  function assistantBusy() {
+    const typing = document.getElementById('assistantTyping');
+    const panel = document.getElementById('assistantPanel');
+    if (typing && typing.hidden === false) return true;
+    return Boolean(panel && panel.getAttribute('aria-busy') === 'true');
+  }
+  async function waitAssistantIdle(timeout) { return until(() => !assistantBusy(), timeout || 6000); }
+  /* 与既有 stubVisionLLM 同语义，额外记录 maxTokens（多轮用例要断言追问的 token 上限） */
+  function stubVisionMulti(replies) {
+    const original = window.callVisionLLM;
+    const state = { calls: 0, inflight: 0, maxInflight: 0, messages: [], maxTokens: [] };
+    window.callVisionLLM = function (messages, maxTokens) {
+      state.calls += 1;
+      state.inflight += 1;
+      state.maxInflight = Math.max(state.maxInflight, state.inflight);
+      state.messages.push(messages);
+      state.maxTokens.push(maxTokens);
+      const index = Math.min(state.calls - 1, replies.length - 1);
+      const reply = typeof replies[index] === 'function' ? replies[index]() : replies[index];
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          state.inflight -= 1;
+          if (reply instanceof Error) reject(reply); else resolve(reply);
+        }, 5);
+      });
+    };
+    return { state: state, restore: function () { window.callVisionLLM = original; } };
+  }
+  /* 打桩意图模型：等价于「意图模型接口不可达」，多轮用例不依赖真实网络，
+     同时可以证明「图片追问优先于意图模型」这条契约。 */
+  function stubIntentLlm() {
+    const original = window.callAssistantChatCompletions;
+    const state = { calls: 0 };
+    window.callAssistantChatCompletions = function () {
+      state.calls += 1;
+      return Promise.reject(new Error('T3 多轮用例：意图模型不可达'));
+    };
+    return { state: state, restore: function () { window.callAssistantChatCompletions = original; } };
+  }
+  /* 临时移除模型配置（验证「未配置模型时追问图片」边界） */
+  function withoutVisionConfig() {
+    const previous = window.localStorage.getItem('boiler_llm_config');
+    window.localStorage.removeItem('boiler_llm_config');
+    return function () {
+      if (previous === null) window.localStorage.removeItem('boiler_llm_config');
+      else window.localStorage.setItem('boiler_llm_config', previous);
+    };
+  }
+  /* 视觉消息末条的 image_url（契约：user.content = [text, image_url]） */
+  function visionImageUrl(messages) {
+    if (!Array.isArray(messages) || !messages.length) return '';
+    const last = messages[messages.length - 1];
+    if (!last || !Array.isArray(last.content)) return '';
+    for (let i = 0; i < last.content.length; i += 1) {
+      const part = last.content[i];
+      if (part && part.type === 'image_url' && part.image_url) return String(part.image_url.url || '');
+    }
+    return '';
+  }
+  function urlTag(url) { return String(url || '').slice(0, 24); }
+  /* 多轮用例之间共享的最小状态 */
+  const multiTurn = { recognitionUrls: [], conversationIdBeforeNewChat: '' };
+
+  /* ---------- 多轮 1：上传 2 张图 → 附件条 2 项，current = 最后一张 ---------- */
+
+  await test('T3 multi-turn: two batch images register an attachment bar with current = last', async () => {
+    assert(window.BTAssistantAttachments && typeof window.BTAssistantAttachments.createRegistry === 'function',
+      'T1 契约未实现：window.BTAssistantAttachments 缺失');
+    assert(typeof window.BTAssistant.listAttachments === 'function', 'T2 契约未实现：BTAssistant.listAttachments 缺失');
+    assert(typeof window.BTAssistant.askAboutImage === 'function', 'T2 契约未实现：BTAssistant.askAboutImage 缺失');
+
+    const newChat = document.getElementById('assistantNewChat');
+    assert(newChat, '缺少新建会话按钮 #assistantNewChat');
+    newChat.click();
+    await wait(50);
+    assert(attachmentChips().length === 0, '新会话未清空附件条：' + JSON.stringify(attachmentChipNames()));
+
+    const restoreConfig = enableVisionConfig();
+    const vision = stubVisionMulti([replyFor([ROW_A]), replyFor([ROW_B])]);
+    try {
+      const cardsBefore = countCleaningCards();
+      const idle = await waitAssistantIdle(4000);
+      assert(idle, '上传前助手一直处于忙碌状态');
+      const pending = window.BTAssistant.handleFiles([poolPng(0), poolPng(1)]);
+      if (pending && typeof pending.then === 'function') await pending;
+
+      const ready = await until(() => attachmentChips().length === 2 && countCleaningCards() > cardsBefore, 4000);
+      const meta = attachmentMetaList();
+      diagnostics.mtBatch = { chips: attachmentChipNames(), meta: meta };
+      assert(ready, '两张图上传后应出现 2 项附件与清洗卡片：' + JSON.stringify(diagnostics.mtBatch));
+      assert(!attachmentBarHidden(), '有附件时附件条不应保持 hidden');
+      assert(vision.state.calls === 2 && vision.state.maxInflight === 1,
+        '两张图应串行识别 2 次，实际 ' + vision.state.calls + ' 次 / 并发峰值 ' + vision.state.maxInflight);
+      multiTurn.recognitionUrls = [visionImageUrl(vision.state.messages[0]), visionImageUrl(vision.state.messages[1])];
+      assert(multiTurn.recognitionUrls[0].indexOf('data:image/') === 0 && multiTurn.recognitionUrls[1].indexOf('data:image/') === 0,
+        '识别请求应携带原图 dataURL：' + JSON.stringify(multiTurn.recognitionUrls.map(urlTag)));
+      assert(multiTurn.recognitionUrls[0] !== multiTurn.recognitionUrls[1], '两张图的原图不应相同');
+      assert(meta && meta.length === 2, 'listAttachments 应返回 2 条：' + JSON.stringify(meta));
+      assert(meta[0].name === 't3-batch-1.png' && meta[1].name === 't3-batch-2.png', '附件名称应与图片一致：' + JSON.stringify(meta));
+      assert(meta[0].kind === 'image' && meta[1].kind === 'image', '附件类型应为 image：' + JSON.stringify(meta));
+      assert(meta[1].current === true && meta[0].current === false, 'current 应落在最后一张：' + JSON.stringify(meta));
+      assert(meta.every((item) => item.hasDataUrl), '图片附件应保留原图 dataUrl：' + JSON.stringify(meta));
+      const current = currentAttachmentChip();
+      assert(current && attachmentChipName(current).indexOf('t3-batch-2.png') >= 0,
+        '附件条的 is-current 应落在最后一张，实际 ' + (current ? attachmentChipName(current) : '无'));
+      assert(messagesText().indexOf('已登记 2 个会话附件') >= 0, '缺少「已登记 N 个会话附件」清单提示');
+    } finally {
+      vision.restore();
+      restoreConfig();
+    }
+  });
+
+  /* ---------- 多轮 2：追问「这张图里有几个测点」→ 视觉桩必须收到 image_url ---------- */
+
+  await test('T3 multi-turn: image follow-up sends the current image dataUrl to vision', async () => {
+    const restoreConfig = enableVisionConfig();
+    const vision = stubVisionMulti(['这张图里共有 6 个测点（T3 视觉桩）。']);
+    const chat = stubIntentLlm();
+    try {
+      const idle = await waitAssistantIdle(5000);
+      assert(idle, '追问前助手一直处于忙碌状态');
+      const textBefore = messagesText();
+      window.BTAssistant.send('这张图里有几个测点');
+      const called = await until(() => vision.state.calls > 0, 4000);
+      diagnostics.mtFollowUp = {
+        visionCalls: vision.state.calls,
+        chatCalls: chat.state.calls,
+        maxTokens: vision.state.maxTokens
+      };
+      assert(called, '图片追问没有调用视觉模型：' + messagesText().slice(-240));
+      assert(vision.state.calls === 1, '一次追问只应调用 1 次视觉模型，实际 ' + vision.state.calls);
+      assert(chat.state.calls === 0, '图片追问应优先于意图模型，实际调用意图模型 ' + chat.state.calls + ' 次');
+      const messages = vision.state.messages[0];
+      const last = messages[messages.length - 1];
+      assert(last && last.role === 'user' && Array.isArray(last.content), '视觉消息末条应为 user + content 数组');
+      assert(last.content.length === 2 && last.content[0].type === 'text'
+        && String(last.content[0].text).indexOf('这张图里有几个测点') >= 0,
+        '视觉消息末条应包含当前问题文本：' + JSON.stringify(last.content));
+      const url = visionImageUrl(messages);
+      assert(url.indexOf('data:image/') === 0, 'image_url 应为 dataURL，实际 ' + urlTag(url));
+      assert(url === multiTurn.recognitionUrls[1], '追问当前附件（第 2 张）应重发第 2 张原图');
+      assert(vision.state.maxTokens[0] === 1200, '视觉追问 maxTokens 应为 1200，实际 ' + vision.state.maxTokens[0]);
+      const answered = await until(() => messagesText().indexOf('T3 视觉桩') >= 0, 3000);
+      assert(answered, '视觉回答没有渲染到消息区：' + messagesText().slice(-200));
+      const tail = messagesText().slice(textBefore.length);
+      diagnostics.mtFollowUp.tail = tail.slice(-200);
+      assert(tail.indexOf('【基于图片 t3-batch-2.png】') >= 0, '回复应带「【基于图片 名称】」前缀：' + tail.slice(-200));
+      assert(tail.indexOf('6 个测点') >= 0, '回复应包含视觉模型答案：' + tail.slice(-200));
+    } finally {
+      chat.restore();
+      vision.restore();
+      restoreConfig();
+    }
+  });
+
+  /* ---------- 多轮 3：指代切换（点附件条切换 / 自然语言序号） ---------- */
+
+  await test('T3 multi-turn: switching attachment changes which image is sent to vision', async () => {
+    const restoreConfig = enableVisionConfig();
+    const vision = stubVisionMulti(['第 1 张图：4 个测点。', '第 2 张图：6 个测点。']);
+    const chat = stubIntentLlm();
+    try {
+      const idle = await waitAssistantIdle(5000);
+      assert(idle, '切换前助手一直处于忙碌状态');
+      const chips = attachmentChips();
+      assert(chips.length === 2, '前置条件：附件条应有 2 项，实际 ' + JSON.stringify(attachmentChipNames()));
+      chips[0].click();
+      const switched = await until(() => {
+        const chip = currentAttachmentChip();
+        return Boolean(chip && attachmentChipName(chip).indexOf('t3-batch-1.png') >= 0);
+      }, 2000);
+      diagnostics.mtSwitch = { afterChipClick: attachmentChipNames(), current: attachmentChipName(currentAttachmentChip()) };
+      assert(switched, '点击第 1 项后 current 应切到第 1 张：' + JSON.stringify(diagnostics.mtSwitch));
+
+      await waitAssistantIdle(4000);
+      const beforeFirst = vision.state.calls;
+      window.BTAssistant.send('这张图里有几个测点');
+      const askedFirst = await until(() => vision.state.calls > beforeFirst, 3000);
+      assert(askedFirst, '切换后追问没有走视觉');
+      assert(visionImageUrl(vision.state.messages[vision.state.calls - 1]) === multiTurn.recognitionUrls[0],
+        '切换 current 后追问应重发第 1 张原图');
+
+      /* 自然语言序号指代：先看「第二张图呢」是否切换 current（记录实测），
+         再用「第二张图里有几个测点？」验证序号指代是否真的作用到视觉请求。 */
+      const beforeRef = attachmentChipName(currentAttachmentChip());
+      const callsBeforeRef = vision.state.calls;
+      const textBeforeRef = messagesText();
+      await waitAssistantIdle(4000);
+      window.BTAssistant.send('第二张图呢');
+      await wait(120);
+      await waitAssistantIdle(4000);
+      const afterRef = attachmentChipName(currentAttachmentChip());
+      const refTail = messagesText().slice(textBeforeRef.length);
+      diagnostics.mtRefNatural = {
+        before: beforeRef, after: afterRef,
+        visionDelta: vision.state.calls - callsBeforeRef,
+        tail: refTail.slice(-160)
+      };
+      assert(afterRef.indexOf('t3-batch-2.png') >= 0,
+        '「第二张图呢」应按指代把 current 切到第 2 张，实际仍是 ' + afterRef + '（实测：' + JSON.stringify(diagnostics.mtRefNatural) + '）');
+
+      const callsBeforeOrdinal = vision.state.calls;
+      await waitAssistantIdle(4000);
+      window.BTAssistant.send('第二张图里有几个测点？');
+      const askedOrdinal = await until(() => vision.state.calls > callsBeforeOrdinal, 3000);
+      assert(askedOrdinal, '「第二张图里有几个测点？」没有走视觉');
+      const ordinalUrl = visionImageUrl(vision.state.messages[vision.state.calls - 1]);
+      diagnostics.mtRefOrdinal = { urlIsSecondImage: ordinalUrl === multiTurn.recognitionUrls[1], tail: messagesText().slice(-160) };
+      assert(ordinalUrl === multiTurn.recognitionUrls[1],
+        '「第二张图里有几个测点？」应按序号指代重发第 2 张原图（当前实现用 current 兜底会答错图）');
+    } finally {
+      chat.restore();
+      vision.restore();
+      restoreConfig();
+    }
+  });
+
+  /* ---------- 多轮 4：导入后重复导入保护（import-again 才放行） ---------- */
+
+  await test('T3 multi-turn: duplicate import is blocked until 再次导入', async () => {
+    const restoreConfig = enableVisionConfig();
+    const chat = stubIntentLlm();
+    try {
+      await waitAssistantIdle(5000);
+      /* 1) 先把待确认的清洗结果真正导入 */
+      const eventsBeforeImport = userDB.events.length;
+      const confirm = lastActionButton('import-confirm');
+      if (confirm) {
+        confirm.click();
+        await until(() => userDB.events.length > eventsBeforeImport, 4000);
+        await waitAssistantIdle(5000);
+      }
+      diagnostics.mtImport = {
+        eventsBefore: eventsBeforeImport,
+        eventsAfter: userDB.events.length,
+        manualConfirmPresent: Boolean(confirm),
+        meta: attachmentMetaList()
+      };
+      const importedMeta = (attachmentMetaList() || []).filter((item) => item.importedAt);
+      assert(importedMeta.length >= 1, '导入后应有附件带 importedAt：' + JSON.stringify(diagnostics.mtImport));
+
+      /* 2) 已导入的当前附件再说「导入」→ 不写库 + 出现「再次导入」 */
+      const eventsBeforeGuard = userDB.events.length;
+      const textBeforeGuard = messagesText();
+      window.BTAssistant.send('导入');
+      const guarded = await until(() => messagesText().slice(textBeforeGuard.length).indexOf('导入过') >= 0, 4000);
+      await wait(80);
+      await waitAssistantIdle(5000);
+      const guardTail = messagesText().slice(textBeforeGuard.length);
+      diagnostics.mtGuard = {
+        tail: guardTail.slice(-200),
+        eventsBefore: eventsBeforeGuard,
+        eventsAfter: userDB.events.length,
+        againButton: Boolean(lastActionButton('import-again'))
+      };
+      assert(guarded, '已导入附件再说「导入」应给重复导入提示：' + guardTail.slice(-200));
+      assert(userDB.events.length === eventsBeforeGuard,
+        '重复导入保护失效：userDB.events 从 ' + eventsBeforeGuard + ' 变为 ' + userDB.events.length);
+      assert(lastActionButton('import-again'), '重复导入提示应带 import-again 按钮');
+
+      /* 3) 旧卡片上的「确认导入」不能绕过保护（没有待清洗结果时不应写库） */
+      const staleConfirm = lastActionButton('import-confirm');
+      if (staleConfirm) {
+        staleConfirm.click();
+        await wait(100);
+        await waitAssistantIdle(5000);
+        assert(userDB.events.length === eventsBeforeGuard,
+          '旧卡片的「确认导入」绕过了重复导入保护：' + userDB.events.length + ' != ' + eventsBeforeGuard);
+      }
+
+      /* 4) 点「再次导入」后才重新走 清洗 → 确认导入 */
+      const cardsBeforeAgain = countCleaningCards();
+      const eventsBeforeAgain = userDB.events.length;
+      const textBeforeAgain = messagesText();
+      const againButton = lastActionButton('import-again');
+      const againClickable = Boolean(againButton && document.contains(againButton) && !assistantBusy());
+      againButton.click();
+      /* 「再次导入」的通过证据：重新出现清洗/导入流程的回复（去重后可能 0 新增，不算失败） */
+      const againStarted = await until(() => countCleaningCards() > cardsBeforeAgain
+        || userDB.events.length > eventsBeforeAgain
+        || messagesText().slice(textBeforeAgain.length).indexOf('开始再次导入') >= 0, 2500);
+      await wait(80);
+      await waitAssistantIdle(3000);
+      diagnostics.mtImportAgain = {
+        clickable: againClickable,
+        newCleaningCard: countCleaningCards() > cardsBeforeAgain,
+        eventsBefore: eventsBeforeAgain,
+        tail: messagesText().slice(textBeforeAgain.length).slice(-200)
+      };
+      assert(againStarted, '点「再次导入」后没有出现重新清洗/导入的迹象：' + JSON.stringify(diagnostics.mtImportAgain));
+      assert(diagnostics.mtImportAgain.tail.indexOf('开始再次导入') >= 0,
+        '点「再次导入」应重新走清洗流程：' + diagnostics.mtImportAgain.tail);
+      const againConfirm = lastActionButton('import-confirm');
+      if (againConfirm) {
+        againConfirm.click();
+        await wait(120);
+        await waitAssistantIdle(3000);
+      }
+      diagnostics.mtImportAgain.eventsAfter = userDB.events.length;
+      assert(userDB.events.length >= eventsBeforeAgain,
+        '再次导入不应破坏台账计数：' + JSON.stringify(diagnostics.mtImportAgain));
+
+      /* 5) 再次导入后保护必须重新生效 */
+      const eventsAfterAgain = userDB.events.length;
+      const textBeforeSecondGuard = messagesText();
+      window.BTAssistant.send('导入');
+      await until(() => messagesText().slice(textBeforeSecondGuard.length).indexOf('导入过') >= 0, 3000);
+      await wait(80);
+      await waitAssistantIdle(3000);
+      diagnostics.mtGuardAgain = { eventsBefore: eventsAfterAgain, eventsAfter: userDB.events.length };
+      assert(userDB.events.length === eventsAfterAgain,
+        '再次导入后保护未重新生效：' + eventsAfterAgain + ' -> ' + userDB.events.length);
+    } finally {
+      chat.restore();
+      restoreConfig();
+    }
+  });
+
+  /* ---------- 多轮 5：删除附件（current 归属）与空附件条 ---------- */
+
+  await test('T3 multi-turn: removing attachments keeps a valid current and hides the empty bar', async () => {
+    const restoreConfig = enableVisionConfig();
+    const vision = stubVisionMulti([replyFor([ROW_C])]);
+    try {
+      await waitAssistantIdle(5000);
+      /* 先补一张图凑到 3 项，才能同时验证「删非当前项」与「删当前项后回退」 */
+      window.BTAssistant.handleFile(poolPng(2));
+      const third = await until(() => attachmentChips().length === 3, 3000);
+      await waitAssistantIdle(5000);
+      diagnostics.mtRemoveBefore = { chips: attachmentChipNames(), meta: attachmentMetaList() };
+      assert(third, '补传一张图后附件条应为 3 项：' + JSON.stringify(diagnostics.mtRemoveBefore));
+
+      /* 1) 删除非当前项：数量 -1，current 不变 */
+      const beforeNames = attachmentChipNames();
+      const currentName = attachmentChipName(currentAttachmentChip());
+      const other = attachmentChips().find((chip) => !chip.classList.contains('is-current'));
+      assert(other, '附件条应存在非当前项：' + JSON.stringify(beforeNames));
+      other.querySelector('[data-attachment-action="remove"]').click();
+      await wait(80);
+      await waitAssistantIdle(3000);
+      diagnostics.mtRemoveOther = { before: beforeNames, after: attachmentChipNames(), current: attachmentChipName(currentAttachmentChip()) };
+      assert(attachmentChips().length === beforeNames.length - 1, '删除一个附件后应少 1 项：' + JSON.stringify(diagnostics.mtRemoveOther));
+      assert(attachmentChipName(currentAttachmentChip()) === currentName, '删除非当前项不应改变 current：' + JSON.stringify(diagnostics.mtRemoveOther));
+
+      /* 2) 删除当前项：current 应回退到剩下的最新一项 */
+      const currentChip = currentAttachmentChip();
+      assert(currentChip, '删除前应存在 is-current 项');
+      currentChip.querySelector('[data-attachment-action="remove"]').click();
+      await wait(80);
+      await waitAssistantIdle(3000);
+      const left = attachmentChips();
+      diagnostics.mtRemoveCurrent = { left: left.map(attachmentChipName), current: attachmentChipName(currentAttachmentChip()) };
+      assert(left.length === beforeNames.length - 2, '删除当前项后应再少 1 项：' + JSON.stringify(diagnostics.mtRemoveCurrent));
+      assert(currentAttachmentChip() === left[left.length - 1], '删除当前附件后 current 应回退到最新一项：' + JSON.stringify(diagnostics.mtRemoveCurrent));
+
+      /* 3) 全部删除 → 附件条 hidden、门面清空 */
+      while (attachmentChips().length) {
+        const button = attachmentChips()[0].querySelector('[data-attachment-action="remove"]');
+        if (!button) break;
+        button.click();
+        await wait(60);
+      }
+      await waitAssistantIdle(3000);
+      diagnostics.mtRemoveAll = { chips: attachmentChipNames(), hidden: attachmentBarHidden(), meta: attachmentMetaList() };
+      assert(attachmentChips().length === 0, '全部删除后不应残留附件项：' + JSON.stringify(diagnostics.mtRemoveAll));
+      assert(attachmentBarHidden(), '附件为空时附件条应保持 hidden');
+      const meta = attachmentMetaList();
+      assert(meta && meta.length === 0, '全部删除后 listAttachments 应为空：' + JSON.stringify(meta));
+    } finally {
+      vision.restore();
+      restoreConfig();
+    }
+  });
+
+  /* ---------- 多轮 6：新会话清空附件；无附件时追问图片必须给明确提示 ---------- */
+
+  await test('T3 multi-turn: new conversation clears attachments and stale image questions are refused', async () => {
+    const restoreConfig = enableVisionConfig();
+    const vision = stubVisionMulti([replyFor([ROW_C], '单图登记备注')]);
+    const chat = stubIntentLlm();
+    try {
+      /* 先开新会话清空附件，保证这里走的是「唯一一张图」的单图登记路径 */
+      document.getElementById('assistantNewChat').click();
+      await wait(60);
+      await waitAssistantIdle(3000);
+      assert(attachmentChips().length === 0, '新会话未清空附件：' + JSON.stringify(attachmentChipNames()));
+      window.BTAssistant.handleFile(poolPng(2));
+      const single = await until(() => attachmentChips().length === 1, 3000);
+      const hasUrl = await until(() => {
+        const meta = attachmentMetaList();
+        return Boolean(meta && meta.length === 1 && meta[0].hasDataUrl);
+      }, 3000);
+      diagnostics.mtSingle = { chips: attachmentChipNames(), meta: attachmentMetaList() };
+      assert(single, '单图上传后附件条应有 1 项：' + JSON.stringify(diagnostics.mtSingle));
+      assert(hasUrl, '单图登记应异步补上原图 dataUrl：' + JSON.stringify(attachmentMetaList()));
+      await waitAssistantIdle(5000);
+
+      /* 记下当前会话 id：稍后验证「历史会话只回填摘要」 */
+      const historyBtn = document.getElementById('assistantHistoryBtn');
+      assert(historyBtn, '缺少会话历史按钮 #assistantHistoryBtn');
+      historyBtn.click();
+      await wait(50);
+      const activeItem = document.querySelector('#assistantHistory [data-assistant="history-item"][aria-current="true"]');
+      multiTurn.conversationIdBeforeNewChat = activeItem ? String(activeItem.getAttribute('data-conversation-id')) : '';
+      historyBtn.click();
+      await wait(50);
+
+      /* 新会话 → 附件清空 */
+      const visionCallsBefore = vision.state.calls;
+      document.getElementById('assistantNewChat').click();
+      await wait(60);
+      await waitAssistantIdle(3000);
+      diagnostics.mtNewChat = { chips: attachmentChipNames(), hidden: attachmentBarHidden(), meta: attachmentMetaList() };
+      assert(attachmentChips().length === 0, '新会话应清空附件条：' + JSON.stringify(diagnostics.mtNewChat));
+      assert(attachmentBarHidden(), '新会话后附件条应保持 hidden');
+      assert(attachmentMetaList().length === 0, '新会话后 listAttachments 应为空：' + JSON.stringify(diagnostics.mtNewChat));
+
+      /* 无附件时问「这张图」→ 明确中文提示，且不得调用视觉模型 */
+      /* 新会话后消息区回到空态占位，不能用文本长度判断新回复，直接等期望文案 */
+      const idleBeforeAsk = await waitAssistantIdle(3000);
+      assert(idleBeforeAsk, '无附件追问前助手一直处于忙碌状态');
+      window.BTAssistant.send('这张图里有几个测点');
+      const replied = await until(() => messagesText().indexOf('还没有附件') >= 0, 2500);
+      await wait(80);
+      await waitAssistantIdle(3000);
+      const tail = messagesText();
+      diagnostics.mtNoAttachment = { tail: tail.slice(0, 200), visionDelta: vision.state.calls - visionCallsBefore };
+      assert(replied, '无附件追问没有任何回复');
+      assert(vision.state.calls === visionCallsBefore, '无附件时不应调用视觉模型，实际多调 ' + (vision.state.calls - visionCallsBefore) + ' 次');
+      assert(tail.indexOf('还没有附件') >= 0, '无附件追问应明确说明当前会话没有附件：' + tail.slice(0, 160));
+    } finally {
+      chat.restore();
+      vision.restore();
+      restoreConfig();
+    }
+  });
+
+  /* ---------- 多轮 7：切回历史会话只有摘要，追问必须提示重新上传 ---------- */
+
+  await test('T3 adversarial: reopened conversation keeps summaries only and asks for re-upload', async () => {
+    const historyBtn = document.getElementById('assistantHistoryBtn');
+    historyBtn.click();
+    await wait(50);
+    const targetId = multiTurn.conversationIdBeforeNewChat;
+    const item = targetId
+      ? document.querySelector('#assistantHistory [data-assistant="history-item"][data-conversation-id="' + targetId + '"]')
+      : null;
+    diagnostics.mtHistory = { targetId: targetId, found: Boolean(item) };
+    assert(item, '历史会话列表里找不到刚才那个会话：' + targetId);
+    item.click();
+    await wait(80);
+    await waitAssistantIdle(3000);
+    const meta = attachmentMetaList();
+    diagnostics.mtRestored = { chips: attachmentChipNames(), meta: meta };
+    assert(attachmentChips().length >= 1, '切回历史会话应回填附件摘要：' + JSON.stringify(diagnostics.mtRestored));
+    assert(meta && meta.every((entry) => entry.restored === true && entry.hasDataUrl === false),
+      '历史会话只应回填摘要（无明细与原图）：' + JSON.stringify(meta));
+
+    const vision = stubVisionMulti(['历史会话没有原图，不应被调用']);
+    const textBefore = messagesText();
+    try {
+      window.BTAssistant.send('这张图里有几个测点');
+      const replied = await until(() => messagesText().indexOf('重新上传') >= 0, 2500);
+      await wait(80);
+      await waitAssistantIdle(3000);
+      const tail = messagesText().slice(textBefore.length);
+      diagnostics.mtRestoredTail = { tail: tail.slice(0, 200), visionCalls: vision.state.calls };
+      assert(replied, '历史会话追问没有任何回复');
+      assert(vision.state.calls === 0, '历史会话没有原图时不应调用视觉模型');
+      assert(tail.indexOf('重新上传') >= 0, '历史会话追问应提示重新上传：' + tail.slice(0, 160));
+    } finally {
+      vision.restore();
+    }
+  });
+
+  /* ---------- 多轮 8：附件超过 3 个的淘汰 + 未配置模型时追问 ---------- */
+
+  await test('T3 adversarial: FIFO over 3 attachments and unconfigured model follow-up', async () => {
+    const restoreConfig = enableVisionConfig();
+    const vision = stubVisionMulti([replyFor([ROW_A]), replyFor([ROW_B]), replyFor([ROW_C]), replyFor([ROW_A])]);
+    const chat = stubIntentLlm();
+    try {
+      document.getElementById('assistantNewChat').click();
+      await wait(60);
+      await waitAssistantIdle(3000);
+      const idle = await waitAssistantIdle(4000);
+      assert(idle, '批量上传前助手一直处于忙碌状态');
+      const pending = window.BTAssistant.handleFiles(poolPngs(4));
+      if (pending && typeof pending.then === 'function') await pending;
+      const fifo = await until(() => attachmentChips().length === 3, 4000);
+      const meta = attachmentMetaList();
+      const urls = vision.state.messages.map(visionImageUrl);
+      diagnostics.mtFifo = { chips: attachmentChipNames(), meta: meta, visionCalls: vision.state.calls };
+      assert(vision.state.calls === 4, '4 张图应各识别 1 次，实际 ' + vision.state.calls);
+      assert(fifo, '超过 MAX_ATTACHMENTS=3 时应 FIFO 淘汰到 3 项：' + JSON.stringify(diagnostics.mtFifo));
+      assert(meta && meta.length === 3 && meta[0].seq === 2 && meta[2].seq === 4, 'FIFO 应淘汰 seq=1 且不重排序号：' + JSON.stringify(meta));
+      assert(attachmentChipNames()[0].indexOf('t3-batch-2.png') >= 0 && attachmentChipNames()[2].indexOf('t3-batch-4.png') >= 0,
+        'FIFO 后应保留第 2~4 张：' + JSON.stringify(attachmentChipNames()));
+
+      /* 未配置模型 → 明确提示且不调用视觉模型 */
+      const restoreNoConfig = withoutVisionConfig();
+      try {
+        await waitAssistantIdle(4000);
+        const callsBefore = vision.state.calls;
+        const textBefore = messagesText();
+        window.BTAssistant.send('这张图里有几个测点');
+        const replied = await until(() => messagesText().indexOf('图片追问需要配置') >= 0, 2500);
+        await wait(80);
+        await waitAssistantIdle(3000);
+        const tail = messagesText().slice(textBefore.length);
+        diagnostics.mtUnconfigured = { tail: tail.slice(0, 200), visionDelta: vision.state.calls - callsBefore };
+        assert(replied, '未配置模型时追问没有任何回复');
+        assert(vision.state.calls === callsBefore, '未配置模型时不应调用视觉模型');
+        assert(tail.indexOf('图片追问需要配置') >= 0, '未配置模型应给明确中文提示（禁止静默降级到规则）：' + tail.slice(0, 160));
+      } finally {
+        restoreNoConfig();
+      }
+
+      /* 恢复配置后：当前附件是第 4 张，追问必须重发第 4 张原图 */
+      await waitAssistantIdle(4000);
+      const callsBeforeResume = vision.state.calls;
+      window.BTAssistant.send('这张图里有几个测点');
+      const resumed = await until(() => vision.state.calls > callsBeforeResume, 3000);
+      assert(resumed, '恢复模型配置后追问应重新走视觉');
+      const resumeUrl = visionImageUrl(vision.state.messages[vision.state.calls - 1]);
+      diagnostics.mtResume = { urlIsFourthImage: resumeUrl === urls[3], url: urlTag(resumeUrl) };
+      assert(resumeUrl === urls[3], 'FIFO 后 current 应为第 4 张，追问应重发第 4 张原图');
+    } finally {
+      chat.restore();
+      vision.restore();
+      restoreConfig();
+    }
+  });
+
   await test('maintenance log records and renders operations', async () => {
     assert(window.BTMaintenanceLog, 'BTMaintenanceLog missing');
     const logged = await until(() => window.BTMaintenanceLog.stats().total > 0);

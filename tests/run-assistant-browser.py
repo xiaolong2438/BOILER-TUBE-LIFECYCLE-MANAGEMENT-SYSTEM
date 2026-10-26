@@ -67,7 +67,7 @@ profile = tempfile.mkdtemp(prefix='boiler-assistant-test-')
 try:
     run = subprocess.run([edge, '--headless=new', '--disable-gpu', '--no-first-run',
         '--no-default-browser-check', '--disable-background-networking', f'--user-data-dir={profile}',
-        '--virtual-time-budget=9000', '--dump-dom', f'http://127.0.0.1:{server.server_port}/__assistant_test__'],
+        '--virtual-time-budget=30000', '--dump-dom', f'http://127.0.0.1:{server.server_port}/__assistant_test__'],
         capture_output=True, timeout=120)
     dom = run.stdout.decode('utf-8', errors='replace')
     match = re.search(r'<pre id="runtime-test-results">(.*?)</pre>', dom, re.S)

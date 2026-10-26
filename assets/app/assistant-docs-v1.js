@@ -421,9 +421,14 @@
     '5. 有拿不准的单元格时，另用 uncertain 列出坐标：[[数据行号,列号],...]，从 0 开始且不含表头行；这些单元格同时填空字符串。'
   ].join('\n');
 
+  /* 压缩后的图片 dataURL：多轮对话追问时需要重发原图，因此单独导出，复用同一条压缩管线。 */
+  function imageToDataUrl(file) {
+    return readFileAsDataURL(file).then(loadImage).then(downscaleToJpegDataUrl);
+  }
+
   function imageToRows(file) {
     if(!visionLLMAvailable()) return Promise.reject(new Error(llmUnavailableMessage()));
-    var compressed = readFileAsDataURL(file).then(loadImage).then(downscaleToJpegDataUrl);
+    var compressed = imageToDataUrl(file);
     return compressed.then(function (dataUrl) {
       var messages = [
         { role: 'system', content: '你是严谨的工业数据录入助手，只输出 JSON。' },
@@ -433,7 +438,9 @@
         ] }
       ];
       return requestGrid(messages, VISION_MAX_TOKENS).then(function (grid) {
-        return buildGridResult(grid, '图片识别');
+        var result = buildGridResult(grid, '图片识别');
+        result.dataUrl = dataUrl; /* 供会话附件上下文在多轮追问时重发原图 */
+        return result;
       });
     });
   }
@@ -493,7 +500,8 @@
             ok: true,
             rows: parsed.rows,
             sheetName: parsed.sheetName,
-            notes: parsed.notes
+            notes: parsed.notes,
+            dataUrl: parsed.dataUrl
           });
         }, function (err) {
           results.push({ name: name, ok: false, error: errorMessage(err) });
@@ -656,6 +664,7 @@
     isPdfFile: isPdfFile,
     imageToRows: imageToRows,
     pdfToRows: pdfToRows,
+    imageToDataUrl: imageToDataUrl,
     imagesToRows: imagesToRows,
     mergeGrids: mergeGrids,
     normalizeGrid: normalizeGrid,

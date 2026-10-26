@@ -38,6 +38,8 @@ check("页面按依赖顺序加载助手资源", () => {
     "assets/app/xlsx-export-v1.js",
     "assets/app/assistant-core-v1.js",
     "assets/app/assistant-analysis-v1.js",
+    "assets/app/assistant-docs-v1.js",
+    "assets/app/assistant-attachments-v1.js",
     "assets/app/assistant-ui-v1.js",
     "assets/app/assistant-v1.js"
   ];
@@ -90,7 +92,7 @@ check("app-v7.9.js 暴露助手所需的桥接函数", () => {
 
 /* ---------------- 3. 三层脚本可解析、命名空间正确 ---------------- */
 check("四个助手脚本语法合法且命名空间符合契约", () => {
-  const files = ["assets/app/assistant-core-v1.js", "assets/app/assistant-analysis-v1.js", "assets/app/assistant-ui-v1.js", "assets/app/assistant-v1.js"];
+  const files = ["assets/app/assistant-core-v1.js", "assets/app/assistant-analysis-v1.js", "assets/app/assistant-docs-v1.js", "assets/app/assistant-attachments-v1.js", "assets/app/assistant-ui-v1.js", "assets/app/assistant-v1.js"];
   for (const file of files) {
     assert.ok(existsSync(resolve(root, file)), `缺少文件 ${file}`);
     execFileSync(process.execPath, ["--check", resolve(root, file)], { stdio: "pipe" });
@@ -113,12 +115,16 @@ check("领域层导出契约要求的全部 API", () => {
 });
 
 check("UI 层导出契约要求的全部渲染函数与 DOM id", () => {
-  const fns = ["escapeHtml", "launcherMarkup", "panelMarkup", "messageMarkup", "cleaningMarkup", "operationMarkup", "analysisMarkup", "quickPromptMarkup", "historyMarkup", "mount"];
+  const fns = ["escapeHtml", "launcherMarkup", "panelMarkup", "messageMarkup", "cleaningMarkup", "operationMarkup", "analysisMarkup", "quickPromptMarkup", "historyMarkup", "attachmentBarMarkup", "mount"];
   for (const name of fns) has(uiJs, name, `UI 层缺少 ${name}`);
+  /* 附件项声明了 role="button" tabindex="0"，必须能用键盘激活，否则等于一个假按钮 */
+  has(uiJs, "function onAttachmentsKeyDown(event)", "附件条必须支持键盘激活");
+  has(uiJs, "els.attachments.addEventListener('keydown', onAttachmentsKeyDown)", "附件条键盘监听必须挂载");
+  has(uiJs, "els.attachments.removeEventListener('keydown', onAttachmentsKeyDown)", "附件条键盘监听必须可解绑");
   const ids = [
     "assistantLauncher", "assistantPanel", "assistantClose", "assistantHistoryBtn", "assistantNewChat",
     "assistantTitle", "assistantStatus", "assistantMessages", "assistantQuick", "assistantInput",
-    "assistantSend", "assistantAttach", "assistantFile", "assistantHistory", "assistantModelHint", "assistantTyping"
+    "assistantSend", "assistantAttach", "assistantFile", "assistantHistory", "assistantModelHint", "assistantTyping", "assistantAttachments"
   ];
   for (const id of ids) has(uiJs, id, `UI 层缺少契约 DOM id：${id}`);
 });
@@ -200,7 +206,7 @@ check("部署工作流校验并发布助手资源", () => {
 check("dist 产物包含助手资源且与源码同步", () => {
   const distIndex = read("dist/index.html");
   assert.equal(distIndex, html, "dist/index.html 必须与源码页面完全一致（发布前请重新生成 dist）");
-  for (const asset of ["assistant-core-v1.js", "assistant-analysis-v1.js", "assistant-ui-v1.js", "assistant-v1.js", "assistant-v1.css"]) {
+  for (const asset of ["assistant-core-v1.js", "assistant-analysis-v1.js", "assistant-docs-v1.js", "assistant-attachments-v1.js", "assistant-ui-v1.js", "assistant-v1.js", "assistant-v1.css"]) {
     assert.ok(existsSync(resolve(root, "dist/assets/app", asset)), `dist 缺少 ${asset}`);
     assert.equal(read(`dist/assets/app/${asset}`), read(`assets/app/${asset}`), `dist/${asset} 与源码不一致`);
   }

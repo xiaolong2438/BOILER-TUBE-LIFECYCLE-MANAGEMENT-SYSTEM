@@ -179,6 +179,7 @@
       '    </div>',
       '  </header>',
       '  <div class="assistant-history" id="assistantHistory" role="region" aria-label="历史会话" hidden></div>',
+      '  <div class="assistant-attachments" id="assistantAttachments" hidden></div>',
       '  <div class="assistant-messages" id="assistantMessages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="对话消息"></div>',
       '  <div class="assistant-quick" id="assistantQuick" role="group" aria-label="快捷指令" hidden></div>',
       '  <div class="assistant-typing" id="assistantTyping" role="status" aria-label="助手正在思考" hidden>',
@@ -213,6 +214,50 @@
     ];
     if (size) lines.push('      <span class="assistant-attachment-size">' + escapeHtml(size) + '</span>');
     lines.push('    </div>');
+    return lines.join('\n');
+  }
+
+  /* ---------------- 纯渲染：会话附件条（多轮上下文） ---------------- */
+
+  var ATTACHMENT_KIND_LABELS = { image: '图片', pdf: 'PDF', table: '表格' };
+
+  function attachmentKindLabel(kind) {
+    return ATTACHMENT_KIND_LABELS[toText(kind)] || '附件';
+  }
+
+  /* 会话附件条：空数组返回 ''（容器保持 hidden）；当前项加 .is-current。
+     只渲染元信息（序号/名称/类型/行数），明细与原图留在接线层，UI 层不碰数据。 */
+  function attachmentBarMarkup(attachments, currentId) {
+    var list = Array.isArray(attachments) ? attachments : [];
+    if (!list.length) return '';
+    var current = toText(currentId);
+    if (!current) {
+      var tail = list[list.length - 1];
+      current = toText(tail && tail.id);
+    }
+    var lines = [];
+    for (var i = 0; i < list.length; i += 1) {
+      var item = list[i] && typeof list[i] === 'object' ? list[i] : {};
+      var id = toText(item.id);
+      var name = toText(item.name) || '未命名附件';
+      var kind = toText(item.kind) || 'table';
+      var seq = Math.round(num(item.seq)) > 0 ? Math.round(num(item.seq)) : i + 1;
+      var rowCount = Math.round(num(item.rowCount));
+      var isCurrent = !!id && id === current;
+      var meta = attachmentKindLabel(kind) + (rowCount > 0 ? ' · ' + formatCount(rowCount) + ' 行' : '');
+      var title = name + ' · ' + meta;
+      if (toText(item.notes)) title += ' · 识别备注：' + toText(item.notes);
+      if (toText(item.importedAt)) title += ' · 已导入 ' + formatDateTime(item.importedAt);
+      lines.push('  <div class="assistant-attachment-chip' + (isCurrent ? ' is-current' : '') + '"'
+        + ' data-assistant="attachment" data-attachment-id="' + escapeHtml(id) + '" data-attachment-action="select"'
+        + ' role="button" tabindex="0" aria-pressed="' + (isCurrent ? 'true' : 'false') + '" title="' + escapeHtml(title) + '">');
+      lines.push('    <span class="assistant-attachment-seq" aria-hidden="true">' + escapeHtml(String(seq)) + '</span>');
+      lines.push('    <span class="assistant-attachment-label">' + escapeHtml(name) + '</span>');
+      lines.push('    <span class="assistant-attachment-meta">' + escapeHtml(meta) + '</span>');
+      lines.push('    <button type="button" class="assistant-attachment-remove" data-assistant="attachment" data-attachment-id="'
+        + escapeHtml(id) + '" data-attachment-action="remove" aria-label="移除附件：' + escapeHtml(name) + '" title="移除附件">×</button>');
+      lines.push('  </div>');
+    }
     return lines.join('\n');
   }
 
@@ -661,6 +706,7 @@
       title: pick('#assistantTitle'),
       status: pick('#assistantStatus'),
       messages: pick('#assistantMessages'),
+      attachments: pick('#assistantAttachments'),
       quick: pick('#assistantQuick'),
       input: pick('#assistantInput'),
       send: pick('#assistantSend'),
@@ -775,6 +821,12 @@
       var conversations = Array.isArray(state.conversations) ? state.conversations : [];
       var shouldStick = stickToBottom;
 
+      if (els.attachments) {
+        var attachments = Array.isArray(state.attachments) ? state.attachments : [];
+        var barMarkup = attachmentBarMarkup(attachments, state.currentAttachmentId);
+        els.attachments.innerHTML = barMarkup;
+        els.attachments.hidden = !barMarkup;
+      }
       if (els.messages) {
         els.messages.innerHTML = messages.length
           ? messages.map(messageMarkup).join('\n')
@@ -933,6 +985,19 @@
         emit({ kind: 'open-settings' });
         return;
       }
+      if (action === 'attachment') {
+        var attachmentId = toText(target.getAttribute('data-attachment-id'));
+        var attachmentAction = toText(target.getAttribute('data-attachment-action'));
+        if (!attachmentId) return;
+        if (attachmentAction === 'remove') {
+          if (event.preventDefault) event.preventDefault();
+          if (event.stopPropagation) event.stopPropagation();
+          emit({ kind: 'remove-attachment', id: attachmentId });
+          return;
+        }
+        emit({ kind: 'select-attachment', id: attachmentId });
+        return;
+      }
       if (action === 'action') {
         if (currentBusy()) return;
         var actionId = toText(target.getAttribute('data-action-id'));
@@ -957,6 +1022,21 @@
       if (event.preventDefault) event.preventDefault();
       if (currentBusy()) return;
       if (els.file && typeof els.file.click === 'function') els.file.click();
+    }
+
+    /* 附件项声明了 role="button" tabindex="0"，必须能用键盘（Enter / 空格）激活，
+       与「上传」保持同一套可访问性标准。只处理 select：移除按钮是原生 <button>，
+       键盘激活已由 click 委派负责，这里再处理会重复派发。 */
+    function onAttachmentsKeyDown(event) {
+      if (!event) return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      var target = event.target;
+      if (!target || typeof target.getAttribute !== 'function') return;
+      if (toText(target.getAttribute('data-attachment-action')) !== 'select') return;
+      var id = toText(target.getAttribute('data-attachment-id'));
+      if (!id) return;
+      if (event.preventDefault) event.preventDefault();
+      emit({ kind: 'select-attachment', id: id });
     }
 
     /* 一次选择/拖入的多个文件按数量分流：1 个走原有单文件事件，多个走批量事件 */
@@ -1052,6 +1132,9 @@
     if (els.attach && typeof els.attach.addEventListener === 'function') {
       els.attach.addEventListener('keydown', onAttachKeyDown);
     }
+    if (els.attachments && typeof els.attachments.addEventListener === 'function') {
+      els.attachments.addEventListener('keydown', onAttachmentsKeyDown);
+    }
     if (els.file && typeof els.file.addEventListener === 'function') {
       els.file.addEventListener('change', onFileChange);
     }
@@ -1085,6 +1168,7 @@
           els.input.removeEventListener('input', adjustInputHeight);
         }
         if (els.attach && typeof els.attach.removeEventListener === 'function') els.attach.removeEventListener('keydown', onAttachKeyDown);
+        if (els.attachments && typeof els.attachments.removeEventListener === 'function') els.attachments.removeEventListener('keydown', onAttachmentsKeyDown);
         if (els.file && typeof els.file.removeEventListener === 'function') els.file.removeEventListener('change', onFileChange);
         if (els.messages && typeof els.messages.removeEventListener === 'function') els.messages.removeEventListener('scroll', onMessagesScroll);
         if (els.panel && typeof els.panel.removeEventListener === 'function') {
@@ -1111,6 +1195,7 @@
     launcherMarkup: launcherMarkup,
     panelMarkup: panelMarkup,
     messageMarkup: messageMarkup,
+    attachmentBarMarkup: attachmentBarMarkup,
     cleaningMarkup: cleaningMarkup,
     operationMarkup: operationMarkup,
     analysisMarkup: analysisMarkup,
