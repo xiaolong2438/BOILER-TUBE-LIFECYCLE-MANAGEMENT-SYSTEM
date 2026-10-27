@@ -375,6 +375,24 @@ check("材料库样例文件能被识别为材料库数据集", () => {
   assert.ok(result.report.summary.cleanRows >= 2);
 });
 
+checkAsync("未识别数据集上传后：对话文案不说「可导入」，卡片也不给导入按钮", async () => {
+  const { sandbox, doc } = boot();
+  sandbox.BTAssistant.open();
+  const csv = ["姓名,部门,日期,工时", "张三,检修部,2024-03-05,8", "李四,检测中心,2024-03-06,7.5"].join("\n");
+  const file = { name: "无关表格-考勤.csv", size: csv.length, type: "text/csv" };
+  /* 接线层用 FileReader 读取 CSV */
+  sandbox.FileReader = class {
+    readAsText() { setTimeout(() => this.onload({ target: { result: csv } }), 0); }
+  };
+  sandbox.BTAssistant.handleFile(file);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const html = lastMessagesHtml(doc);
+  assert.match(html, /未识别数据集|未识别出数据集类型/, "必须明确提示数据集未识别");
+  assert.ok(!/可导入 \d+ 行/.test(html), "未识别数据集不得出现「可导入 N 行」，实际：" + html.slice(-400));
+  assert.match(html, /通用清洗后保留 \d+ 行，不导入/, "应说明保留行数且不导入");
+  assert.ok(html.indexOf('data-action-id="import-confirm"') < 0, "未识别数据集不能出现确认导入按钮");
+});
+
 for (const [name, fn] of checks) {
   fn();
   console.log("ok - " + name);

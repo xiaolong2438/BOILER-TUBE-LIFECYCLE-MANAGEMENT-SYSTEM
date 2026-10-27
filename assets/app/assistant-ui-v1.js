@@ -351,6 +351,12 @@
       : (datasetType === 'unknown' ? '未识别数据集' : (errorCount > 0 ? '需修正 ' + formatCount(errorCount) + ' 行' : '待确认'));
     var subtitle = toText(rep.fileName);
     if (toText(rep.sheetName)) subtitle += (subtitle ? ' · ' : '') + toText(rep.sheetName);
+    /* 未识别数据集只做通用清洗、绝不写库：此时不能把「通用清洗后保留行数」显示成「可导入」，
+       否则用户会误以为这些行已经/即将入库。 */
+    var datasetUnrecognized = datasetType === 'unknown';
+    var importableMetric = datasetUnrecognized
+      ? metricMarkup({ label: '可导入', value: '—', tone: '' })
+      : metricMarkup({ label: '可导入', value: formatCount(cleanRowCount), tone: cleanRowCount > 0 ? 'ok' : '' });
 
     var lines = [
       '<div class="assistant-cleaning" data-tone="' + tone + '" data-dataset="' + escapeHtml(datasetType) + '">',
@@ -361,7 +367,7 @@
       '  </div>',
       '  <div class="assistant-metrics">',
       metricMarkup({ label: '数据行', value: formatCount(totalRows) }),
-      metricMarkup({ label: '可导入', value: formatCount(cleanRowCount), tone: cleanRowCount > 0 ? 'ok' : '' }),
+      importableMetric,
       metricMarkup({ label: '错误行', value: formatCount(errorCount), tone: errorCount > 0 ? 'danger' : '' }),
       metricMarkup({ label: '警告行', value: formatCount(warningCount), tone: warningCount > 0 ? 'warn' : '' }),
       metricMarkup({ label: '重复丢弃', value: formatCount(duplicateRows), tone: duplicateRows > 0 ? 'warn' : '' }),

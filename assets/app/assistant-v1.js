@@ -1291,14 +1291,18 @@
 
   function describeCleaning(report) {
     var summary = report && report.summary ? report.summary : {};
+    var unknownDataset = Boolean(report && report.datasetType === 'unknown');
     var parts = [];
-    parts.push('已检查 ' + (summary.totalRows || 0) + ' 行数据（可导入 ' + (summary.cleanRows || 0) + ' 行）');
+    /* 未识别数据集只做通用清洗、不会写库，不能说「可导入 N 行」——那是保留行数，不是可入库行数 */
+    parts.push(unknownDataset
+      ? '已检查 ' + (summary.totalRows || 0) + ' 行数据（通用清洗后保留 ' + (summary.cleanRows || 0) + ' 行，不导入）'
+      : '已检查 ' + (summary.totalRows || 0) + ' 行数据（可导入 ' + (summary.cleanRows || 0) + ' 行）');
     if (summary.errorCount) parts.push(summary.errorCount + ' 行有错误');
     if (summary.warningCount) parts.push(summary.warningCount + ' 行有警告');
     if (summary.duplicateRows) parts.push('丢弃重复 ' + summary.duplicateRows + ' 行');
     var head = parts.join('，') + '。';
     if (summary.importable) return head + '可以点「确认导入」写入台账。';
-    if (report && report.datasetType === 'unknown') return head + '未识别出数据集类型，请确认表头是否来自本系统导出的模板。';
+    if (unknownDataset) return head + '未识别出数据集类型，请确认表头是否来自本系统导出的模板。';
     return head + '存在错误行，请按提示修正后再导入，或直接导出问题明细核对。';
   }
 

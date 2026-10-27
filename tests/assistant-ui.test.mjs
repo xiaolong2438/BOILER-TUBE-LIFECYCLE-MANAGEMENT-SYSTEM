@@ -140,6 +140,35 @@ check("清洗报告渲染错误/警告数量与动作按钮", () => {
   assert.match(markup, /导出清洗后数据/);
 });
 
+check("清洗报告：未识别数据集不把「保留行数」显示成「可导入」", () => {
+  const report = {
+    datasetType: "unknown",
+    fileName: "无关表格-考勤.csv",
+    summary: { totalRows: 2, cleanRows: 2, errorCount: 0, warningCount: 0, duplicateRows: 0, issueCount: 1, importable: false },
+    checks: [{ id: "unknown_type", severity: "warning", title: "未识别数据集", detail: "不会导入", rows: [] }],
+    normalizations: [],
+    actions: [{ id: "export-cleaned", label: "导出清洗后数据", tone: "ghost" }]
+  };
+  const markup = UI.cleaningMarkup(report);
+  assert.match(markup, /未识别数据集/, "必须标出未识别数据集");
+  assert.match(markup, /可导入<\/span>\s*<span[^>]*>—</, "可导入指标必须显示占位符而不是行数");
+  assert.ok(!/可导入<\/span>\s*<span[^>]*>2</.test(markup), "未识别数据集绝不能显示可导入 2 行");
+  assert.ok(markup.indexOf('data-action-id="import-confirm"') < 0, "未识别数据集不能出现确认导入按钮");
+});
+
+check("清洗报告：已识别数据集仍正常显示可导入行数（不误伤）", () => {
+  const report = {
+    datasetType: "events",
+    fileName: "寿命数据.csv",
+    summary: { totalRows: 5, cleanRows: 3, errorCount: 0, warningCount: 2, duplicateRows: 0, issueCount: 2, importable: true },
+    checks: [],
+    normalizations: [],
+    actions: []
+  };
+  const markup = UI.cleaningMarkup(report);
+  assert.match(markup, /可导入<\/span>\s*<span[^>]*>3</, "已识别数据集必须显示真实可导入行数");
+});
+
 check("操作卡片渲染主次动作与状态", () => {
   const markup = UI.operationMarkup({
     tool: "data.import",
