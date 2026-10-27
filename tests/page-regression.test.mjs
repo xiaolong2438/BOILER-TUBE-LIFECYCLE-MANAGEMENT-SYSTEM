@@ -33,10 +33,10 @@ const checks = [
   }],
   ["code generator uses complete coding-zone rules separate from the inventory matrix", () => {
     assert.match(html, /const CODE_SYSTEMS\s*=/);
-    assert.match(html, /PSH[\s\S]*zones:\s*\['E','M','O'\]/);
-    assert.match(html, /ISH[\s\S]*zones:\s*\['E','M','O'\]/);
-    assert.match(html, /HSH[\s\S]*zones:\s*\['E','M','O'\]/);
-    assert.match(html, /HRH[\s\S]*zones:\s*\['E','M','O'\]/);
+    assert.match(html, /DPGRQ[\s\S]*comps:\s*\['GQ'\]/);
+    assert.match(html, /HPGRQ[\s\S]*comps:\s*\['GQ'\]/);
+    assert.match(html, /GGRQ[\s\S]*comps:\s*\['GQ'\]/);
+    assert.match(html, /GZRQ[\s\S]*comps:\s*\['GQ'\]/);
     assert.doesNotMatch(html, /matrix\.filter\(m => m\.sys === sysSelect\.value\)\.map\(m => m\.zone\)/);
   }],
   ["search can identify legal inventory codes without local events", () => {

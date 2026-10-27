@@ -157,7 +157,7 @@ check("normalizeNumber：无法规范化时保留原文（不丢数据）", () =
 
 check("normalizeCell：管段编码去所有空白、全角转半角、不改大小写", () => {
   const { docs } = createHarness();
-  assert.equal(docs.normalizeCell(" 1-WW-FR-009-0007-000 ", "管段编码"), "1-WW-FR-009-0007-000");
+  assert.equal(docs.normalizeCell(" 1G-SLB-WB-F000-R007-Q001 ", "管段编码"), "1G-SLB-WB-F000-R007-Q001");
   assert.equal(docs.normalizeCell("1-WW FR-009", "管段编码"), "1-WWFR-009");
   assert.equal(docs.normalizeCell("ａｂＣ１２", "关联新管码"), "abC12");
   assert.equal(docs.normalizeCell("Φ63.5 × 7.5", "规格"), "Φ63.5 × 7.5", "非编码列只做基础清洗");
@@ -177,8 +177,8 @@ check("normalizeGrid：返回新数组、不改入参、表头与数据行都处
   const { docs } = createHarness();
   const input = [
     ["日期", "管段编码", "厚度(mm)", "规格"],
-    ["2024年1月5日", " 1-WW-FR-009 ", "6.5mm", "Φ63.5×7.5"],
-    ["2024.2.6", "1-WW-FR-010", "见附页", "Φ51×8"]
+    ["2024年1月5日", " 1G-SLB-WB-F000-R007 ", "6.5mm", "Φ63.5×7.5"],
+    ["2024.2.6", "1G-SLB-WB-F000-R008", "见附页", "Φ51×8"]
   ];
   const snapshot = JSON.parse(JSON.stringify(input));
   const first = docs.normalizeGrid(input);
@@ -188,8 +188,8 @@ check("normalizeGrid：返回新数组、不改入参、表头与数据行都处
   assert.notEqual(first[0], input[0]);
   assert.notEqual(first[1], input[1]);
   assert.deepEqual(plain(first[0]), ["日期", "管段编码", "厚度(mm)", "规格"], "表头行也要清洗但不能被破坏");
-  assert.deepEqual(plain(first[1]), ["2024-01-05", "1-WW-FR-009", "6.5", "Φ63.5×7.5"]);
-  assert.deepEqual(plain(first[2]), ["2024-02-06", "1-WW-FR-010", "见附页", "Φ51×8"]);
+  assert.deepEqual(plain(first[1]), ["2024-01-05", "1G-SLB-WB-F000-R007", "6.5", "Φ63.5×7.5"]);
+  assert.deepEqual(plain(first[2]), ["2024-02-06", "1G-SLB-WB-F000-R008", "见附页", "Φ51×8"]);
   assert.deepEqual(plain(docs.normalizeGrid(first)), plain(first), "normalizeGrid 必须幂等");
   assert.deepEqual(plain(docs.normalizeGrid([])), []);
   assert.deepEqual(plain(docs.normalizeGrid(null)), []);
@@ -221,8 +221,8 @@ check("mergeGrids：表头并集保序、缺失列补空串、重复数据行去
 
 check("imagesToRows：两张串行识别合并、表头对齐去重、进度回调完整", async () => {
   const responses = [
-    gridJson(["日期", "管段编码", "结论"], [["2024年1月5日", " 1-WW-FR-009 ", "合格"]], { uncertain: [[0, 2]] }),
-    gridJson(["管段编码", "日期", "结论"], [["1-WW-FR-009", "2024/1/5", ""], ["1-WW-FR-011", "2024/2/7", "待复检"]])
+    gridJson(["日期", "管段编码", "结论"], [["2024年1月5日", " 1G-SLB-WB-F000-R007 ", "合格"]], { uncertain: [[0, 2]] }),
+    gridJson(["管段编码", "日期", "结论"], [["1G-SLB-WB-F000-R007", "2024/1/5", ""], ["1G-SLB-WB-F000-R009", "2024/2/7", "待复检"]])
   ];
   const h = createHarness({ responses });
   const seen = [];
@@ -232,8 +232,8 @@ check("imagesToRows：两张串行识别合并、表头对齐去重、进度回�
 
   assert.equal(result.sheetName, "图片识别(2张)");
   assert.deepEqual(plain(result.rows[0]), ["日期", "管段编码", "结论"]);
-  assert.deepEqual(plain(result.rows[1]), ["2024-01-05", "1-WW-FR-009", ""], "uncertain 命中的单元格置空");
-  assert.deepEqual(plain(result.rows[2]), ["2024-02-07", "1-WW-FR-011", "待复检"]);
+  assert.deepEqual(plain(result.rows[1]), ["2024-01-05", "1G-SLB-WB-F000-R007", ""], "uncertain 命中的单元格置空");
+  assert.deepEqual(plain(result.rows[2]), ["2024-02-07", "1G-SLB-WB-F000-R009", "待复检"]);
   assert.equal(result.rows.length - 1, 2, "跨图重复数据行必须去重");
   assert.match(result.notes, /成功 2 张/);
   assert.match(result.notes, /失败 0 张/);

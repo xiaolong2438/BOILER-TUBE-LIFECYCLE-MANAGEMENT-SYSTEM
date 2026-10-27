@@ -221,7 +221,8 @@
   function splitCode(code) {
     var parts = String(code || '').split('-');
     return {
-      unit: parts[0] || '',
+      /* 新编码机组段为 1G/2G，归一为 1/2；旧数据纯数字保持不变 */
+      unit: String(parts[0] || '').replace(/G$/i, ''),
       sys: parts[1] || '',
       zone: parts[2] || ''
     };
@@ -1767,7 +1768,7 @@
   /* 把管码、证件号、手机号、邮箱从要外发的文本里抹掉 */
   function maskPii(value) {
     var text = String(value === null || value === undefined ? '' : value);
-    text = text.replace(/[12]-[A-Z]{2,3}-[A-Z]{1,3}-\d{3}-\d{4}-[A-Z0-9]{3}(?:-R\d+)?/g, '[管码]');
+    text = text.replace(/[12]G-(?:SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|EXIN|EXOUT|LHD|RSQ)-[^\s，,。；;）)]+/g, '[管码]');
     text = text.replace(/[0-9]{18}/g, '[证件号]');
     text = text.replace(/[0-9]{11}/g, '[手机号]');
     text = text.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}/g, '[邮箱]');
@@ -2050,7 +2051,7 @@
       { kind: 'compare', label: '对比分析', example: '1 号和 2 号炉壁厚对比' },
       { kind: 'correlation', label: '相关性分析', example: '壁厚和硬度相关性' },
       { kind: 'outlier', label: '异常识别', example: '壁厚异常记录' },
-      { kind: 'profile', label: '单管剖面', example: '1-WW-FR-008-0003-000 壁厚变化曲线' },
+      { kind: 'profile', label: '单管剖面', example: '2G-SLB-WB-F000-R025-Q16 壁厚变化曲线' },
       { kind: 'overview', label: '综合画像', example: '数据整体画像' }
     ];
   }

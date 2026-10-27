@@ -86,7 +86,7 @@ check("页面挂载了维护记录视图与资源", () => {
 
 check("record 自动补全 id / 时间 / 操作人 / 来源", () => {
   const { log } = boot();
-  const entry = log.record({ action: "create", targetLabel: "1-WW-FR-008-0003-000", summary: "新增测厚" });
+  const entry = log.record({ action: "create", targetLabel: "1G-SLB-WB-F000-R003-Q001", summary: "新增测厚" });
   assert.match(entry.id, /^log-/);
   assert.ok(entry.at > 0);
   assert.ok(entry.ts.includes("T"));
@@ -98,19 +98,19 @@ check("record 自动补全 id / 时间 / 操作人 / 来源", () => {
 check("hook(create) 生成可读摘要与对象标签", () => {
   const { log } = boot();
   const entry = log.hook("create", {
-    record: { code: "1-WW-FR-008-0003-000", type: "测厚", date: "2026-03-01", thickness: "6.8" }
+    record: { code: "1G-SLB-WB-F000-R003-Q001", type: "测厚", date: "2026-03-01", thickness: "6.8" }
   });
   assert.equal(entry.action, "create");
-  assert.match(entry.targetLabel, /1-WW-FR-008-0003-000/);
+  assert.match(entry.targetLabel, /1G-SLB-WB-F000-R003-Q001/);
   assert.match(entry.targetLabel, /测厚/);
   assert.match(entry.summary, /新增测厚/);
   assert.match(entry.summary, /6.8mm/);
-  assert.equal(entry.meta.code, "1-WW-FR-008-0003-000");
+  assert.equal(entry.meta.code, "1G-SLB-WB-F000-R003-Q001");
 });
 
 check("hook(update) 记录字段级前后值，值没变则不记录", () => {
   const { log } = boot();
-  const record = { code: "1-WW-FR-008-0003-000", date: "2026-03-01" };
+  const record = { code: "1G-SLB-WB-F000-R003-Q001", date: "2026-03-01" };
   const entry = log.hook("update", { record, field: "thickness", before: "6.8", after: "6.5" });
   assert.equal(entry.action, "update");
   assert.equal(entry.changes.length, 1);
@@ -124,11 +124,11 @@ check("hook(update) 记录字段级前后值，值没变则不记录", () => {
 check("hook(delete) 保留被删记录快照，便于追溯", () => {
   const { log } = boot();
   const entry = log.hook("delete", {
-    record: { code: "2-HSH-E-013-0006-W01", type: "测厚", date: "2025-02-11", thickness: "6.85", desc: "误录" }
+    record: { code: "2G-GGRQ-GQ-L013-U006-Q001", type: "测厚", date: "2025-02-11", thickness: "6.85", desc: "误录" }
   });
   assert.equal(entry.action, "delete");
   assert.match(entry.summary, /删除测厚/);
-  assert.equal(entry.meta.snapshot.code, "2-HSH-E-013-0006-W01");
+  assert.equal(entry.meta.snapshot.code, "2G-GGRQ-GQ-L013-U006-Q001");
   assert.ok(entry.changes.length >= 3, "删除时应至少留下编码/日期/厚度快照");
 });
 
@@ -166,7 +166,7 @@ check("hook(material) 区分普通变更与撤销", () => {
 check("hook(replace) 记录新旧管码与原因", () => {
   const { log } = boot();
   const entry = log.hook("replace", {
-    record: { oldCode: "1-WW-FR-008-0003-000", newCode: "1-WW-FR-008-0003-001", reason: "爆管", date: "2026-04-02" }
+    record: { oldCode: "1G-SLB-WB-F000-R003-Q001", newCode: "1G-SLB-WB-F000-R003-Q002", reason: "爆管", date: "2026-04-02" }
   });
   assert.equal(entry.action, "replace");
   assert.match(entry.targetLabel, /→/);
@@ -187,9 +187,9 @@ check("hook(clear) 记为系统动作", () => {
 check("list 支持动作 / 来源 / 关键词 / 时间范围 / 条数过滤", () => {
   const { log } = boot();
   const now = Date.now();
-  log.record({ action: "create", summary: "新增测厚", targetLabel: "1-WW-FR-008-0003-000", at: now });
+  log.record({ action: "create", summary: "新增测厚", targetLabel: "1G-SLB-WB-F000-R003-Q001", at: now });
   log.record({ action: "import", summary: "导入寿命事件", at: now - 10 * 86400000, targetLabel: "寿命事件" });
-  log.record({ action: "update", summary: "厚度 6.8 → 6.5", targetLabel: "1-WW-FR-008-0003-000", at: now - 40 * 86400000 });
+  log.record({ action: "update", summary: "厚度 6.8 → 6.5", targetLabel: "1G-SLB-WB-F000-R003-Q001", at: now - 40 * 86400000 });
   const { log: sandboxed } = { log };
   void sandboxed;
 
@@ -198,7 +198,7 @@ check("list 支持动作 / 来源 / 关键词 / 时间范围 / 条数过滤", ()
   assert.equal(log.list({ keyword: "厚度" }).length, 1);
   assert.equal(log.list({ days: 30 }).length, 2, "40 天前的那条应被排除");
   assert.equal(log.list({ limit: 1 }).length, 1);
-  assert.equal(log.list({ keyword: "1-WW" }).length, 2);
+  assert.equal(log.list({ keyword: "1G-SLB" }).length, 2);
 });
 
 check("stats 汇总总量 / 今日 / 近 7 天 / 最近一次", () => {
@@ -272,7 +272,7 @@ check("buildCsv 输出 BOM、表头与单元格转义", () => {
   const rows = [log.record({
     action: "update",
     summary: '厚度 6.8 → 6.5，"异常"',
-    targetLabel: "1-WW-FR-008-0003-000",
+    targetLabel: "1G-SLB-WB-F000-R003-Q001",
     at: Date.now(),
     changes: [{ field: "thickness", label: "厚度(mm)", before: "6.8", after: "6.5" }]
   })];
@@ -288,8 +288,8 @@ check("buildCsv 输出 BOM、表头与单元格转义", () => {
 check("diffFields / summarizeChanges 只输出真正变化的字段", () => {
   const { log } = boot();
   const changes = log.diffFields(
-    { thickness: "7.0", hardness: "180", code: "1-WW-FR-008-0003-000" },
-    { thickness: "6.5", hardness: "180", code: "1-WW-FR-008-0003-000" },
+    { thickness: "7.0", hardness: "180", code: "1G-SLB-WB-F000-R003-Q001" },
+    { thickness: "6.5", hardness: "180", code: "1G-SLB-WB-F000-R003-Q001" },
     ["thickness", "hardness", "code"]
   );
   assert.equal(changes.length, 1);

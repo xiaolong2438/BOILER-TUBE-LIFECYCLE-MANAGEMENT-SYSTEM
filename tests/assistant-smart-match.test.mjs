@@ -20,8 +20,8 @@ const check = (name, fn) => checks.push([name, fn]);
 
 const EVENT_HEADER = ["数据分类", "炉号", "日期", "管段编码", "规格", "材质", "厚度(mm)", "硬度(HB)", "事件类型/更换原因", "关联新管码", "详细描述/结论"];
 const MATRIX = [
-  { sys: "WW", zone: "FR", pMin: 1, pMax: 12, tMin: 1, tMax: 192 },
-  { sys: "HSH", zone: "E", pMin: 1, pMax: 32, tMin: 1, tMax: 12 }
+  { sys: "SLB", comp: "WB", pos: "F000", dirs: ["R", "L"], tMax: 192 },
+  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["U", "D"], tMax: 12 }
 ];
 const checkById = (report, id) => report.checks.find((item) => item.id === id);
 
@@ -67,8 +67,8 @@ check("数据集检测仍只认精确别名，模糊匹配不会把无关表格�
 check("乱序表头清洗后按模板列序重排，缺失模板列补空列占位", () => {
   const rows = [
     ["管段编码", "检测日期", "实测壁厚值(mm)", "数据分类", "备注"],
-    ["1-WW-FR-008-0003-000", "2024年3月5日", "6.5", "事件", "前墙第8排"],
-    ["1-WW-FR-008-0004-000", "2024/4/8", "7.1", "事件", ""]
+    ["1G-SLB-WB-F000-R003-Q001", "2024年3月5日", "6.5", "事件", "前墙第8排"],
+    ["1G-SLB-WB-F000-R004-Q001", "2024/4/8", "7.1", "事件", ""]
   ];
   const result = Core.cleanRows({ rows, matrixRows: MATRIX, units: ["1", "2"] });
   assert.equal(result.report.datasetType, "events");
@@ -76,7 +76,7 @@ check("乱序表头清洗后按模板列序重排，缺失模板列补空列占�
   const first = result.cleanRows[1];
   assert.equal(first[0], "事件");           // 数据分类回到第 0 列
   assert.equal(first[2], "2024-03-05");     // 日期归一
-  assert.equal(first[3], "1-WW-FR-008-0003-000");
+  assert.equal(first[3], "1G-SLB-WB-F000-R003-Q001");
   assert.equal(first[6], "6.5");            // 厚度列
   assert.equal(first[10], "前墙第8排");      // 备注 → 详细描述/结论
   assert.equal(first[1], "");               // 缺失的炉号列补空
@@ -85,7 +85,7 @@ check("乱序表头清洗后按模板列序重排，缺失模板列补空列占�
 check("字段智能映射进入清洗报告（info 检查项），含原始列名与目标列名", () => {
   const rows = [
     ["数据分类", "日期", "管段编码", "实测壁厚值(mm)"],
-    ["事件", "2024-03-05", "1-WW-FR-008-0003-000", "6.5"]
+    ["事件", "2024-03-05", "1G-SLB-WB-F000-R003-Q001", "6.5"]
   ];
   const report = Core.cleanRows({ rows, matrixRows: MATRIX, units: ["1", "2"] }).report;
   const checkItem = checkById(report, "header_mapping");
@@ -99,7 +99,7 @@ check("字段智能映射进入清洗报告（info 检查项），含原始列�
 check("headerMap（模型映射）参与清洗：未识别列被映射后可对位，映射写入报告", () => {
   const rows = [
     ["数据分类", "日期", "管段编码", "传感器读数", "仪器编号"],
-    ["事件", "2024-03-05", "1-WW-FR-008-0003-000", "6.6", "A-100"]
+    ["事件", "2024-03-05", "1G-SLB-WB-F000-R003-Q001", "6.6", "A-100"]
   ];
   const report = Core.cleanRows({
     rows,
@@ -117,36 +117,40 @@ check("headerMap（模型映射）参与清洗：未识别列被映射后可对�
 
 /* ---------------- 3. 智能编码匹配 ---------------- */
 
-check("expandMatrixCodes：矩阵展开为基础编码（机组×屏×管，seq=000）", () => {
-  const codes = Core.expandMatrixCodes([{ sys: "WW", zone: "FR", pMin: 8, pMax: 8, tMin: 3, tMax: 4 }], ["1", "2"]);
+check("expandMatrixCodes：矩阵展开为基础编码（机组×排×管，seq=Q001）", () => {
+  const codes = Core.expandMatrixCodes([{ sys: "GGRQ", comp: "GQ", posLetters: ["L"], pMax: 2, dirs: ["U"], tMax: 2 }], ["1", "2"]);
   assert.deepEqual(codes, [
-    "1-WW-FR-008-0003-000",
-    "1-WW-FR-008-0004-000",
-    "2-WW-FR-008-0003-000",
-    "2-WW-FR-008-0004-000"
+    "1G-GGRQ-GQ-L001-U001-Q001",
+    "1G-GGRQ-GQ-L001-U002-Q001",
+    "1G-GGRQ-GQ-L002-U001-Q001",
+    "1G-GGRQ-GQ-L002-U002-Q001",
+    "2G-GGRQ-GQ-L001-U001-Q001",
+    "2G-GGRQ-GQ-L001-U002-Q001",
+    "2G-GGRQ-GQ-L002-U001-Q001",
+    "2G-GGRQ-GQ-L002-U002-Q001"
   ]);
 });
 
 check("suggestSimilarCode：同机组同系统内找最近编码，跨系统候选被过滤", () => {
-  const ledger = ["1-WW-FR-008-0003-000", "2-HSH-E-012-0005-W02"];
-  const hit = Core.suggestSimilarCode("1-WW-FR-008-0030-000", ledger);
-  assert.equal(hit.code, "1-WW-FR-008-0003-000");
+  const ledger = ["1G-SLB-WB-F000-R003-Q001", "2G-GGRQ-GQ-L012-U005-Q001"];
+  const hit = Core.suggestSimilarCode("1G-SLB-WB-F000-R030-Q001", ledger);
+  assert.equal(hit.code, "1G-SLB-WB-F000-R003-Q001");
   assert.ok(hit.similarity >= 0.82, "屏号笔误的相似度必须达到阈值");
   /* 目标编码本身在候选里 → 相似码没有意义，返回 null（调用方按存在处理） */
-  assert.equal(Core.suggestSimilarCode("1-WW-FR-008-0003-000", ledger), null);
+  assert.equal(Core.suggestSimilarCode("1G-SLB-WB-F000-R003-Q001", ledger), null);
   /* 相似度太低（不是笔误，可能是合法新码）不给出建议 */
-  assert.equal(Core.suggestSimilarCode("1-LSH-E-001-0001-000", ledger), null);
+  assert.equal(Core.suggestSimilarCode("1G-DZRQ-GQ-1KJ-L001-U001-Q001", ledger), null);
 });
 
 check("台账里不存在但高度相似的编码：报 unknown_code 警告并给出建议", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
-    ["事件", "1", "2024-03-05", "1-WW-FR-008-0030-000", "测厚"],
-    ["事件", "1", "2024-03-06", "1-WW-FR-008-0003-000", "测厚"]
+    ["事件", "1", "2024-03-05", "1G-SLB-WB-F000-R030-Q001", "测厚"],
+    ["事件", "1", "2024-03-06", "1G-SLB-WB-F000-R003-Q001", "测厚"]
   ];
   const report = Core.cleanRows({
     rows,
-    knownCodes: ["1-WW-FR-008-0003-000"],
+    knownCodes: ["1G-SLB-WB-F000-R003-Q001"],
     matrixRows: [],
     units: ["1", "2"]
   }).report;
@@ -155,17 +159,17 @@ check("台账里不存在但高度相似的编码：报 unknown_code 警告并�
   assert.equal(checkItem.severity, "warning");
   assert.ok(checkItem.rows.includes(1), "第 1 行（笔误行）必须被标记");
   assert.ok(!checkItem.rows.includes(2), "第 2 行（正确编码）不能被标记");
-  assert.ok(checkItem.sample[0].includes("1-WW-FR-008-0003-000"), "样例必须给出最相似的真实编码");
+  assert.ok(checkItem.sample[0].includes("1G-SLB-WB-F000-R003-Q001"), "样例必须给出最相似的真实编码");
 });
 
 check("更换产生的新管码（-R1 后缀）剥掉后缀后比对基础码，不误报", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因", "关联新管码"],
-    ["更换", "1", "2024-03-05", "1-WW-FR-008-0003-000", "爆管更换", "1-WW-FR-008-0003-R01"]
+    ["更换", "1", "2024-03-05", "1G-SLB-WB-F000-R003-Q001", "爆管更换", "1G-SLB-WB-F000-R003-Q002"]
   ];
   const report = Core.cleanRows({
     rows,
-    knownCodes: ["1-WW-FR-008-0003-000"],
+    knownCodes: ["1G-SLB-WB-F000-R003-Q001"],
     matrixRows: [],
     units: ["1", "2"]
   }).report;
@@ -175,7 +179,7 @@ check("更换产生的新管码（-R1 后缀）剥掉后缀后比对基础码，
 check("矩阵内合法编码不触发 unknown_code（新管首个事件不算笔误）", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
-    ["事件", "1", "2024-03-05", "1-WW-FR-008-0005-000", "测厚"]
+    ["事件", "1", "2024-03-05", "1G-SLB-WB-F000-R005-Q001", "测厚"]
   ];
   const report = Core.cleanRows({ rows, knownCodes: [], matrixRows: MATRIX, units: ["1", "2"] }).report;
   assert.equal(checkById(report, "unknown_code"), undefined);
@@ -185,14 +189,14 @@ check("矩阵内合法编码不触发 unknown_code（新管首个事件不算笔
 check("矩阵外的编码若与真实编码高度相似，out_of_range 样例里附带相似码建议", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
-    ["事件", "1", "2024-03-05", "1-WW-FR-080-0003-000", "测厚"]
+    ["事件", "1", "2024-03-05", "1G-GGRQ-GQ-L040-U001-Q001", "测厚"]
   ];
   const report = Core.cleanRows({ rows, knownCodes: [], matrixRows: MATRIX, units: ["1", "2"] }).report;
   const outOfRange = checkById(report, "out_of_range");
   assert.ok(outOfRange, "矩阵外编码必须报 out_of_range");
   assert.ok(outOfRange.sample[0].includes("（近似："), "样例应给出近似编码建议");
   assert.ok(outOfRange.sample[0].includes("相似度"), "近似建议必须带相似度");
-  assert.ok(outOfRange.sample[0].startsWith("1-WW-FR-080-0003-000"), "样例以原始编码开头");
+  assert.ok(outOfRange.sample[0].startsWith("1G-GGRQ-GQ-L040-U001-Q001"), "样例以原始编码开头");
 });
 
 /* ---------------- 输出 ---------------- */

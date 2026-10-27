@@ -3,9 +3,11 @@
  * 场景：别名乱序 CSV（干净行自动入库 + 警告行确认 + 错误行跳过 + 模糊映射与编码建议可视化）、
  *       真实 Word 台账（.docx → 识别 → 清洗 → 确认导入）、无关表格不误写库、材料库别名表头导入。 */
 window.runImportUxTests = async function () {
+
   const results = [];
   const diagnostics = {};
   const assert = (value, message) => { if (!value) throw new Error(message); };
+
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function test(name, body) {
     try { await body(); results.push({ name: name, passed: true }); }
@@ -42,10 +44,10 @@ window.runImportUxTests = async function () {
   await test('乱序别名 CSV：干净行自动入库、警告行待确认、错误行跳过', async () => {
     const csv = [
       '设备编码,机组号,检测日期,分类,实测壁厚值(mm),布氏硬度值,检测类型,结论备注',
-      '1-WW-FR-001-0003-000,1,2024年3月5日,事件,6.8,182,测厚,前墙第3管',
-      '1-WW-FL-001-0005-000,1,2024/4/8,事件,7.1,180,测厚,左墙第5管',
-      '2-HSH-O-012-0005-000,2,2024.4.15,事件,6.9,205,测厚,高过出口',
-      '1-WW-FR-008-0003-000,1,2024-05-06,事件,6.9,181,测厚,屏号待核对',
+      '1G-SLB-WB-F000-R003-Q001,1,2024年3月5日,事件,6.8,182,测厚,前墙第3管',
+      '1G-SLB-WB-L000-F005-Q001,1,2024/4/8,事件,7.1,180,测厚,左墙第5管',
+      '2G-GGRQ-GQ-L012-U005-Q001,2,2024.4.15,事件,6.9,205,测厚,高过出口',
+      '1G-GGRQ-GQ-L040-U001-Q001,1,2024-05-06,事件,6.9,181,测厚,排号待核对',
       ',1,2024-06-01,事件,7.0,175,测厚,缺编码'
     ].join('\n');
     const before = eventCount();
@@ -70,7 +72,7 @@ window.runImportUxTests = async function () {
     const text = messagesText();
     assert(text.indexOf('设备编码」→「管段编码') >= 0, '字段智能匹配卡片应展示 设备编码→管段编码，对话尾：' + text.slice(-400));
     assert(text.indexOf('实测壁厚值(mm)') >= 0 && text.indexOf('厚度(mm)') >= 0, '应展示 实测壁厚值(mm)→厚度(mm) 映射');
-    assert(text.indexOf('近似：1-WW-FR-001-0003-000') >= 0, '笔误编码 008 屏应给出 001 屏近似建议：' + text.slice(-400));
+    assert(text.indexOf('近似：1G-GGRQ-') >= 0, '超范围编码应给出近似编码建议：' + text.slice(-400));
   });
 
   await test('警告行确认导入 + 撤销回退', async () => {
@@ -165,14 +167,14 @@ window.runImportUxTests = async function () {
   await test('准确性抽查：入库记录的编码/日期/厚度与源文件一致', async () => {
     const csv = [
       '设备编码,机组号,检测日期,分类,实测壁厚值(mm),布氏硬度值,检测类型,结论备注',
-      '1-WW-FR-001-0003-000,1,2024年3月5日,事件,6.8,182,测厚,端到端准确性抽查'
+      '1G-SLB-WB-F000-R003-Q001,1,2024年3月5日,事件,6.8,182,测厚,端到端准确性抽查'
     ].join('\n');
     const before = userDB.events.length;
     window.BTAssistant.handleFile(makeFile(csv, '准确性抽查-检测记录.csv'));
     const imported = await until(() => userDB.events.length === before + 1);
     assert(imported, '记录未入库');
     const record = userDB.events[before];
-    assert(String(record.code || record['管段编码'] || '').toUpperCase() === '1-WW-FR-001-0003-000', '编码错位：' + JSON.stringify(record));
+    assert(String(record.code || record['管段编码'] || '').toUpperCase() === '1G-SLB-WB-F000-R003-Q001', '编码错位：' + JSON.stringify(record));
     assert(String(record.date || record['日期'] || '').slice(0, 10) === '2024-03-05', '日期未归一：' + JSON.stringify(record));
     const thickness = String(record.thickness ?? record['厚度(mm)'] ?? record['厚度'] ?? '');
     assert(thickness.indexOf('6.8') === 0, '厚度错位：' + JSON.stringify(record));

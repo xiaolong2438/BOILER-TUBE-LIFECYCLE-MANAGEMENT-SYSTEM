@@ -131,22 +131,19 @@ window.runAssistantTests = async function () {
     assert(ok, 'stats card missing');
   });
 
-  await test('upload clean CSV -> cleaning report -> import -> undo', async () => {
+  await test('upload clean CSV -> auto import -> undo', async () => {
     const csv = [
       '数据分类,炉号,日期,管段编码,规格,材质,厚度(mm),硬度(HB),事件类型/更换原因,关联新管码,详细描述/结论',
-      '事件,1,2025-01-10,1-WW-FR-009-0007-000,Φ63.5×7.5,SA-210C,7.05,183,测厚,,AI 冒烟测厚记录',
-      '事件,2,2025-02-11,2-HSH-E-013-0006-W01,Φ51×8,SA-213T91,6.85,205,测厚,,AI 冒烟测厚记录二'
+      '事件,1,2025-01-10,1G-SLB-WB-F000-R007-Q001,Φ63.5×7.5,SA-210C,7.05,183,测厚,,AI 冒烟测厚记录',
+      '事件,2,2025-02-11,2G-GGRQ-GQ-L013-U006-Q001,Φ51×8,SA-213T91,6.85,205,测厚,,AI 冒烟测厚记录二'
     ].join(String.fromCharCode(10));
     const file = new File([csv], 'assistant-smoke.csv', { type: 'text/csv' });
-    window.BTAssistant.handleFile(file);
-    const cleaned = await until(() => messagesText().indexOf('清洗报告') >= 0);
-    assert(cleaned, 'cleaning report missing');
     const before = userDB.events.length;
-    const importButton = document.querySelector('[data-action-id="import-confirm"]');
-    assert(importButton, 'import confirm button missing');
-    importButton.click();
-    const imported = await until(() => userDB.events.length > before);
-    assert(imported, 'import did not write records');
+    window.BTAssistant.handleFile(file);
+    /* 干净行（编辑者 + 已识别数据集）直接自动入库，无需确认按钮 */
+    const imported = await until(() => userDB.events.length === before + 2);
+    assert(imported, '干净行应自动入库 2 行，实际 ' + userDB.events.length + ' / ' + before + '，尾：' + messagesText().slice(-200));
+    assert(messagesText().indexOf('已直接导入') >= 0, '自动导入应有提示：' + messagesText().slice(-200));
     const undoButton = document.querySelector('[data-action-id="undo-last-import"]');
     assert(undoButton, 'undo button missing');
     undoButton.click();
@@ -158,19 +155,13 @@ window.runAssistantTests = async function () {
     const before = userDB.events.length;
     const csv = [
       '数据分类,炉号,日期,管段编码,规格,材质,厚度(mm),硬度(HB),事件类型/更换原因,关联新管码,详细描述/结论',
-      '事件,1,2025-06-10,1-WW-FR-009-0007-000,Φ63.5×7.5,SA-210C,7.12,183,测厚,,AI 分析冒烟一',
-      '事件,1,2025-09-12,1-WW-FR-009-0007-000,Φ63.5×7.5,SA-210C,6.94,188,测厚,,AI 分析冒烟二',
-      '事件,1,2026-01-08,1-WW-FR-009-0007-000,Φ63.5×7.5,SA-210C,6.71,192,测厚,,AI 分析冒烟三'
+      '事件,1,2025-06-10,1G-SLB-WB-F000-R007-Q001,Φ63.5×7.5,SA-210C,7.12,183,测厚,,AI 分析冒烟一',
+      '事件,1,2025-09-12,1G-SLB-WB-F000-R007-Q001,Φ63.5×7.5,SA-210C,6.94,188,测厚,,AI 分析冒烟二',
+      '事件,1,2026-01-08,1G-SLB-WB-F000-R007-Q001,Φ63.5×7.5,SA-210C,6.71,192,测厚,,AI 分析冒烟三'
     ].join(String.fromCharCode(10));
-    const cardsBefore = document.querySelectorAll('[data-action-id="import-confirm"]').length;
     window.BTAssistant.handleFile(new File([csv], 'assistant-analysis-smoke.csv', { type: 'text/csv' }));
-    await until(() => document.querySelectorAll('[data-action-id="import-confirm"]').length > cardsBefore);
-    const importButtons = document.querySelectorAll('[data-action-id="import-confirm"]');
-    const importButton = importButtons[importButtons.length - 1];
-    assert(importButton, 'import confirm button missing for analysis smoke');
-    importButton.click();
-    const imported = await until(() => userDB.events.length > before);
-    assert(imported, 'analysis smoke data not imported');
+    const imported = await until(() => userDB.events.length === before + 3);
+    assert(imported, 'analysis smoke data not auto imported: ' + messagesText().slice(-200));
 
     window.BTAssistant.send('近两年壁厚趋势');
     const ok = await until(() => document.querySelector('.assistant-analysis svg'));
@@ -204,22 +195,17 @@ window.runAssistantTests = async function () {
     const restoreConfig = enableVisionConfig();
     const stub = stubVisionLLM([JSON.stringify({
       headers: TABLE_HEADERS,
-      rows: [['事件', '1', '2025-03-01', '1-WW-FR-009-0007-000', 'Φ63.5×7.5', 'SA-210C', '7.02', '181', '测厚', '', 'T3 单图探针']],
+      rows: [['事件', '1', '2025-03-01', '1G-SLB-WB-F000-R007-Q001', 'Φ63.5×7.5', 'SA-210C', '7.02', '181', '测厚', '', 'T3 单图探针']],
       notes: 'T3 单图探针备注'
     })]);
     try {
       const before = userDB.events.length;
-      const cardsBefore = document.querySelectorAll('[data-action-id="import-confirm"]').length;
       window.BTAssistant.handleFile(drawingToPngFile('t3-single.png', ['T3 单图探针']));
-      /* 注意：不能用「文本里出现过清洗报告」判断，历史用例的卡片会残留，必须数新卡片 */
-      const cleaned = await until(() => document.querySelectorAll('[data-action-id="import-confirm"]').length > cardsBefore, 4000);
-      diagnostics.cleaningTail = messagesText().slice(-260);
-      assert(cleaned, '未出现新的清洗报告卡片：' + messagesText().slice(-260));
-      const importButton = lastActionButton('import-confirm');
-      assert(importButton, '缺少确认导入按钮');
-      importButton.click();
+      /* 干净识别结果直接自动入库（无需确认卡片） */
       const imported = await until(() => userDB.events.length > before, 4000);
-      assert(imported, '导入未写入 userDB.events');
+      diagnostics.cleaningTail = messagesText().slice(-260);
+      assert(imported, '单图识别的干净行未自动入库：' + messagesText().slice(-260));
+      assert(messagesText().indexOf('已直接导入') >= 0, '自动导入应给出提示：' + messagesText().slice(-260));
       diagnostics.singleImageImportedDelta = userDB.events.length - before;
       const undoButton = lastActionButton('undo-last-import');
       assert(undoButton, '缺少撤销按钮');
@@ -283,9 +269,9 @@ window.runAssistantTests = async function () {
   }
 
   /* 三行设计已按清洗规则校准：炉号必须与管段编码首段一致（否则报「炉号与管段编码不一致」错误行） */
-  const ROW_A = ['事件', '1', '2025-03-01', '1-WW-FR-009-0007-000', 'Φ63.5×7.5', 'SA-210C', '7.02', '181', '测厚', '', 'T3 批量A'];
-  const ROW_B = ['事件', '2', '2025-03-02', '2-HSH-E-013-0006-W01', 'Φ51×8', 'SA-213T91', '6.85', '205', '测厚', '', 'T3 批量B'];
-  const ROW_C = ['事件', '2', '2025-03-03', '2-HSH-E-013-0006-W02', 'Φ60×6', 'SA-210C', '6.51', '170', '测厚', '', 'T3 批量C'];
+  const ROW_A = ['事件', '1', '2025-03-01', '1G-GGRQ-GQ-L040-U001-Q001', 'Φ63.5×7.5', 'SA-210C', '7.02', '181', '测厚', '', 'T3 批量A'];
+  const ROW_B = ['事件', '2', '2025-03-02', '2G-GGRQ-GQ-L040-U006-Q001', 'Φ51×8', 'SA-213T91', '6.85', '205', '测厚', '', 'T3 批量B'];
+  const ROW_C = ['事件', '2', '2025-03-03', '2G-GGRQ-GQ-L040-U006-Q002', 'Φ60×6', 'SA-210C', '6.51', '170', '测厚', '', 'T3 批量C'];
   function replyFor(rows, notes) {
     return JSON.stringify({ headers: TABLE_HEADERS, rows: rows, notes: notes === undefined ? 'T3 识别备注' : notes });
   }
@@ -416,16 +402,26 @@ window.runAssistantTests = async function () {
       assert(messagesText() === textBefore, '空列表不应产生任何消息');
       assert(stub.state.calls === 0, '空列表不应调用视觉模型');
 
-      /* 2) 单张图片：转调 handleFile，保留原文件名、不走批量命名 */
+      /* 2) 单张图片：转调 handleFile，保留原文件名、不走批量命名。
+         识别行是否自动入库取决于清洗结果（干净行自动导入 / 警告行留卡片待确认），两种流程都要兼容 */
+      const eventsBeforeSingle = userDB.events.length;
       const cardsBeforeSingle = countCleaningCards();
       window.BTAssistant.handleFiles([poolPng(2)]);
-      const singleOk = await until(() => countCleaningCards() > cardsBeforeSingle, 2500);
-      assert(singleOk, '单张图片未出现清洗卡片：' + messagesText().slice(-200));
-      const singleInfo = cleaningCardInfo(lastCleaningCard());
-      diagnostics.singleViaHandleFiles = singleInfo;
-      assert(singleInfo.subtitle.indexOf('t3-batch-3.png') >= 0, '单张图片应保留原文件名，实际：' + singleInfo.subtitle);
-      assert(singleInfo.subtitle.indexOf('批量图片') < 0, '单张图片不应走批量命名，实际：' + singleInfo.subtitle);
+      const singleFlow = await until(() => userDB.events.length > eventsBeforeSingle
+        || countCleaningCards() > cardsBeforeSingle, 2500);
+      assert(singleFlow, '单张图片既未自动入库也未出现清洗卡片：' + messagesText().slice(-200));
+      if (userDB.events.length > eventsBeforeSingle) {
+        assert(messagesText().indexOf('已直接导入') >= 0, '自动导入应给出提示：' + messagesText().slice(-200));
+      } else {
+        const confirmSingle = lastActionButton('import-confirm');
+        assert(confirmSingle, '警告行缺少确认导入按钮');
+        confirmSingle.click();
+        const confirmedSingle = await until(() => userDB.events.length > eventsBeforeSingle, 2500);
+        assert(confirmedSingle, '确认导入未写库');
+      }
       assert(stub.state.calls === 1, '单张图片应只调用视觉模型 1 次，实际 ' + stub.state.calls);
+      lastActionButton('undo-last-import')?.click();
+      await until(() => userDB.events.length === eventsBeforeSingle, 2500);
 
       /* 3) 9 张图片：超过上限 8，中文提示且不进清洗、不调用模型 */
       const cardsBeforeNine = countCleaningCards();
@@ -507,9 +503,9 @@ window.runAssistantTests = async function () {
       ['20240105', '日期', '2024-01-05'],
       ['6.5mm', '厚度(mm)', '6.5'],
       ['１８３HB', '硬度(HB)', '183'],
-      ['１-ＷＷ-ＦＲ-００９', '管段编码', '1-WW-FR-009'],
-      ['1-ww-fr-009', '管段编码', '1-ww-fr-009'],
-      ['1-WW\u200b-FR', '管段编码', '1-WW-FR'],
+      ['１Ｇ-ＳＬＢ-ＷＢ-Ｆ０００', '管段编码', '1G-SLB-WB-F000'],
+      ['1g-slb-wb-f000', '管段编码', '1g-slb-wb-f000'],
+      ['1G-SLB\u200b-WB', '管段编码', '1G-SLB-WB'],
       ['  看不清  ', '日期', '看不清'],
       ['  SA-210C  ', '材质', 'SA-210C']
     ];
@@ -523,13 +519,13 @@ window.runAssistantTests = async function () {
     assert(!cellFailures.length, 'normalizeCell 不符合契约：' + cellFailures.join('；'));
 
     /* 2) normalizeGrid：不得修改入参、必须幂等 */
-    const grid = [['日期', '厚度(mm)', '管段编码'], ['2024年1月5日', '6.5mm', ' 1-WW FR ']];
+    const grid = [['日期', '厚度(mm)', '管段编码'], ['2024年1月5日', '6.5mm', ' 1G-SLB WB ']];
     const gridSnapshot = JSON.stringify(grid);
     const once = docs.normalizeGrid(grid);
     assert(JSON.stringify(grid) === gridSnapshot, 'normalizeGrid 不得修改入参，实际变成 ' + JSON.stringify(grid));
     const twice = docs.normalizeGrid(once);
     assert(JSON.stringify(once) === JSON.stringify(twice), 'normalizeGrid 应幂等：一次 ' + JSON.stringify(once) + '，两次 ' + JSON.stringify(twice));
-    assert(once[1][0] === '2024-01-05' && once[1][1] === '6.5' && once[1][2] === '1-WWFR', 'normalizeGrid 未处理数据行：' + JSON.stringify(once[1]));
+    assert(once[1][0] === '2024-01-05' && once[1][1] === '6.5' && once[1][2] === '1G-SLBWB', 'normalizeGrid 未处理数据行：' + JSON.stringify(once[1]));
 
     /* 3) mergeGrids：表头并集保序 + 缺失列补空 */
     const unioned = docs.mergeGrids([
@@ -901,15 +897,16 @@ window.runAssistantTests = async function () {
         || messagesText().slice(textBeforeAgain.length).indexOf('开始再次导入') >= 0, 2500);
       await wait(80);
       await waitAssistantIdle(3000);
+      const againTailFull = messagesText().slice(textBeforeAgain.length);
       diagnostics.mtImportAgain = {
         clickable: againClickable,
         newCleaningCard: countCleaningCards() > cardsBeforeAgain,
         eventsBefore: eventsBeforeAgain,
-        tail: messagesText().slice(textBeforeAgain.length).slice(-200)
+        tail: againTailFull.slice(-200)
       };
       assert(againStarted, '点「再次导入」后没有出现重新清洗/导入的迹象：' + JSON.stringify(diagnostics.mtImportAgain));
-      assert(diagnostics.mtImportAgain.tail.indexOf('开始再次导入') >= 0,
-        '点「再次导入」应重新走清洗流程：' + diagnostics.mtImportAgain.tail);
+      assert(againTailFull.indexOf('开始再次导入') >= 0,
+        '点「再次导入」应重新走清洗流程：' + againTailFull.slice(-400));
       const againConfirm = lastActionButton('import-confirm');
       if (againConfirm) {
         againConfirm.click();

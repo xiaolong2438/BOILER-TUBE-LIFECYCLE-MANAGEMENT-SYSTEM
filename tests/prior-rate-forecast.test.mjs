@@ -9,7 +9,7 @@ const html = readFileSync(resolve(here, "../炉管全生命周期管理系统.ht
 
 // 先验速率表：单测点兜底，所有受热面都有区间，明确标注为可修订的行业经验值。
 assert.match(js, /const PRIOR_THINNING_RATES = \{/);
-["WW", "HSH", "HRH", "ECO", "LSH", "LRH"].forEach(sys =>
+["SLB", "GGRQ", "GZRQ", "SMQ", "DGRQ", "DZRQ"].forEach(sys =>
   assert.ok(js.indexOf(sys + ":") > 0, "缺少 " + sys + " 先验速率"));
 assert.match(js, /function getPriorThinningRates\(code, materialHint\)/);
 

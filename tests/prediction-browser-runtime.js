@@ -6,7 +6,7 @@ window.runPredictionTests = async function () {
     try { await body(); results.push({name, passed:true}); }
     catch(error) { results.push({name, passed:false, error:String(error.stack || error)}); }
   }
-  const code='1-WW-FR-008-0003-000';
+  const code='1G-SLB-WB-F000-R003-Q001';
   function events(values=[7.2,6.9,6.6], extra={}) {
     userDB.events = values.map((thickness,i) => ({code, date:`${2022+i}-01-01`, type:'检测', desc:'实测', thickness, hardness:180-i*5, spec:'Φ63.5×7.5', material:'SA-210C', pipeType:'straight', ...extra}));
     userDB.replacements=[];
@@ -35,7 +35,7 @@ window.runPredictionTests = async function () {
   });
   await test('single point below threshold alerts without inventing RUL',()=>{
     events([6.4]); const d=model(); renderAIResults(d);
-    assert(d.rul===null && d.replacementWarning.level==='replace' && d.prediction.length===0,'single-point result');
+    assert(d.rul===null && d.replacementWarning.level==='replace' && d.priorBased===true && d.prediction.length>0 && d.reliable===false,'single-point result ' + JSON.stringify({rul:d.rul, level:d.replacementWarning && d.replacementWarning.level, prior:d.priorBased, prediction:d.prediction.length}));
     assert(document.getElementById('ai-status').textContent.includes('更换预警'),'warning suppressed by low quality');
     assert(document.querySelectorAll('#aiChart circle').length>0,'single-point plot');
   });
@@ -54,7 +54,7 @@ window.runPredictionTests = async function () {
     }
   });
   await test('unavailable bend threshold and invalid pipeType remain unknown',()=>{
-    events([5,4.8,4.6],{code:'1-LSH-E-001-0001-000',spec:'Φ60×8.5',material:'15CrMoG'});
+    events([5,4.8,4.6],{code:'1G-DGRQ-GQ-L001-U001-Q001',spec:'Φ60×8.5',material:'15CrMoG'});
     const target=userDB.events[0].code, h=extractThicknessData(target,{includeSystem:false});
     const d=predictThicknessTrendFromHistory(target,h,'bend');
     assert(d.threshold===null && d.thresholdInfo.straight===4.16 && d.thresholdInfo.bend===null && d.rul===null,'missing bend became a number');
@@ -96,16 +96,19 @@ window.runPredictionTests = async function () {
   });
   await test('no remote model requests when unconfigured',()=>assert(window.__externalRequests.length===0,JSON.stringify(window.__externalRequests)));
   await test('configured model is invoked and stale response cannot overwrite new tube',async()=>{
-    const originalConfig=getLLMConfig, originalCall=callLLMChatCompletions;
+    const originalConfig=getLLMConfig, originalFormConfig=getLLMFormConfig, originalCall=callLLMChatCompletions;
     const requests=[];
     getLLMConfig=()=>({baseUrl:'mock',apiKey:'test',model:'test'});
+    /* runAIAnalysis 按约定读取表单缓冲（getLLMFormConfig），模型可用性以它为准 */
+    getLLMFormConfig=()=>({baseUrl:'mock',apiKey:'test',model:'test'});
     callLLMChatCompletions=()=>new Promise(resolve=>requests.push(resolve));
     try {
       events(); const a=runAIAnalysis(code,'straight'),b=runAIAnalysis(code,'bend');
       assert(requests.length===2,'configured model not called');
       requests[1]('new bend report'); await b; requests[0]('stale straight report'); await a;
-      assert(document.getElementById('ai-llm-report').textContent==='new bend report','stale report overwrote latest');
-    } finally { getLLMConfig=originalConfig; callLLMChatCompletions=originalCall; }
+      const reportText=document.getElementById('ai-llm-report').textContent;
+      assert(reportText.indexOf('new bend report')>=0 && reportText.indexOf('stale straight report')<0,'stale report overwrote latest: ' + JSON.stringify(reportText.slice(0,140)));
+    } finally { getLLMConfig=originalConfig; getLLMFormConfig=originalFormConfig; callLLMChatCompletions=originalCall; }
   });
   await test('dashboard uses measured replacement warnings even without warning words',()=>{
     events([6.4]); const item=collectDashboardWarnings({limit:100}).find(item=>item.code===code);

@@ -18,7 +18,7 @@ const hshMaterialRows = [...html.matchAll(/component:'高温过热器'[\s\S]*?po
 
 assert.deepEqual(hshMaterialRows, hshEightSpecSummary.split("、"), "HSH material library should keep eight spec/material rows");
 assert.match(html, new RegExp(`hsh:\\s*\\{[\\s\\S]*?spec:\\s*'${hshEightSpecSummary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`), "HSH component summary should display all eight spec/material combinations");
-assert.match(html, new RegExp(`name:'高温过热器'[\\s\\S]*?sys:'HSH'[\\s\\S]*?spec:'${hshEightSpecSummary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`), "HSH full-ledger summary should display all eight spec/material combinations");
+assert.match(html, new RegExp(`name:'高温过热器'[\\s\\S]*?sys:'GGRQ'[\\s\\S]*?spec:'${hshEightSpecSummary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`), "HSH full-ledger summary should display all eight spec/material combinations");
 assert.match(html, new RegExp(`gg:\\s*\\{[\\s\\S]*?spec:'${hshEightSpecSummary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`), "HSH boiler schematic should display all eight spec/material combinations");
 assert.doesNotMatch(html, /hsh:\s*\{[\s\S]*?spec:\s*'Φ51×8\/9\/11、Φ54×7\.5\/9\/11'/, "HSH component summary should not collapse eight combinations into six size groups");
 assert.doesNotMatch(html, /gg:\s*\{[\s\S]*?spec:'Φ51\/Φ54 T91\/TP304H'/, "HSH schematic should not use the short two-diameter summary");

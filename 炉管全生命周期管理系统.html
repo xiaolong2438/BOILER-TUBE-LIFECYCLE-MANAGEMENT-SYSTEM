@@ -118,9 +118,9 @@
           <div class="command-metric warn"><div>预警关注</div><div class="value" id="dashboard-warn-risk-count">0</div></div>
         </div>
         <div class="hero-task-list">
-          <button type="button" class="hero-task-item danger" data-dashboard-boiler="2" onclick="openTubeProfile('2-HRH-M-032-0001-A01')" title="打开管段档案 2-HRH-M-032-0001-A01"><div class="prio">P1</div><div><div class="title">高温再热器外圈管壁厚减薄复核</div><div class="meta">2-HRH-M-032-0001-A01 · 测厚复检/割管评估</div></div></button>
-          <button type="button" class="hero-task-item warn" data-dashboard-boiler="2" onclick="openTubeProfile('2-HSH-E-012-0005-W02')" title="打开管段档案 2-HSH-E-012-0005-W02"><div class="prio">P2</div><div><div class="title">高温过热器焊口蠕变趋势跟踪</div><div class="meta">2-HSH-E-012-0005-W02 · 硬度/金相复查</div></div></button>
-          <button type="button" class="hero-task-item" data-dashboard-boiler="1" onclick="openTubeProfile('1-WW-FR-008-0003-000')" title="打开管段档案 1-WW-FR-008-0003-000"><div class="prio">P3</div><div><div class="title">水冷壁代表管段寿命档案补全</div><div class="meta">1-WW-FR-008-0003-000 · 补充最近一次检测结论</div></div></button>
+          <button type="button" class="hero-task-item danger" data-dashboard-boiler="2" onclick="openTubeProfile('2G-GZRQ-GQ-L032-U004-Q001')" title="打开管段档案 2G-GZRQ-GQ-L032-U004-Q001"><div class="prio">P1</div><div><div class="title">高温再热器外圈管壁厚减薄复核</div><div class="meta">2G-GZRQ-GQ-L032-U004-Q001 · 测厚复检/割管评估</div></div></button>
+          <button type="button" class="hero-task-item warn" data-dashboard-boiler="2" onclick="openTubeProfile('1G-GGRQ-GQ-L012-U005-Q001')" title="打开管段档案 1G-GGRQ-GQ-L012-U005-Q001"><div class="prio">P2</div><div><div class="title">高温过热器焊口蠕变趋势跟踪</div><div class="meta">1G-GGRQ-GQ-L012-U005-Q001 · 硬度/金相复查</div></div></button>
+          <button type="button" class="hero-task-item" data-dashboard-boiler="1" onclick="openTubeProfile('2G-SLB-WB-F000-R025-Q001')" title="打开管段档案 2G-SLB-WB-F000-R025-Q001"><div class="prio">P3</div><div><div class="title">水冷壁代表管段寿命档案补全</div><div class="meta">2G-SLB-WB-F000-R025-Q001 · 补充最近一次检测结论</div></div></button>
         </div>
         <div class="ops-actions">
           <button class="btn btn-ai" onclick="runWarningTrendAnalysis()">AI风险摘要</button>
@@ -221,29 +221,31 @@
   <section class="view" id="view-generator">
     <div class="section-title"><h2>编码生成器</h2><span class="sub">CODE GENERATOR </span></div>
     <div class="card">
-      <div class="card-title">编码结构 · X-XX-XX-XXX-XXXX-XXX</div>
+      <div class="card-title">编码结构 · {机组}G-SYS-COMP-位置-Q流水号</div>
       <div style="text-align:center; margin: 15px 0;">
-        <span class="fmt-seg" style="color:#00e676">[1] 炉号</span> - 
-        <span class="fmt-seg" style="color:#ffcc00">[2] 系统</span> - 
-        <span class="fmt-seg" style="color:#48cae4">[3] 区域</span> - 
-        <span class="fmt-seg" style="color:#ff9f43">[4] 屏/排</span> - 
-        <span class="fmt-seg" style="color:#a29bfe">[5] 管圈</span> - 
-        <span class="fmt-seg" style="color:#fd79a8">[6] 分段</span>
+        <span class="fmt-seg" style="color:#00e676">机组 1G/2G</span> - 
+        <span class="fmt-seg" style="color:#ffcc00">系统 SLB/GZRQ/GGRQ/HPGRQ/DPGRQ/DGRQ/DZRQ/SMQ</span> - 
+        <span class="fmt-seg" style="color:#48cae4">部件 GQ/WB/SG/EXIN/EXOUT/LHD/RSQ</span> - 
+        <span class="fmt-seg" style="color:#ff9f43">方位+排/屏/管号</span> - 
+        <span class="fmt-seg" style="color:#a29bfe">Q流水号</span>
+      </div>
+      <div style="text-align:center; color:var(--text-dim); font-size:12px; line-height:1.9;">
+        方位/方向：A侧→R · B侧→L · 炉左往右→L · 炉右往左→R · 炉前往后→F · 炉后往前→B · 下往上→D · 上往下→U<br/>
+        无明确排/屏号用 000 占位，无明确方向默认 U；低过/低再取样默认第1检修空间（可省略）。<br/>
+        示例：2G-SLB-WB-F000-R025-Q16（2号炉水冷壁前墙炉右往炉左第25根）· 1G-DZRQ-GQ-4KJ-L065-Q001 · 2G-SLB-LHD-F000-L016-Q001
       </div>
     </div>
     <div class="card">
       <div class="card-title">交互式编码生成</div>
       <div class="form-grid">
-        <div class="form-group"><label>[1] 炉号</label><select id="f-boiler"><option value="1">1号炉</option><option value="2">2号炉</option></select></div>
+        <div class="form-group"><label>[1] 机组</label><select id="f-boiler"><option value="1G">1号机组</option><option value="2G">2号机组</option></select></div>
         <div class="form-group"><label>[2] 系统代码</label><select id="f-system"></select></div>
-        <div class="form-group"><label>[3] 位置区域</label><select id="f-zone"></select></div>
-        <div class="form-group"><label>[4] 屏/排 (3位)</label><input type="number" id="f-panel" min="1" max="999" value="1" /></div>
-        <div class="form-group"><label>[5] 管圈 (4位)</label><input type="number" id="f-tube" min="1" max="9999" value="3" /></div>
-        <div class="form-group"><label>[6] 分段/焊口</label><select id="f-seg"><option value="000">000 · 不分段</option><option value="A01">A01 · 直管段1</option><option value="W02">W02 · 焊口2</option></select></div>
+        <div class="form-group"><label>[3] 部件代码</label><select id="f-comp"></select></div>
       </div>
+      <div class="form-grid" id="generatorFields"></div>
       <div class="code-output">
         <div class="label">GENERATED CODE</div>
-        <div class="code" id="codeOut">1-WW-FR-008-0003-000</div>
+        <div class="code" id="codeOut">1G-SLB-WB-F000-R015-Q001</div>
         <div id="codeDesc" style="margin-top:15px; font-size:12px; color:var(--text-dim);"></div>
         <button class="btn" style="margin-top:15px;" onclick="copyCode()">📋 复制编码</button>
       </div>
@@ -275,7 +277,7 @@
         </div>
         <div class="form-group">
           <label>手动输入管段编码/测点</label>
-          <input type="text" id="ai-custom-target" placeholder="例: 1-WW-FR-015-0042-000" onkeypress="if(event.key==='Enter')runAIAnalysis()" />
+          <input type="text" id="ai-custom-target" placeholder="例: 1G-SLB-WB-F000-R015-Q001" onkeypress="if(event.key==='Enter')runAIAnalysis()" />
         </div>
         <div class="form-group">
           <label>分析模型</label>
@@ -475,7 +477,7 @@
       <div class="card">
         <div class="card-title">新增寿命事件 / 检测记录</div>
         <div class="form-group"><label>机组/炉号</label><select id="dm-boiler"><option value="1">1号机组</option><option value="2">2号机组</option></select></div>
-        <div class="form-group"><label>管段编码</label><input type="text" id="dm-code" placeholder="例: 1-WW-FR-015-0042-000" oninput="syncDataEntryBoilerFromCode()" /></div>
+        <div class="form-group"><label>管段编码</label><input type="text" id="dm-code" placeholder="例: 1G-SLB-WB-F000-R015-Q001" oninput="syncDataEntryBoilerFromCode()" /></div>
         <div class="form-group"><label>规格</label><input type="text" id="dm-spec" placeholder="例: Φ63.5×7.5" /></div>
         <div class="form-group"><label>材质</label><input type="text" id="dm-material" placeholder="例: SA-210C" /></div>
         <div class="form-group"><label>厚度(mm)</label><input type="number" id="dm-thickness" min="0" step="0.01" placeholder="例: 7.10" /></div>
@@ -490,7 +492,7 @@
         <div class="alert alert-info"><div>ℹ</div><div>旧码报废，新管获新码(加-R1)，自动关联历史。</div></div>
         <div class="form-group"><label>机组/炉号</label><select id="dm-rep-boiler"><option value="1">1号机组</option><option value="2">2号机组</option></select></div>
         <div class="form-group"><label>旧管段编码</label><input type="text" id="dm-oldcode" oninput="syncReplacementBoilerFromCode()" /></div>
-        <div class="form-group"><label>新管段编码 (带-R1)</label><input type="text" id="dm-newcode" oninput="syncReplacementBoilerFromCode()" /></div>
+        <div class="form-group"><label>新管段编码（同位置新流水号）</label><input type="text" id="dm-newcode" oninput="syncReplacementBoilerFromCode()" /></div>
         <div class="form-group"><label>更换原因</label><input type="text" id="dm-reason" /></div>
         <div class="form-group"><label>更换日期</label><input type="date" id="dm-rep-date" /></div>
         <button class="btn" style="width:100%;" onclick="addReplacement()">🔄 登记更换</button>
@@ -603,12 +605,12 @@
     <div class="card">
       <div class="card-title">全厂管段编码规则矩阵</div>
       <div class="table-wrap inventory-matrix-wrap">
-        <table><thead><tr><th>部件名称</th><th>系统</th><th>区域</th><th>屏/排范围</th><th>管圈范围</th><th>数量</th><th>规格</th><th>材质</th></tr></thead><tbody id="matrixBody"></tbody></table>
+        <table><thead><tr><th>部件名称</th><th>系统</th><th>部件</th><th>位置/编号范围</th><th>编码数/炉</th><th>规格</th><th>材质</th></tr></thead><tbody id="matrixBody"></tbody></table>
       </div>
     </div>
     <div class="card">
       <div class="card-title">全量台账生成与导出引擎</div>
-      <p style="color:var(--text-dim); font-size:13px; margin-bottom:15px;">基于矩阵规则，瞬间生成 <strong style="color:var(--accent);">5,139条/炉</strong> 精确管码的标准化CSV文件，可直接导入 ERP/EAM 系统。</p>
+      <p style="color:var(--text-dim); font-size:13px; margin-bottom:15px;">基于矩阵规则，瞬间生成 <strong style="color:var(--accent);">8,519条/炉</strong> 精确管码的标准化CSV文件，可直接导入 ERP/EAM 系统。</p>
       <div style="display:flex; gap:15px; flex-wrap:wrap;">
         <button class="btn" onclick="generateCSV(1)">⚡ 生成 1号炉 CSV</button>
         <button class="btn" onclick="generateCSV(2)">⚡ 生成 2号炉 CSV</button>

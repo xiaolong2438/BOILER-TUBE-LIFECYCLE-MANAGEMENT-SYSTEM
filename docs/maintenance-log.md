@@ -27,8 +27,8 @@
   ts: "2026-10-23T07:33:20.000Z",
   action: "create|update|delete|import|undo|replace|material|system",
   target: "event|replacement|material_library|dataset|log",
-  targetKey: "1-WW-FR-008-0003-000",     // 主键（管码 / 文件名）
-  targetLabel: "1-WW-FR-008-0003-000 · 测厚 · 2026-03-01",
+  targetKey: "1G-SLB-WB-F000-R003-Q001",     // 主键（管码 / 文件名）
+  targetLabel: "1G-SLB-WB-F000-R003-Q001 · 测厚 · 2026-03-01",
   summary: "厚度(mm)：6.85 → 6.62",
   changes: [{ field, label, before, after }],   // 最多 12 条
   meta: { code, date, fileName, counts, snapshot, ... },

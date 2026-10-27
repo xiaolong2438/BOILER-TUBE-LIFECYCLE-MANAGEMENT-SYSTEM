@@ -15,29 +15,32 @@
   var VERSION = 'v1';
   var DEFAULT_UNITS = ['1', '2'];
 
-  /* 管段编码规则：1-WW-FR-008-0003-000 / 2-HSH-E-012-0005-W02 / 带 -R1 后缀 */
-  var TUBE_CODE_SOURCE = '[12]-[A-Z]{2,3}-[A-Z]{1,3}-\\d{3}-\\d{4}-[A-Z0-9]{3}(?:-R\\d+)?';
+  /* 新编码规则：{机组}G-SYS-COMP-位置-Q流水号，示例 2G-SLB-WB-F000-R025-Q16 / 1G-DZRQ-GQ-4KJ-L065-Q001 */
+  var TUBE_CODE_SOURCE = '[12]G-(?:SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|EXIN|EXOUT|LHD|RSQ)-(?:[FBLR]000-[FBLR]\\d{3}|J\\d{1,2}-[A-Z]\\d{1,2}|[FBLR]\\d{3}-[FBLR]\\d{3}-[UD]\\d{3}|[FBLR]\\d{3}-[UD]\\d{3}|(?:[1-9]\\d?KJ-)?[FBLR]\\d{3}(?:-[UD]\\d{3})?)-Q\\d{1,3}';
   var TUBE_CODE_PATTERN = new RegExp('^' + TUBE_CODE_SOURCE + '$');
 
   /* 受热面系统代码（与页面 CODE_SYSTEMS 一致） */
   var CODE_SYSTEMS = [
-    { sys: 'WW', label: '水冷壁', zones: ['FR', 'FL', 'RR', 'RI', 'CE', 'BF'] },
-    { sys: 'RSH', label: '顶棚过热器', zones: ['E', 'M', 'O'] },
-    { sys: 'WSH', label: '包墙过热器', zones: ['E', 'M', 'O'] },
-    { sys: 'LSH', label: '低温过热器', zones: ['E', 'M', 'O'] },
-    { sys: 'PSH', label: '全大屏过热器', zones: ['E', 'M', 'O'] },
-    { sys: 'ISH', label: '屏式过热器', zones: ['E', 'M', 'O'] },
-    { sys: 'HSH', label: '高温过热器', zones: ['E', 'M', 'O'] },
-    { sys: 'LRH', label: '低温再热器', zones: ['E', 'M', 'O'] },
-    { sys: 'HRH', label: '高温再热器', zones: ['E', 'M', 'O'] },
-    { sys: 'ECO', label: '省煤器', zones: ['IN', 'OT'] }
+    { sys: 'SLB', label: '水冷壁', comps: ['WB', 'LHD', 'RSQ'] },
+    { sys: 'GZRQ', label: '高温再热器', comps: ['GQ'] },
+    { sys: 'GGRQ', label: '高温过热器', comps: ['GQ'] },
+    { sys: 'HPGRQ', label: '后屏过热器', comps: ['GQ'] },
+    { sys: 'DPGRQ', label: '全大屏过热器', comps: ['GQ'] },
+    { sys: 'DGRQ', label: '低温过热器', comps: ['GQ'] },
+    { sys: 'DZRQ', label: '低温再热器', comps: ['GQ'] },
+    { sys: 'SMQ', label: '省煤器', comps: ['SG', 'EXIN', 'EXOUT'] },
+    /* 顶棚/包墙仅存在于材料库，不参与新编码，但查询/展示仍需标签 */
+    { sys: 'RSH', label: '顶棚过热器', comps: [] },
+    { sys: 'WSH', label: '包墙过热器', comps: [] }
   ];
+  var COMPONENT_LABELS = { GQ: '管屏', WB: '水冷壁管', SG: '省煤器蛇形管', EXIN: '省煤器进口集箱', EXOUT: '省煤器出口集箱', LHD: '冷灰斗', RSQ: '燃烧器区域' };
+  var SYSTEM_LABEL_MAP = {};
   var SYSTEM_LABEL_MAP = {};
   CODE_SYSTEMS.forEach(function (item) { SYSTEM_LABEL_MAP[item.sys] = item.label; });
 
   var ZONE_LABELS = {
-    FR: '前墙', FL: '左墙', RR: '后墙', RI: '右墙', CE: '炉顶', BF: '冷灰斗',
-    E: '入口', M: '中间', O: '出口', IN: '入口', OT: '出口'
+    F: '炉前', B: '炉后', L: '炉左', R: '炉右',
+    U: '上往下', D: '下往上', F000: '前墙/坡', B000: '后墙/坡', L000: '左墙/坡', R000: '右墙/坡'
   };
 
   /* 事件类型口径（与页面 dm-type + 导入类型对齐） */
@@ -467,22 +470,102 @@
     return (negative ? '-' : '') + grouped + (pieces[1] ? '.' + pieces[1] : '');
   }
 
+  /* 新编码解析（与页面 parseTubeCode 同构）：结构合法返回 parts，否则 valid=false */
+  function parseTubeCodeParts(code) {
+    var raw = normalizeCode(code);
+    var head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|EXIN|EXOUT|LHD|RSQ)(?:-(.*))?$/);
+    if (!head) return null;
+    var parsed = { unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], space: null, pos: '', posNum: null, pos2: '', pos2Num: null, corner: null, layer: '', nozzle: null, dir: '', tube: null, seq: null };
+    var parts = head[4] ? head[4].split('-') : [];
+    var tail = parts.length && /^Q\d{1,3}$/.test(parts[parts.length - 1]) ? parts.pop() : null;
+    if (!tail) return null;
+    parsed.seq = Number(tail.slice(1));
+    var POS_RE = /^([FBLR])(\d{3})$/;
+    var TUBE_RE = /^([UD])(\d{3})$/;
+    var WALL_RE = /^([FBLR])000$/;
+    if (parsed.sys === 'SLB' && (parsed.comp === 'WB' || parsed.comp === 'LHD')) {
+      if (parts.length !== 2) return null;
+      var pm = parts[0].match(WALL_RE), tm = parts[1].match(/^([FBLR])(\d{3})$/);
+      if (!pm || !tm) return null;
+      parsed.pos = parts[0]; parsed.dir = tm[1]; parsed.tube = Number(tm[2]);
+      return parsed;
+    }
+    if (parsed.sys === 'SLB' && parsed.comp === 'RSQ') {
+      if (parts.length !== 2) return null;
+      var cm = parts[0].match(/^J([1-9]\d?)$/), lm = parts[1].match(/^([A-Z])(\d{1,2})$/);
+      if (!cm || !lm) return null;
+      parsed.corner = Number(cm[1]); parsed.layer = lm[1]; parsed.nozzle = Number(lm[2]);
+      return parsed;
+    }
+    if (parsed.sys === 'DPGRQ') {
+      if (parts.length !== 3) return null;
+      var p1 = parts[0].match(POS_RE), p2 = parts[1].match(POS_RE), tb = parts[2].match(TUBE_RE);
+      if (!p1 || !p2 || !tb) return null;
+      parsed.pos = parts[0]; parsed.posNum = Number(p1[2]);
+      parsed.pos2 = parts[1]; parsed.pos2Num = Number(p2[2]);
+      parsed.dir = tb[1]; parsed.tube = Number(tb[2]);
+      return parsed;
+    }
+    if (['GGRQ', 'GZRQ', 'HPGRQ', 'SMQ'].indexOf(parsed.sys) >= 0) {
+      if (parts.length !== 2) return null;
+      var q1 = parts[0].match(POS_RE), q2 = parts[1].match(TUBE_RE);
+      if (!q1 || !q2) return null;
+      parsed.pos = parts[0]; parsed.posNum = Number(q1[2]);
+      parsed.dir = q2[1]; parsed.tube = Number(q2[2]);
+      return parsed;
+    }
+    if (parsed.sys === 'DGRQ' || parsed.sys === 'DZRQ') {
+      var rest = parts.slice();
+      var sm = rest.length && /^([1-9]\d?)KJ$/.test(rest[0]) ? rest.shift().match(/^([1-9]\d?)KJ$/) : null;
+      if (sm) parsed.space = Number(sm[1]);
+      if (rest.length < 1 || rest.length > 2) return null;
+      var r1 = rest[0].match(POS_RE);
+      if (!r1) return null;
+      parsed.pos = rest[0]; parsed.posNum = Number(r1[2]);
+      if (rest.length === 2) {
+        var rt = rest[1].match(TUBE_RE);
+        if (!rt) return null;
+        parsed.dir = rt[1]; parsed.tube = Number(rt[2]);
+      } else if (parsed.sys !== 'DZRQ') return null;
+      return parsed;
+    }
+    return null;
+  }
+
+  function inNumRange(num, pair) { return num >= pair[0] && num <= pair[1]; }
+
+  function matrixRowMatch(row, parsed) {
+    if (String(row.sys || '').toUpperCase() !== parsed.sys) return false;
+    if (String(row.comp || '').toUpperCase() !== parsed.comp) return false;
+    if (row.special === 'rsq') {
+      return parsed.corner !== null && inNumRange(parsed.corner, row.corners) &&
+        (row.layers || []).indexOf(parsed.layer) >= 0 && parsed.nozzle !== null && inNumRange(parsed.nozzle, row.nozzles);
+    }
+    if (row.pos) {
+      if (parsed.pos !== row.pos) return false;
+    } else {
+      if (!parsed.pos || (row.posLetters || []).indexOf(parsed.pos[0]) < 0 || !inNumRange(parsed.posNum, [1, row.pMax])) return false;
+      if (row.pos2Letters && (!parsed.pos2 || (row.pos2Letters || []).indexOf(parsed.pos2[0]) < 0 || !inNumRange(parsed.pos2Num, [1, row.p2Max]))) return false;
+    }
+    if (row.spaces) {
+      if (parsed.space !== null && !inNumRange(parsed.space, row.spaces)) return false;
+    } else if (parsed.space !== null) return false;
+    if (parsed.dir && parsed.tube !== null) {
+      if ((row.dirs || []).indexOf(parsed.dir) < 0 || !inNumRange(parsed.tube, [1, row.tMax])) return false;
+    } else if (!row.tubeOptional) return false;
+    return true;
+  }
+
   function validateTubeCode(code, matrixRows) {
     var normalized = normalizeCode(code);
     if (!normalized) return { valid: false, reason: '管段编码为空', code: '' };
     if (!TUBE_CODE_PATTERN.test(normalized)) {
-      return { valid: false, reason: '管段编码格式不符合规则（示例：1-WW-FR-008-0003-000）', code: normalized };
+      return { valid: false, reason: '管段编码格式不符合规则（示例：2G-SLB-WB-F000-R025-Q16）', code: normalized };
     }
-    var parts = normalized.split('-');
-    var parsed = {
-      boiler: parts[0],
-      sys: parts[1],
-      zone: parts[2],
-      panel: Number(parts[3]),
-      tube: Number(parts[4]),
-      seq: parts[5],
-      suffix: parts.slice(6).join('-')
-    };
+    var parsed = parseTubeCodeParts(normalized);
+    if (!parsed) {
+      return { valid: false, reason: '管段编码结构不符合所属系统的编码规则', code: normalized };
+    }
     var result = { valid: true, code: normalized, parts: parsed, matched: null };
     var rows = Array.isArray(matrixRows) ? matrixRows : [];
     if (rows.length) {
@@ -490,17 +573,10 @@
       for (var i = 0; i < rows.length; i += 1) {
         var row = rows[i];
         if (!row || typeof row !== 'object') continue;
-        if (String(row.sys || '').toUpperCase() !== parsed.sys) continue;
-        if (String(row.zone || '').toUpperCase() !== parsed.zone) continue;
-        var pMin = toNumber(row.pMin);
-        var pMax = toNumber(row.pMax);
-        var tMin = toNumber(row.tMin);
-        var tMax = toNumber(row.tMax);
-        if (pMin === null || pMax === null || tMin === null || tMax === null) continue;
-        if (parsed.panel >= pMin && parsed.panel <= pMax && parsed.tube >= tMin && parsed.tube <= tMax) { hit = row; break; }
+        if (matrixRowMatch(row, parsed)) { hit = row; break; }
       }
       result.matched = hit;
-      if (!hit) result.reason = '编码格式有效，但未落入台账矩阵的屏/管范围';
+      if (!hit) result.reason = '编码格式有效，但未落入台账矩阵的排/屏或管号范围';
     }
     return result;
   }
@@ -512,27 +588,50 @@
   var MATRIX_EXPAND_LIMIT = 30000;  /* 矩阵展开的编码数量上限，防止异常矩阵拖垮清洗 */
   var CODE_SUGGEST_MIN_SCORE = 0.82; /* 低于该相似度不给出建议，避免把合法新码误报成疑似错码 */
 
-  /* 台账矩阵 → 基础编码集合（seq 固定 000）：1-WW-FR-008-0003-000。
+  /* 台账矩阵 → 基础编码集合（流水号固定 Q001，按行内首选方位/方向展开）：2G-SLB-WB-F000-R025-Q001。
      用于判断「这个编码在台账里是否存在」，以及给疑似错码找最近的真实编码。 */
   function expandMatrixCodes(matrixRows, units) {
     var out = [];
     var seen = {};
     var rows = Array.isArray(matrixRows) ? matrixRows : [];
     var unitList = normalizeUnits(units);
+    var pad2 = function (n) { return String(n).padStart(2, '0'); };
     rows.forEach(function (row) {
       if (!row || typeof row !== 'object' || out.length >= MATRIX_EXPAND_LIMIT) return;
       var sys = String(row.sys || '').toUpperCase();
-      var zone = String(row.zone || '').toUpperCase();
-      var pMin = toNumber(row.pMin);
-      var pMax = toNumber(row.pMax);
-      var tMin = toNumber(row.tMin);
-      var tMax = toNumber(row.tMax);
-      if (!sys || !zone || pMin === null || pMax === null || tMin === null || tMax === null) return;
+      var comp = String(row.comp || '').toUpperCase();
+      if (!sys || !comp) return;
       unitList.forEach(function (unit) {
-        for (var panel = pMin; panel <= pMax && out.length < MATRIX_EXPAND_LIMIT; panel += 1) {
-          for (var tube = tMin; tube <= tMax && out.length < MATRIX_EXPAND_LIMIT; tube += 1) {
-            var code = unit + '-' + sys + '-' + zone + '-' + pad3(panel) + '-' + pad4(tube) + '-000';
-            if (!seen[code]) { seen[code] = true; out.push(code); }
+        var prefix = unit + 'G-' + sys + '-' + comp;
+        if (row.special === 'rsq') {
+          for (var c = row.corners[0]; c <= row.corners[1] && out.length < MATRIX_EXPAND_LIMIT; c += 1) {
+            (row.layers || []).forEach(function (layer) {
+              for (var n = row.nozzles[0]; n <= row.nozzles[1] && out.length < MATRIX_EXPAND_LIMIT; n += 1) {
+                var rsqCode = prefix + '-J' + c + '-' + layer + pad2(n) + '-Q001';
+                if (!seen[rsqCode]) { seen[rsqCode] = true; out.push(rsqCode); }
+              }
+            });
+          }
+          return;
+        }
+        var posList = row.pos ? [row.pos]
+          : Array.from({ length: row.pMax }, function (_, i) { return String(row.posLetters[0]) + String(i + 1).padStart(3, '0'); });
+        var pos2List = row.pos2Letters
+          ? Array.from({ length: row.p2Max }, function (_, i) { return String(row.pos2Letters[0]) + String(i + 1).padStart(3, '0'); })
+          : [null];
+        var spaceList = row.spaces
+          ? Array.from({ length: row.spaces[1] - row.spaces[0] + 1 }, function (_, i) { return String(row.spaces[0] + i) + 'KJ'; })
+          : [null];
+        var dir = row.dirs ? row.dirs[0] : 'U';
+        for (var si = 0; si < spaceList.length && out.length < MATRIX_EXPAND_LIMIT; si += 1) {
+          for (var pi = 0; pi < posList.length && out.length < MATRIX_EXPAND_LIMIT; pi += 1) {
+            for (var pj = 0; pj < pos2List.length && out.length < MATRIX_EXPAND_LIMIT; pj += 1) {
+              for (var t = 1; t <= row.tMax && out.length < MATRIX_EXPAND_LIMIT; t += 1) {
+                var head = [spaceList[si], posList[pi], pos2List[pj]].filter(Boolean).join('-');
+                var code = prefix + '-' + [head, dir + String(t).padStart(3, '0')].filter(Boolean).join('-') + '-Q001';
+                if (!seen[code]) { seen[code] = true; out.push(code); }
+              }
+            }
           }
         }
       });
@@ -834,7 +933,7 @@
   }
 
   function boilerFromCode(code) {
-    var match = normalizeCode(code).match(/^([12])-/);
+    var match = normalizeCode(code).match(/^([12])G-/);
     return match ? match[1] : '';
   }
 
@@ -1095,39 +1194,24 @@
           if (retiredSamples.length < 5) retiredSamples.push(code);
         }
         /* 智能编码匹配：编码不在台账（已有记录 + 矩阵展开）时，找最相似的真实编码给建议。
-           更换产生的新管码（-R1 后缀）先剥掉后缀再比对基础码。 */
+           新规则下更换产生的新管码是同位置新流水号（…-Q002），台账里已有同位置编码就不算笔误。 */
         var codeSuggestion = null;
         if (code && !retiredCodes[code] && ledger.list.length) {
           var baseCode = code.replace(/-R\d+$/i, '');
-          if (!ledger.set[baseCode]) codeSuggestion = suggestSimilarCode(baseCode, ledger.list);
+          var baseNoSeq = baseCode.replace(/-Q\d{1,3}$/i, '');
+          var knownSamePosition = baseNoSeq && ledger.list.some(function (known) {
+            return String(known).indexOf(baseNoSeq + '-Q') === 0;
+          });
+          if (!ledger.set[baseCode] && !knownSamePosition) codeSuggestion = suggestSimilarCode(baseCode, ledger.list);
         }
         if (code && matrixRows.length) {
-          var codeParts = code.split('-');
-          if (codeParts.length >= 5) {
-            var sys = codeParts[1];
-            var zone = codeParts[2];
-            var panel = Number(codeParts[3]);
-            var tube = Number(codeParts[4]);
-            var candidates = matrixRows.filter(function (row) {
-              return row && String(row.sys || '').toUpperCase() === sys && String(row.zone || '').toUpperCase() === zone;
-            });
-            if (candidates.length) {
-              var inRange = candidates.some(function (row) {
-                var pMin = toNumber(row.pMin);
-                var pMax = toNumber(row.pMax);
-                var tMin = toNumber(row.tMin);
-                var tMax = toNumber(row.tMax);
-                if (pMin === null || pMax === null || tMin === null || tMax === null) return false;
-                return panel >= pMin && panel <= pMax && tube >= tMin && tube <= tMax;
-              });
-              if (!inRange) {
-                outOfRangeRows.push(rowNumber);
-                if (outOfRangeSamples.length < 5) {
-                  outOfRangeSamples.push(codeSuggestion
-                    ? code + '（近似：' + codeSuggestion.code + '，相似度 ' + Math.round(codeSuggestion.similarity * 100) + '%）'
-                    : code);
-                }
-              }
+          var rangeChecked = validateTubeCode(code, matrixRows);
+          if (rangeChecked.valid && !rangeChecked.matched) {
+            outOfRangeRows.push(rowNumber);
+            if (outOfRangeSamples.length < 5) {
+              outOfRangeSamples.push(codeSuggestion
+                ? code + '（近似：' + codeSuggestion.code + '，相似度 ' + Math.round(codeSuggestion.similarity * 100) + '%）'
+                : code);
             }
           }
         } else if (code && codeSuggestion) {
@@ -1272,7 +1356,7 @@
     if (boilerMismatchRows.length) {
       pushCheck(checks, 'boiler_mismatch', 'error', '炉号与管段编码不一致',
         '共 ' + boilerMismatchRows.length + ' 行无法确定机组，或炉号与编码首位不一致，这些行不会导入。',
-        boilerMismatchRows, '检查「炉号」列是否为 1 或 2，并确认管段编码以对应机组号开头。', boilerMismatchSamples);
+        boilerMismatchRows, '检查「炉号」列是否为 1 或 2，并确认管段编码以对应机组号（1G- / 2G-）开头。', boilerMismatchSamples);
     }
     if (invalidDateRows.length) {
       pushCheck(checks, 'invalid_date', 'warning', '日期无法识别',
@@ -1303,7 +1387,7 @@
     }
     if (unmatchedRows.length) {
       pushCheck(checks, 'unmatched_code', 'warning', '管段编码格式不符合规则',
-        '共 ' + unmatchedRows.length + ' 行管段编码不符合 1-WW-FR-008-0003-000 形式，仍会导入。',
+        '共 ' + unmatchedRows.length + ' 行管段编码不符合新编码规则（示例：2G-SLB-WB-F000-R025-Q16），仍会导入。',
         unmatchedRows, '建议按编码生成器重新生成管段编码。', unmatchedSamples);
     }
     if (retiredRows.length) {
@@ -1424,16 +1508,16 @@
   }
 
   var SYS_KEYWORDS = [
-    { sys: 'WW', re: /水冷壁|水冷/ },
+    { sys: 'SLB', re: /水冷壁|水冷/ },
     { sys: 'RSH', re: /顶棚过热器|顶棚/ },
     { sys: 'WSH', re: /包墙过热器|包墙/ },
-    { sys: 'LSH', re: /低温过热器|低过/ },
-    { sys: 'PSH', re: /全大屏过热器|全大屏/ },
-    { sys: 'ISH', re: /屏式过热器|屏过|屏式/ },
-    { sys: 'HSH', re: /高温过热器|高过/ },
-    { sys: 'LRH', re: /低温再热器|低再/ },
-    { sys: 'HRH', re: /高温再热器|高再/ },
-    { sys: 'ECO', re: /省煤器/ },
+    { sys: 'DGRQ', re: /低温过热器|低过/ },
+    { sys: 'DPGRQ', re: /全大屏过热器|全大屏/ },
+    { sys: 'HPGRQ', re: /后屏过热器|屏过|屏式/ },
+    { sys: 'GGRQ', re: /高温过热器|高过/ },
+    { sys: 'DZRQ', re: /低温再热器|低再/ },
+    { sys: 'GZRQ', re: /高温再热器|高再/ },
+    { sys: 'SMQ', re: /省煤器/ },
     { generic: '过热器', re: /过热器/ },
     { generic: '再热器', re: /再热器/ }
   ];
@@ -1453,10 +1537,10 @@
       if (item.re.test(text) && result.indexOf(item.sys) < 0) result.push(item.sys);
     });
     if (result.length) return result;
-    var codeMatch = text.match(/(?:^|[^A-Z])(WW|RSH|WSH|LSH|PSH|ISH|HSH|LRH|HRH|ECO)(?:[^A-Z]|$)/);
+    var codeMatch = text.match(/(?:^|[^A-Z])(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ|RSH|WSH)(?:[^A-Z]|$)/);
     if (codeMatch) return [codeMatch[1]];
-    if (genericHeat) return ['RSH', 'WSH', 'LSH', 'PSH', 'ISH', 'HSH'];
-    if (genericReheat) return ['LRH', 'HRH'];
+    if (genericHeat) return ['RSH', 'WSH', 'DGRQ', 'DPGRQ', 'HPGRQ', 'GGRQ'];
+    if (genericReheat) return ['DZRQ', 'GZRQ'];
     return [];
   }
 
@@ -1486,11 +1570,11 @@
   }
 
   function extractZone(text) {
-    if (/前墙/.test(text)) return 'FR';
-    if (/后墙/.test(text)) return 'RR';
-    if (/左墙/.test(text)) return 'FL';
-    if (/右墙/.test(text)) return 'RI';
-    if (/冷灰斗/.test(text)) return 'BF';
+    if (/前墙|前坡/.test(text)) return 'F000';
+    if (/后墙|后坡/.test(text)) return 'B000';
+    if (/左墙|左坡/.test(text)) return 'L000';
+    if (/右墙|右坡/.test(text)) return 'R000';
+    if (/冷灰斗/.test(text)) return 'LHD';
     return '';
   }
 
@@ -1986,7 +2070,7 @@
       case 'edit':
         return info.editResult
           ? info.editResult.reply
-          : '我可以修改单条记录的单个字段。请给出管段编码、字段和新值，例如：「把 1-WW-FR-008-0003-000 的最新测厚记录厚度改成 6.8」。';
+          : '我可以修改单条记录的单个字段。请给出管段编码、字段和新值，例如：「把 2G-SLB-WB-F000-R025-Q16 的最新测厚记录厚度改成 6.8」。';
       case 'undo':
         return '准备撤销最近一次导入，执行前会二次确认。';
       default:
@@ -2005,14 +2089,7 @@
     for (var i = 0; i < matrixRows.length; i += 1) {
       var row = matrixRows[i];
       if (!row || typeof row !== 'object') continue;
-      if (String(row.sys || '').toUpperCase() !== parts.sys) continue;
-      if (String(row.zone || '').toUpperCase() !== parts.zone) continue;
-      var pMin = toNumber(row.pMin);
-      var pMax = toNumber(row.pMax);
-      var tMin = toNumber(row.tMin);
-      var tMax = toNumber(row.tMax);
-      if (pMin === null || pMax === null || tMin === null || tMax === null) continue;
-      if (parts.panel >= pMin && parts.panel <= pMax && parts.tube >= tMin && parts.tube <= tMax) return true;
+      if (matrixRowMatch(row, parts)) return true;
     }
     return false;
   }

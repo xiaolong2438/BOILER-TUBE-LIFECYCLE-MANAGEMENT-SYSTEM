@@ -109,14 +109,14 @@ check("提取 w:tbl 表格：表头 + 数据行，单元格文本完整", () => 
     + "<w:tc><w:p><w:r><w:t>管段编码</w:t></w:r></w:p></w:tc>"
     + "</w:tr><w:tr>"
     + "<w:tc><w:p><w:r><w:t>2024年3月5日</w:t></w:r></w:p></w:tc>"
-    + "<w:tc><w:p><w:r><w:t>1-WW-FR-008-0003-000</w:t></w:r></w:p></w:tc>"
+    + "<w:tc><w:p><w:r><w:t>1G-SLB-WB-F000-R003-Q001</w:t></w:r></w:p></w:tc>"
     + "</w:tr></w:tbl>"
     + XML_FOOTER;
   const parsed = docs.parseDocxDocument(xml);
   assert.equal(parsed.tables.length, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(parsed.tables[0])), [
     ["日期", "管段编码"],
-    ["2024年3月5日", "1-WW-FR-008-0003-000"]
+    ["2024年3月5日", "1G-SLB-WB-F000-R003-Q001"]
   ]);
 });
 
@@ -208,11 +208,11 @@ check("docxToRows：deflate 文档 → 表格 → 字段规范化（日期/数�
     + "<w:tc><w:p><w:r><w:t>实测壁厚值(mm)</w:t></w:r></w:p></w:tc>"
     + "</w:tr><w:tr>"
     + "<w:tc><w:p><w:r><w:t>2024年3月5日</w:t></w:r></w:p></w:tc>"
-    + "<w:tc><w:p><w:r><w:t>1-WW-FR-008-0003-000</w:t></w:r></w:p></w:tc>"
+    + "<w:tc><w:p><w:r><w:t>1G-SLB-WB-F000-R003-Q001</w:t></w:r></w:p></w:tc>"
     + "<w:tc><w:p><w:r><w:t>6.5mm</w:t></w:r></w:p></w:tc>"
     + "</w:tr><w:tr>"
     + "<w:tc><w:p><w:r><w:t>2024/4/8</w:t></w:r></w:p></w:tc>"
-    + "<w:tc><w:p><w:r><w:t>2-HSH-E-012-0005-W02</w:t></w:r></w:p></w:tc>"
+    + "<w:tc><w:p><w:r><w:t>2G-GGRQ-GQ-L012-U005-Q001</w:t></w:r></w:p></w:tc>"
     + "<w:tc><w:p><w:r><w:t>1,234</w:t></w:r></w:p></w:tc>"
     + "</w:tr></w:tbl>"
     + XML_FOOTER;
@@ -222,18 +222,18 @@ check("docxToRows：deflate 文档 → 表格 → 字段规范化（日期/数�
   assert.ok(result.notes.includes("1 个表格"), "备注必须报告表格数量");
   const plain = JSON.parse(JSON.stringify(result.rows));
   assert.deepEqual(plain[0], ["日期", "管段编码", "实测壁厚值(mm)"]);
-  assert.deepEqual(plain[1], ["2024-03-05", "1-WW-FR-008-0003-000", "6.5"]);
-  assert.deepEqual(plain[2], ["2024-04-08", "2-HSH-E-012-0005-W02", "1234"]);
+  assert.deepEqual(plain[1], ["2024-03-05", "1G-SLB-WB-F000-R003-Q001", "6.5"]);
+  assert.deepEqual(plain[2], ["2024-04-08", "2G-GGRQ-GQ-L012-U005-Q001", "1234"]);
 });
 
 check("docxToRows：多个表格按并集合并、重复行去重", async () => {
   const h = createHarness();
   const xml = XML_HEADER
     + "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>日期</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>编码</w:t></w:r></w:p></w:tc></w:tr>"
-    + "<w:tr><w:tc><w:p><w:r><w:t>2024-03-05</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1-WW-FR-008-0003-000</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
+    + "<w:tr><w:tc><w:p><w:r><w:t>2024-03-05</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1G-SLB-WB-F000-R003-Q001</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
     + "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>日期</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>编码</w:t></w:r></w:p></w:tc></w:tr>"
-    + "<w:tr><w:tc><w:p><w:r><w:t>2024-03-05</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1-WW-FR-008-0003-000</w:t></w:r></w:p></w:tc></w:tr>"
-    + "<w:tr><w:tc><w:p><w:r><w:t>2024-03-06</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1-WW-FR-008-0004-000</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
+    + "<w:tr><w:tc><w:p><w:r><w:t>2024-03-05</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1G-SLB-WB-F000-R003-Q001</w:t></w:r></w:p></w:tc></w:tr>"
+    + "<w:tr><w:tc><w:p><w:r><w:t>2024-03-06</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1G-SLB-WB-F000-R004-Q001</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
     + XML_FOOTER;
   const file = makeFile(h, docxBuffer(xml));
   const result = await h.docs.docxToRows(file);

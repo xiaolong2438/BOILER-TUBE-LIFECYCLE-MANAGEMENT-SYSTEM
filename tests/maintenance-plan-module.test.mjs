@@ -34,8 +34,8 @@ assert.match(html, /射线/, "plan should include radiographic inspection");
 assert.match(html, /测厚/, "plan should include thickness measurement");
 assert.match(html, /硬度/, "plan should include hardness testing");
 assert.match(html, /防磨防爆检查/, "plan should include anti-wear and anti-blast inspection");
-assert.match(matrixBlock, /sys:'ISH'[^}]*spec:'[^']*×/, "ISH full inventory spec should include wall thickness");
-assert.match(matrixBlock, /sys:'HSH'[^}]*spec:'[^']*×/, "HSH full inventory spec should include wall thickness");
+assert.match(matrixBlock, /sys:'HPGRQ'[^}]*spec:'[^']*×/, "ISH full inventory spec should include wall thickness");
+assert.match(matrixBlock, /sys:'GGRQ'[^}]*spec:'[^']*×/, "HSH full inventory spec should include wall thickness");
 
 assert.match(html, /function buildMaintenanceOutagePlan\s*\(/, "maintenance plan builder should exist");
 assert.match(html, /function renderMaintenancePlan\s*\(/, "maintenance plan renderer should exist");

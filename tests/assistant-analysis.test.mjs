@@ -28,7 +28,7 @@ const A = sandbox.BTAssistantAnalysis;
 function event(overrides) {
   return Object.assign({
     ts: 1,
-    code: "1-WW-FR-008-0003-000",
+    code: "1G-SLB-WB-F000-R003-Q001",
     boiler: "1",
     date: "2024-01-15",
     type: "测厚",
@@ -43,7 +43,7 @@ function event(overrides) {
 function buildSnapshot() {
   const events = [];
   let ts = 1000;
-  const systems = ["WW", "HSH", "ECO", "HRH"];
+  const systems = ["SLB", "GGRQ", "SMQ", "GZRQ"];
   for (let year = 2022; year <= 2025; year += 1) {
     for (let month = 1; month <= 12; month += 2) {
       for (let unit = 1; unit <= 2; unit += 1) {
@@ -52,7 +52,7 @@ function buildSnapshot() {
         const thickness = Number((nominal - (2025 - year) * 0.2 - (unit === 2 ? 0.1 : 0)).toFixed(2));
         events.push(event({
           ts: ts++,
-          code: unit + "-" + sys + "-E-012-0005-W0" + (month % 5),
+          code: unit + "G-" + sys + "-GQ-L012-U00" + (month % 5) + "-Q001",
           boiler: String(unit),
           date: year + "-" + String(month).padStart(2, "0") + "-15",
           type: month % 4 === 1 ? "金相分析" : "测厚",
@@ -65,12 +65,12 @@ function buildSnapshot() {
   }
   return {
     events: events,
-    replacements: [{ ts: 1, oldCode: "1-WW-FR-008-0003-000", newCode: "1-WW-FR-008-0003-001", boiler: "1", date: "2023-05-01", reason: "爆管" }],
+    replacements: [{ ts: 1, oldCode: "1G-SLB-WB-F000-R003-Q001", newCode: "1G-SLB-WB-F000-R003-Q002", boiler: "1", date: "2023-05-01", reason: "爆管" }],
     materialLibrary: [],
     matrix: [],
     retiredCodes: [],
     warnings: [{ id: "w1" }, { id: "w2" }],
-    overdueRows: [{ code: "1-WW-FR-008-0003-000" }],
+    overdueRows: [{ code: "1G-SLB-WB-F000-R003-Q001" }],
     now: "2026-10-23T00:00:00.000Z"
   };
 }
@@ -128,7 +128,7 @@ check("parseAnalysis 对无关句子返回 null，不误判", () => {
 check("过滤条件复用查询口径（机组 / 受热面 / 日期）", () => {
   const spec = A.parseAnalysis("1 号炉水冷壁近两年壁厚趋势", { now: "2026-10-23T00:00:00.000Z" });
   assert.equal(spec.filters.unit, "1");
-  assert.equal(spec.filters.sys, "WW");
+  assert.equal(spec.filters.sys, "SLB");
   assert.equal(spec.filters.dateFrom, "2024-10-23");
   const result = A.runAnalysis(spec, buildSnapshot());
   assert.ok(result.ok);
@@ -167,9 +167,9 @@ check("runAnalysis 趋势：按管分线并指出减薄最快与越线管段", (
   let ts = 1;
   /* 3 根管、同一规格（名义 7.5），水冷壁慢减薄、高过快减薄、第三根已穿预警线 */
   const tubes = [
-    { code: "1-WW-FR-001-0042-000", base: 7.4, decay: 0.1 },
-    { code: "1-HSH-O-005-0003-000", base: 7.3, decay: 0.45 },
-    { code: "1-WW-RR-001-0088-000", base: 7.2, decay: 0.2 }
+    { code: "1G-SLB-WB-F000-R042-Q001", base: 7.4, decay: 0.1 },
+    { code: "1G-GGRQ-GQ-L005-U003-Q001", base: 7.3, decay: 0.45 },
+    { code: "1G-SLB-WB-B000-R088-Q001", base: 7.2, decay: 0.2 }
   ];
   tubes.forEach((tube) => {
     for (let year = 2021; year <= 2025; year += 1) {
@@ -187,19 +187,19 @@ check("runAnalysis 趋势：按管分线并指出减薄最快与越线管段", (
   const result = A.runAnalysis(spec, { events: events, replacements: [] });
   assert.ok(result.ok);
   assert.equal(result.chart.series.length, 3, "3 根管应按管分线");
-  assert.equal(result.chart.series[0].name, "005-0003", "管段系列按编码排序，用「屏号-管号」短码命名");
+  assert.equal(result.chart.series[0].name, "L005-U003", "管段系列按编码排序，用「屏号-管号」短码命名");
   assert.ok(result.chart.threshold.value === 6, "统一名义壁厚画 80% 预警线");
   const insightText = result.insights.join(" ");
-  assert.match(insightText, /减薄最快的管段：005-0003/, "应指出减薄最快的管段（高过 7.3→5.5）");
+  assert.match(insightText, /减薄最快的管段：L005-U003/, "应指出减薄最快的管段（高过 7.3→5.5）");
   assert.match(insightText, /已低于预警线/, "最新值穿线的管段应点名");
   assert.ok(result.metrics.some((m) => m.label === "管段"));
 });
 
 check("runAnalysis 趋势：无数值事件不制造空时间桶", () => {
   const events = [
-    event({ ts: 3, code: "1-WW-FR-001-0042-000", date: "2024-06-10", type: "金相分析", thickness: undefined, spec: "Φ63.5×7.5" }),
-    event({ ts: 1, code: "1-WW-FR-001-0042-000", date: "2022-04-15", thickness: 7.1 }),
-    event({ ts: 2, code: "1-WW-FR-001-0042-000", date: "2023-04-15", thickness: 6.9 })
+    event({ ts: 3, code: "1G-SLB-WB-F000-R042-Q001", date: "2024-06-10", type: "金相分析", thickness: undefined, spec: "Φ63.5×7.5" }),
+    event({ ts: 1, code: "1G-SLB-WB-F000-R042-Q001", date: "2022-04-15", thickness: 7.1 }),
+    event({ ts: 2, code: "1G-SLB-WB-F000-R042-Q001", date: "2023-04-15", thickness: 6.9 })
   ];
   const spec = A.parseAnalysis("壁厚趋势", {});
   const result = A.runAnalysis(spec, { events: events, replacements: [] });
@@ -248,7 +248,7 @@ check("runAnalysis 相关性：完全线性关系得到 r≈±1", () => {
     const thickness = 6 + i * 0.1;
     events.push(event({
       ts: i + 1,
-      code: "1-HSH-E-012-0005-W01",
+      code: "1G-GGRQ-GQ-L012-U005-Q001",
       date: "2024-" + String((i % 12) + 1).padStart(2, "0") + "-10",
       thickness: thickness,
       hardness: 260 - thickness * 10
@@ -268,7 +268,7 @@ check("runAnalysis 异常识别：低于名义 80% 的记录必须被点名", ()
   for (let i = 0; i < 10; i += 1) {
     events.push(event({
       ts: i + 1,
-      code: "1-WW-FR-008-000" + i + "-000",
+      code: "1G-SLB-WB-F000-R00" + i + "-Q001",
       date: "2024-0" + ((i % 9) + 1) + "-10",
       thickness: i === 4 ? 5.2 : 7.4,
       spec: "Φ63.5×7.5"
@@ -284,11 +284,11 @@ check("runAnalysis 异常识别：低于名义 80% 的记录必须被点名", ()
 
 check("runAnalysis 单管剖面：按日期排序并画 80% 名义壁厚阈值", () => {
   const events = [
-    event({ ts: 3, code: "1-WW-FR-008-0003-000", date: "2025-03-01", thickness: 6.2 }),
-    event({ ts: 1, code: "1-WW-FR-008-0003-000", date: "2021-03-01", thickness: 7.3 }),
-    event({ ts: 2, code: "1-WW-FR-008-0003-000", date: "2023-03-01", thickness: 6.8 })
+    event({ ts: 3, code: "1G-SLB-WB-F000-R003-Q001", date: "2025-03-01", thickness: 6.2 }),
+    event({ ts: 1, code: "1G-SLB-WB-F000-R003-Q001", date: "2021-03-01", thickness: 7.3 }),
+    event({ ts: 2, code: "1G-SLB-WB-F000-R003-Q001", date: "2023-03-01", thickness: 6.8 })
   ];
-  const spec = A.parseAnalysis("1-WW-FR-008-0003-000 壁厚变化曲线", {});
+  const spec = A.parseAnalysis("1G-SLB-WB-F000-R003-Q001 壁厚变化曲线", {});
   const result = A.runAnalysis(spec, { events: events, replacements: [], now: "2026-01-01T00:00:00.000Z" });
   assert.ok(result.ok);
   assert.deepEqual(
@@ -487,8 +487,8 @@ check("isGrounded 支持百分比换算，maskPii 抹掉管码与联系方式", 
   const numbers = { "0.054": true, "5.4": true, "7.2": true };
   assert.equal(A.isGrounded("累计下降 5.4%", numbers), true);
   assert.equal(A.isGrounded("累计下降 9.9%", numbers), false);
-  const masked = A.maskPii("1-WW-FR-008-0003-000 联系电话 13800138000 邮箱 a@b.com");
-  assert.ok(!masked.includes("1-WW-FR-008-0003-000"));
+  const masked = A.maskPii("1G-SLB-WB-F000-R003-Q001 联系电话 13800138000 邮箱 a@b.com");
+  assert.ok(!masked.includes("1G-SLB-WB-F000-R003-Q001"));
   assert.ok(masked.includes("[管码]"));
   assert.ok(!masked.includes("13800138000"));
   assert.ok(!masked.includes("a@b.com"));
@@ -556,7 +556,7 @@ check("core.parseIntent 既有口径不回归", () => {
   assert.equal(Core.parseIntent("查询 1 号炉高过的测厚记录", {}).intent, "query");
   assert.equal(Core.parseIntent("把数据导入系统", {}).intent, "import");
   assert.equal(Core.parseIntent("撤销上次导入", {}).intent, "undo");
-  assert.equal(Core.parseIntent("把 1-WW-FR-008-0003-000 的厚度改成 6.8", {}).intent, "edit");
+  assert.equal(Core.parseIntent("把 1G-SLB-WB-F000-R003-Q001 的厚度改成 6.8", {}).intent, "edit");
 });
 
 /* ---------------- run ---------------- */

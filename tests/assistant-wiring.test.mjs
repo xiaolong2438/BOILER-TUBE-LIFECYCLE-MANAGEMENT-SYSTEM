@@ -238,7 +238,7 @@ checkAsync("配置模型后分析卡片升级为模型解读，并过滤无依�
   for (let m = 1; m <= 12; m += 1) {
     events.push({
       ts: m,
-      code: "1-WW-FR-008-0001-000",
+      code: "1G-SLB-WB-F000-R001-Q001",
       boiler: "1",
       date: "2026-" + String(m).padStart(2, "0") + "-10",
       type: "测厚",
@@ -282,7 +282,7 @@ checkAsync("配置模型后分析卡片升级为模型解读，并过滤无依�
 
   assert.equal(captured.length, 1, "分析只应调用一次模型");
   const payloadText = captured[0][1].content;
-  assert.ok(!payloadText.includes("1-WW-FR-008-0001-000"), "证据包不得外发管段编码");
+  assert.ok(!payloadText.includes("1G-SLB-WB-F000-R001-Q001"), "证据包不得外发管段编码");
   const payload = JSON.parse(payloadText);
   assert.ok(payload.series.length > 0, "必须提供聚合序列供模型判断");
   assert.ok(!payload.table && !payload.rows, "不得外发明细表");
@@ -325,7 +325,7 @@ checkAsync("模型调用失败时保留规则结论并给出降级说明", async
   for (let m = 1; m <= 6; m += 1) {
     events.push({
       ts: m,
-      code: "1-WW-FR-008-0001-000",
+      code: "1G-SLB-WB-F000-R001-Q001",
       boiler: "1",
       date: "2026-0" + m + "-10",
       type: "测厚",

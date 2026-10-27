@@ -218,7 +218,7 @@ parseEdit(message, context) => null | {
   reply: string
 }
 ```
-支持问法：`把 1-WW-FR-008-0003-000 的最新测厚记录厚度改成 6.8`、`2-HSH-E-012-0005-W02 的硬度改为 190`。
+支持问法：`把 1G-SLB-WB-F000-R003-Q001 的最新测厚记录厚度改成 6.8`、`2G-GGRQ-GQ-L012-U005-Q001 的硬度改为 190`。
 字段词：日期/时间→date、管码/编码→code、类型→type、描述/结论→desc、厚度/壁厚→thickness、硬度→hardness、规格→spec、材质→material。
 无法定位管码或字段 → 返回 `null`（wiring 回落到 query/help）。
 校验：`date` 须可归一为 `YYYY-MM-DD`；`thickness`/`hardness` 须为正数；`code` 须符合编码正则。数值范围：厚度 0.1~100 mm、硬度 1~600 HB。

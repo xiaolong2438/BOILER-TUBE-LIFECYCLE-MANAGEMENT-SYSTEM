@@ -22,10 +22,10 @@ new Function("window", source)(browserOnly);
 const EVENT_HEADER = ["数据分类", "炉号", "日期", "管段编码", "规格", "材质", "厚度(mm)", "硬度(HB)", "事件类型/更换原因", "关联新管码", "详细描述/结论"];
 const MATERIAL_HEADER = ["部件名称", "系统代码", "分段/位置", "结构形式", "规格型号", "管径", "壁厚", "材质", "库存根数", "库存总长度(m)", "预留位置", "备注"];
 const MATRIX = [
-  { sys: "WW", zone: "FR", pMin: 1, pMax: 12, tMin: 1, tMax: 192 },
-  { sys: "HSH", zone: "E", pMin: 1, pMax: 32, tMin: 1, tMax: 12 }
+  { sys: "SLB", comp: "WB", pos: "F000", dirs: ["R", "L"], tMax: 192 },
+  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["U", "D"], tMax: 12 }
 ];
-const eventRow = (over) => ["事件", "1", "2024-01-05", "1-WW-FR-008-0003-000", "Φ63.5×7.5", "SA-210C", "7.10", "185", "测厚", "", "前墙第8排第3管测厚"].map((cell, index) => (over && over[index] !== undefined ? over[index] : cell));
+const eventRow = (over) => ["事件", "1", "2024-01-05", "1G-SLB-WB-F000-R003-Q001", "Φ63.5×7.5", "SA-210C", "7.10", "185", "测厚", "", "前墙第3根测厚"].map((cell, index) => (over && over[index] !== undefined ? over[index] : cell));
 const cleanOf = (input) => Core.cleanRows(input);
 const checkById = (report, id) => report.checks.find((item) => item.id === id);
 
@@ -147,30 +147,33 @@ const checks = [
     assert.deepEqual(Core.normalizeEventType(""), { type: "", known: false });
   }],
   ["normalizeCode trims, strips BOM and uppercases", () => {
-    assert.equal(Core.normalizeCode("\uFEFF 1-ww-fr-008-0003-000 "), "1-WW-FR-008-0003-000");
+    assert.equal(Core.normalizeCode("\uFEFF 2g-slb-wb-f000-r025-q16 "), "2G-SLB-WB-F000-R025-Q16");
     assert.equal(Core.normalizeCode(null), "");
     assert.equal(Core.normalizeCode(undefined), "");
   }],
   ["validateTubeCode handles format, matrix matching and suffixes", () => {
-    const ok = Core.validateTubeCode("1-WW-FR-008-0003-000");
+    const ok = Core.validateTubeCode("1G-SLB-WB-F000-R003-Q001");
     assert.equal(ok.valid, true);
-    assert.equal(ok.code, "1-WW-FR-008-0003-000");
-    assert.equal(ok.parts.sys, "WW");
-    assert.equal(ok.parts.zone, "FR");
-    assert.equal(ok.parts.panel, 8);
+    assert.equal(ok.code, "1G-SLB-WB-F000-R003-Q001");
+    assert.equal(ok.parts.sys, "SLB");
+    assert.equal(ok.parts.comp, "WB");
+    assert.equal(ok.parts.pos, "F000");
     assert.equal(ok.parts.tube, 3);
+    assert.equal(ok.parts.seq, 1);
     assert.equal(ok.matched, null, "未提供矩阵时不判 matched");
-    assert.equal(Core.validateTubeCode("1-WW-FR-008-0003-000-R1").valid, true, "更换后的 -R 后缀也合法");
-    assert.equal(Core.validateTubeCode("1-HSH-E-012-0005-W02").valid, true);
+    assert.equal(Core.validateTubeCode("1G-DZRQ-GQ-4KJ-L065-Q001").valid, true, "低再检修空间/省略管号写法合法");
+    assert.equal(Core.validateTubeCode("1G-DPGRQ-GQ-L001-L002-U007-Q001").valid, true, "全大屏片/屏/管三段合法");
+    assert.equal(Core.validateTubeCode("2G-SLB-RSQ-J1-A03-Q001").valid, true, "燃烧器区域角/层/喷口合法");
+    assert.equal(Core.validateTubeCode("1-HSH-E-012-0005-W02").valid, false, "旧格式不再合法");
     assert.equal(Core.validateTubeCode("bad-code").valid, false);
     assert.match(Core.validateTubeCode("bad-code").reason, /格式/);
     assert.equal(Core.validateTubeCode("").valid, false);
     assert.equal(Core.validateTubeCode(null).valid, false);
-    const matched = Core.validateTubeCode("1-WW-FR-008-0003-000", MATRIX);
+    const matched = Core.validateTubeCode("1G-SLB-WB-F000-R003-Q001", MATRIX);
     assert.equal(matched.valid, true);
     assert.ok(matched.matched, "落入矩阵范围时应返回 matched 行");
-    assert.equal(matched.matched.sys, "WW");
-    const outside = Core.validateTubeCode("1-WW-FR-200-0003-000", MATRIX);
+    assert.equal(matched.matched.sys, "SLB");
+    const outside = Core.validateTubeCode("1G-SLB-WB-F000-R200-Q001", MATRIX);
     assert.equal(outside.valid, true);
     assert.equal(outside.matched, null);
     assert.match(outside.reason, /台账矩阵/);
@@ -229,7 +232,7 @@ const checks = [
     assert.equal(cleanIntent.tool, "assistant.clean");
     const dedupe = Core.parseIntent("帮我洗一下数据并去重", { role: "viewer" });
     assert.equal(dedupe.intent, "clean");
-    const editIntent = Core.parseIntent("把 1-WW-FR-008-0003-000 的最新测厚记录厚度改成 6.8", { role: "editor" });
+    const editIntent = Core.parseIntent("把 1G-SLB-WB-F000-R003-Q001 的最新测厚记录厚度改成 6.8", { role: "editor" });
     assert.equal(editIntent.intent, "edit");
     assert.equal(editIntent.tool, "data.edit");
     assert.equal(editIntent.needsConfirm, true);
@@ -241,7 +244,7 @@ const checks = [
     assert.equal(Core.parseIntent("撤销刚才的导入", {}).intent, "undo");
     assert.equal(Core.parseIntent("导入前先清洗并去重", {}).intent, "clean");
     assert.equal(Core.parseIntent("先导出再导入", {}).intent, "export");
-    assert.equal(Core.parseIntent("修改后查询 1-WW-FR-008-0003-000", {}).intent, "query");
+    assert.equal(Core.parseIntent("修改后查询 1G-SLB-WB-F000-R003-Q001", {}).intent, "query");
     assert.equal(Core.parseIntent("数据统计和帮助", {}).intent, "stats");
   }],
   ["parseIntent: role shortage still returns the intent but explains permission", () => {
@@ -288,7 +291,7 @@ const checks = [
 
   ["cleanRows: happy path is importable with 1-based row indexes", () => {
     const result = cleanOf({
-      rows: [EVENT_HEADER, eventRow(), eventRow({ 1: "2", 3: "2-HSH-E-012-0005-W02", 9: "2-HSH-E-012-0005-W02-R1", 8: "更换", 10: "爆管更换" })],
+      rows: [EVENT_HEADER, eventRow(), eventRow({ 1: "2", 3: "2G-GGRQ-GQ-L012-U005-Q001", 9: "2G-GGRQ-GQ-L012-U005-Q002", 8: "更换", 10: "爆管更换" })],
       fileName: "寿命数据_录入模板.csv"
     });
     assert.equal(result.report.datasetType, "events");
@@ -326,7 +329,7 @@ const checks = [
     assert.deepEqual(result.report.rowIndexes, [1, 3]);
   }],
   ["cleanRows: replacement duplicates use boiler + old/new code + date + reason", () => {
-    const replacement = (reason) => ["更换", "1", "2024-03-01", "1-WW-FR-008-0003-000", "", "", "", "", reason, "1-WW-FR-008-0003-000-R1", "泄漏"];
+    const replacement = (reason) => ["更换", "1", "2024-03-01", "1G-SLB-WB-F000-R003-Q001", "", "", "", "", reason, "1G-SLB-WB-F000-R003-Q002", "泄漏"];
     const result = cleanOf({ rows: [EVENT_HEADER, replacement("爆管更换"), replacement("爆管更换"), replacement("检修更换")] });
     assert.equal(result.report.summary.cleanRows, 2);
     assert.equal(result.report.summary.duplicateRows, 1);
@@ -337,7 +340,7 @@ const checks = [
       rows: [EVENT_HEADER,
         eventRow({ 2: "" }),
         eventRow({ 3: "" }),
-        ["更换", "1", "2024-03-01", "1-WW-FR-008-0003-000", "", "", "", "", "爆管更换", "", "泄漏"]]
+        ["更换", "1", "2024-03-01", "1G-SLB-WB-F000-R003-Q001", "", "", "", "", "爆管更换", "", "泄漏"]]
     });
     const missing = checkById(result.report, "missing_required");
     assert.ok(missing);
@@ -351,8 +354,8 @@ const checks = [
     const result = cleanOf({
       rows: [EVENT_HEADER,
         eventRow({ 1: "2" }),
-        eventRow({ 3: "1-WW-FR-008-0004-000" }),
-        eventRow({ 3: "1-WW-FR-008-0005-000" })]
+        eventRow({ 3: "1G-SLB-WB-F000-R004-Q001" }),
+        eventRow({ 3: "1G-SLB-WB-F000-R005-Q001" })]
     });
     const mismatch = checkById(result.report, "boiler_mismatch");
     assert.ok(mismatch, "炉号与编码不一致必须报 boiler_mismatch");
@@ -364,7 +367,7 @@ const checks = [
     assert.equal(result.report.summary.importable, false, "有 error 就不可导入");
   }],
   ["cleanRows: unknown 数据分类 is skipped like importCSV does", () => {
-    const result = cleanOf({ rows: [EVENT_HEADER, eventRow({ 0: "检测" }), eventRow({ 3: "1-WW-FR-008-0004-000" })] });
+    const result = cleanOf({ rows: [EVENT_HEADER, eventRow({ 0: "检测" }), eventRow({ 3: "1G-SLB-WB-F000-R004-Q001" })] });
     const unknownType = checkById(result.report, "unknown_type");
     assert.ok(unknownType);
     assert.deepEqual(unknownType.rows, [1]);
@@ -374,7 +377,7 @@ const checks = [
   }],
   ["cleanRows: dates are normalized to YYYY-MM-DD and failures stay as warnings", () => {
     const result = cleanOf({
-      rows: [EVENT_HEADER, eventRow({ 2: "2024/1/5" }), eventRow({ 2: "2024年1月6日", 3: "1-WW-FR-008-0004-000" }), eventRow({ 2: "不知道", 3: "1-WW-FR-008-0005-000" })]
+      rows: [EVENT_HEADER, eventRow({ 2: "2024/1/5" }), eventRow({ 2: "2024年1月6日", 3: "1G-SLB-WB-F000-R004-Q001" }), eventRow({ 2: "不知道", 3: "1G-SLB-WB-F000-R005-Q001" })]
     });
     assert.equal(result.cleanRows[1][2], "2024-01-05");
     assert.equal(result.cleanRows[2][2], "2024-01-06");
@@ -390,7 +393,7 @@ const checks = [
   }],
   ["cleanRows: thickness/hardness values are checked as numbers", () => {
     const result = cleanOf({
-      rows: [EVENT_HEADER, eventRow({ 6: "很厚" }), eventRow({ 7: "硬", 3: "1-WW-FR-008-0004-000" })]
+      rows: [EVENT_HEADER, eventRow({ 6: "很厚" }), eventRow({ 7: "硬", 3: "1G-SLB-WB-F000-R004-Q001" })]
     });
     const invalidNumber = checkById(result.report, "invalid_number");
     assert.ok(invalidNumber);
@@ -403,10 +406,10 @@ const checks = [
     const result = cleanOf({
       rows: [EVENT_HEADER,
         eventRow({ 3: "1-ABCDE-FR-008-0003-000" }),
-        eventRow({ 3: "1-WW-FR-200-0003-000" }),
-        eventRow({ 3: "1-WW-FR-008-0004-000" })],
+        eventRow({ 3: "1G-SLB-WB-F000-R200-Q001" }),
+        eventRow({ 3: "1G-SLB-WB-F000-R004-Q001" })],
       matrixRows: MATRIX,
-      retiredCodes: ["1-WW-FR-008-0004-000"]
+      retiredCodes: ["1G-SLB-WB-F000-R004-Q001"]
     });
     assert.deepEqual(checkById(result.report, "unmatched_code").rows, [1]);
     assert.deepEqual(checkById(result.report, "out_of_range").rows, [2]);
@@ -414,7 +417,7 @@ const checks = [
     assert.equal(result.report.summary.errorCount, 0);
     assert.equal(result.report.summary.warningCount, 3);
     assert.equal(result.report.summary.cleanRows, 3, "编码类问题不阻断导入");
-    assert.equal(checkById(result.report, "retired_code").sample[0], "1-WW-FR-008-0004-000");
+    assert.equal(checkById(result.report, "retired_code").sample[0], "1G-SLB-WB-F000-R004-Q001");
   }],
   ["cleanRows: extra trailing columns are info and rows keep the file width", () => {
     const wideHeader = EVENT_HEADER.concat(["", ""]);
@@ -471,7 +474,7 @@ const checks = [
   ["cleanRows: preview holds at most five data rows without header", () => {
     const rows = [EVENT_HEADER];
     for (let index = 0; index < 7; index += 1) {
-      rows.push(eventRow({ 2: `2024-01-${10 + index}`, 3: `1-WW-FR-008-000${index}` }));
+      rows.push(eventRow({ 2: `2024-01-${10 + index}`, 3: `1G-SLB-WB-F000-R00${index}` }));
     }
     const result = cleanOf({ rows });
     assert.equal(result.preview.length, 5);
@@ -493,20 +496,20 @@ const checks = [
     const parsed = Core.parseQuery("查询 1 号炉高过的高风险测厚记录", { now: "2026-10-23" });
     assert.equal(parsed.dataset, "events");
     assert.equal(parsed.filters.unit, "1");
-    assert.equal(parsed.filters.sys, "HSH");
+    assert.equal(parsed.filters.sys, "GGRQ");
     assert.equal(parsed.filters.type, "测厚");
     assert.equal(parsed.filters.riskLevel, "HIGH");
     assert.match(parsed.description, /1 号机组/);
     assert.match(parsed.description, /高温过热器/);
-    assert.equal(Core.parseQuery("2号炉水冷壁前墙的事件", {}).filters.zone, "FR");
+    assert.equal(Core.parseQuery("2号炉水冷壁前墙的事件", {}).filters.zone, "F000");
     const wide = Core.parseQuery("1 号炉所有过热器的事件", {});
-    assert.deepEqual(wide.filters.sys, ["RSH", "WSH", "LSH", "PSH", "ISH", "HSH"]);
+    assert.deepEqual(wide.filters.sys, ["RSH", "WSH", "DGRQ", "DPGRQ", "HPGRQ", "GGRQ"]);
     assert.match(wide.description, /顶棚过热器/);
     assert.equal(Core.parseQuery("全厂的事故", {}).filters.unit, undefined, "全厂不设 unit");
   }],
   ["parseQuery: code / keyword / thickness / date filters", () => {
-    const byCode = Core.parseQuery("查 1-WW-FR-008-0003-000 的全部记录", { now: "2026-10-23" });
-    assert.equal(byCode.filters.code, "1-WW-FR-008-0003-000");
+    const byCode = Core.parseQuery("查 1G-SLB-WB-F000-R003-Q001 的全部记录", { now: "2026-10-23" });
+    assert.equal(byCode.filters.code, "1G-SLB-WB-F000-R003-Q001");
     const thickness = Core.parseQuery("壁厚小于6.5的测厚记录", { now: "2026-10-23" });
     assert.equal(thickness.filters.maxThickness, 6.5);
     assert.equal(thickness.filters.type, "测厚");
@@ -521,8 +524,8 @@ const checks = [
     const recent = Core.parseQuery("最近3个月新增了什么", { now: "2026-10-23" });
     assert.equal(recent.filters.dateFrom, "2026-07-23");
     assert.equal(recent.filters.dateTo, "2026-10-23");
-    const keyword = Core.parseQuery('查「HSH」的记录', {});
-    assert.equal(keyword.filters.sys, "HSH");
+    const keyword = Core.parseQuery('查「GGRQ」的记录', {});
+    assert.equal(keyword.filters.sys, "GGRQ");
   }],
   ["parseQuery: maintenance / material / ledger datasets", () => {
     const overdue = Core.parseQuery("超过10年没检查的管段", { now: "2026-10-23" });
@@ -542,33 +545,33 @@ const checks = [
   }],
 
   ["parseEdit: latest record single field edit", () => {
-    const parsed = Core.parseEdit("把 1-WW-FR-008-0003-000 的最新测厚记录厚度改成 6.8");
+    const parsed = Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的最新测厚记录厚度改成 6.8");
     assert.ok(parsed);
-    assert.equal(parsed.targetCode, "1-WW-FR-008-0003-000");
+    assert.equal(parsed.targetCode, "1G-SLB-WB-F000-R003-Q001");
     assert.equal(parsed.recordHint, "latest");
     assert.equal(parsed.field, "thickness");
     assert.equal(parsed.value, "6.8");
     assert.match(parsed.reply, /确认/);
-    const hardness = Core.parseEdit("2-HSH-E-012-0005-W02 的硬度改为 190");
+    const hardness = Core.parseEdit("2G-GGRQ-GQ-L012-U005-Q001 的硬度改为 190");
     assert.equal(hardness.field, "hardness");
     assert.equal(hardness.value, "190");
-    const date = Core.parseEdit("把 1-WW-FR-008-0003-000 的日期改成 2024/3/5");
+    const date = Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的日期改成 2024/3/5");
     assert.equal(date.field, "date");
     assert.equal(date.value, "2024-03-05");
     assert.equal(date.recordHint, "date");
     assert.equal(date.targetDate, "2024-03-05");
-    assert.equal(Core.parseEdit("把 1-WW-FR-008-0003-000 的管码改成 1-WW-FR-008-0004-000").field, "code");
-    assert.equal(Core.parseEdit("把 1-WW-FR-008-0003-000 的类型改成金相").value, "金相分析");
-    assert.equal(Core.parseEdit("把 1-WW-FR-008-0003-000 的最早记录厚度改成 7.0").recordHint, "oldest");
+    assert.equal(Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的管码改成 1G-SLB-WB-F000-R004-Q001").field, "code");
+    assert.equal(Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的类型改成金相").value, "金相分析");
+    assert.equal(Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的最早记录厚度改成 7.0").recordHint, "oldest");
   }],
   ["parseEdit: invalid values and missing anchors return null", () => {
-    assert.equal(Core.parseEdit("把 1-WW-FR-008-0003-000 的厚度改成 abc"), null);
-    assert.equal(Core.parseEdit("把 1-WW-FR-008-0003-000 的厚度改成 -3"), null);
-    assert.equal(Core.parseEdit("把 1-WW-FR-008-0003-000 的厚度改成 500"), null, "厚度上限 100mm");
-    assert.equal(Core.parseEdit("把 1-WW-FR-008-0003-000 的硬度改成 900"), null, "硬度上限 600HB");
-    assert.equal(Core.parseEdit("把 1-WW-FR-008-0003-000 的日期改成 不是日期"), null);
+    assert.equal(Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的厚度改成 abc"), null);
+    assert.equal(Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的厚度改成 -3"), null);
+    assert.equal(Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的厚度改成 500"), null, "厚度上限 100mm");
+    assert.equal(Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的硬度改成 900"), null, "硬度上限 600HB");
+    assert.equal(Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的日期改成 不是日期"), null);
     assert.equal(Core.parseEdit("把厚度改成 6.8"), null, "缺少管段编码");
-    assert.equal(Core.parseEdit("把 1-WW-FR-008-0003-000 改一改"), null, "缺少字段词");
+    assert.equal(Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 改一改"), null, "缺少字段词");
     assert.equal(Core.parseEdit("你好"), null);
     assert.equal(Core.parseEdit(""), null);
     assert.equal(Core.parseEdit(null), null);
@@ -578,13 +581,13 @@ const checks = [
     const now = new Date("2026-10-23T00:00:00Z");
     const stats = Core.buildStats({
       events: [
-        { code: "1-WW-FR-008-0003-000", type: "测厚", date: "2026-10-01", thickness: "6.8", hardness: "185", desc: "a", ts: Date.now() },
-        { code: "1-WW-FR-008-0003-000", type: "测厚", date: "2024-01-01", thickness: "7.1", hardness: "190", desc: "b", ts: 1 }
+        { code: "1G-SLB-WB-F000-R003-Q001", type: "测厚", date: "2026-10-01", thickness: "6.8", hardness: "185", desc: "a", ts: Date.now() },
+        { code: "1G-SLB-WB-F000-R003-Q001", type: "测厚", date: "2024-01-01", thickness: "7.1", hardness: "190", desc: "b", ts: 1 }
       ],
-      replacements: [{ oldCode: "1-WW-FR-008-0004-000", newCode: "1-WW-FR-008-0004-000-R1", date: "2024-02-01", ts: 2 }],
+      replacements: [{ oldCode: "1G-SLB-WB-F000-R004-Q001", newCode: "1G-SLB-WB-F000-R004-Q002", date: "2024-02-01", ts: 2 }],
       materialLibrary: [{ component: "省煤器", spec: "Φ51×6", material: "SA-210C", stockQty: "10" }],
       matrix: MATRIX,
-      retiredCodes: ["1-WW-FR-008-0009-000"],
+      retiredCodes: ["1G-SLB-WB-F000-R009-Q001"],
       now
     });
     assert.equal(typeof stats.intro, "string");
@@ -605,15 +608,15 @@ const checks = [
     const now = new Date("2026-10-23T00:00:00Z");
     const stats = Core.buildStats({
       events: [
-        { code: "1-WW-FR-008-0003-000", type: "测厚", date: "2024-01-01", thickness: "", hardness: "", desc: "缺厚度", ts: 1 },
-        { code: "1-WW-FR-008-0003-000", type: "测厚", date: "2024-01-01", thickness: "", hardness: "", desc: "缺厚度", ts: 2 },
-        { code: "9-WW-FR-999-0003-000", type: "金相分析", date: "2024-01-01", thickness: "6", hardness: "180", desc: "矩阵外", ts: 3 },
-        { code: "1-WW-FR-008-0009-000", type: "测厚", date: "2024-01-01", thickness: "6", hardness: "180", desc: "报废", ts: 4 }
+        { code: "1G-SLB-WB-F000-R003-Q001", type: "测厚", date: "2024-01-01", thickness: "", hardness: "", desc: "缺厚度", ts: 1 },
+        { code: "1G-SLB-WB-F000-R003-Q001", type: "测厚", date: "2024-01-01", thickness: "", hardness: "", desc: "缺厚度", ts: 2 },
+        { code: "9G-SLB-WB-F000-R003-Q001", type: "金相分析", date: "2024-01-01", thickness: "6", hardness: "180", desc: "矩阵外", ts: 3 },
+        { code: "1G-SLB-WB-F000-R009-Q001", type: "测厚", date: "2024-01-01", thickness: "6", hardness: "180", desc: "报废", ts: 4 }
       ],
       replacements: [],
       materialLibrary: [{ component: "省煤器", spec: "Φ51×6", material: "SA-210C" }],
       matrix: MATRIX,
-      retiredCodes: ["1-WW-FR-008-0009-000"],
+      retiredCodes: ["1G-SLB-WB-F000-R009-Q001"],
       now
     });
     const titles = stats.issues.map((item) => item.title);

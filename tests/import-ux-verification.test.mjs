@@ -30,16 +30,17 @@ const checks = [];
 const check = (name, fn) => checks.push([name, fn]);
 const checkById = (report, id) => report.checks.find((item) => item.id === id);
 
-/* 与页面「炉管台账」同构的矩阵（覆盖夹具里的 008/020/021 屏） */
+/* 与页面「炉管台账」同构的矩阵（覆盖夹具里的前墙/后墙/冷灰斗/高过） */
 const MATRIX = [
-  { sys: "WW", zone: "FR", pMin: 1, pMax: 32, tMin: 1, tMax: 192 },
-  { sys: "WW", zone: "FL", pMin: 1, pMax: 12, tMin: 1, tMax: 192 },
-  { sys: "HSH", zone: "E", pMin: 1, pMax: 32, tMin: 1, tMax: 12 }
+  { sys: "SLB", comp: "WB", pos: "F000", dirs: ["R", "L"], tMax: 192 },
+  { sys: "SLB", comp: "WB", pos: "B000", dirs: ["R", "L"], tMax: 192 },
+  { sys: "SLB", comp: "LHD", pos: "F000", dirs: ["L", "R"], tMax: 96 },
+  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["U", "D"], tMax: 12 }
 ];
 /* 台账已有编码（模拟系统里已存在检测记录的管段） */
 const KNOWN = [
-  "1-WW-FR-008-0003-000", "1-WW-FR-008-0004-000", "1-WW-FR-020-0010-000",
-  "1-WW-FR-021-0011-000", "1-WW-FR-021-0012-000", "1-WW-FR-022-0012-000"
+  "1G-SLB-WB-F000-R003-Q001", "1G-SLB-WB-F000-R004-Q001", "1G-SLB-WB-B000-R010-Q001",
+  "1G-SLB-WB-B000-R011-Q001", "1G-SLB-WB-B000-R012-Q001", "1G-SLB-WB-B000-R013-Q001"
 ];
 const CLEAN_CONTEXT = { matrixRows: MATRIX, knownCodes: KNOWN, units: ["1", "2"] };
 
@@ -118,9 +119,9 @@ check("分类：事件类型现场叫法归一——探伤→无损检测、金�
 check("分类：数据分类列只认「事件/更换」（含英文与大小写），其余值跳过并提示", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
-    ["event", "1", "2024-03-05", "1-WW-FR-008-0003-000", "测厚"],
-    ["Replacement", "1", "2024-03-06", "1-WW-FR-008-0004-000", "爆管更换"],
-    ["巡检", "1", "2024-03-07", "1-WW-FR-020-0010-000", "测厚"]
+    ["event", "1", "2024-03-05", "1G-SLB-WB-F000-R003-Q001", "测厚"],
+    ["Replacement", "1", "2024-03-06", "1G-SLB-WB-F000-R004-Q001", "爆管更换"],
+    ["巡检", "1", "2024-03-07", "1G-SLB-WB-B000-R010-Q001", "测厚"]
   ];
   const report = Core.cleanRows({ rows, ...CLEAN_CONTEXT }).report;
   assert.equal(checkById(report, "unknown_type").rows.join(","), "3");
@@ -181,8 +182,8 @@ check("列序归一：乱序文件清洗后按模板列序重排，数值逐列�
   ]);
   /* 第 1 行原始：设备编码,机组号,检测日期,分类,钢管规格,材质牌号,实测壁厚值,布氏硬度值,检测类型,结论备注,新管段编码 */
   assert.deepEqual(result.cleanRows[1], [
-    "事件", "1", "2024-03-05", "1-WW-FR-008-0003-000", "Φ63.5×7.5", "SA-210C",
-    "6.8", "182", "测厚", "", "前墙第8排第3管"
+    "事件", "1", "2024-03-05", "1G-SLB-WB-F000-R003-Q001", "Φ63.5×7.5", "SA-210C",
+    "6.8", "182", "测厚", "", "前墙第3根"
   ]);
 });
 
@@ -191,7 +192,7 @@ check("列序归一：乱序文件清洗后按模板列序重排，数值逐列�
 check("编码定位：矩阵内合法编码（含未有过记录的新管）不误报", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
-    ["事件", "1", "2024-03-05", "1-WW-FR-008-0005-000", "测厚"]
+    ["事件", "1", "2024-03-05", "1G-SLB-WB-F000-R005-Q001", "测厚"]
   ];
   const report = Core.cleanRows({ rows, ...CLEAN_CONTEXT }).report;
   assert.equal(checkById(report, "unknown_code"), undefined);
@@ -201,32 +202,32 @@ check("编码定位：矩阵内合法编码（含未有过记录的新管）不�
 check("编码定位：台账外编码超矩阵范围时报警告，并给出最相似真实编码（模糊定位核心）", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
-    ["事件", "1", "2024-05-06", "1-WW-FR-080-0003-000", "测厚"]
+    ["事件", "1", "2024-05-06", "1G-GGRQ-GQ-L080-U001-Q001", "测厚"]
   ];
   const report = Core.cleanRows({ rows, ...CLEAN_CONTEXT }).report;
   const item = checkById(report, "out_of_range");
   assert.ok(item, "必须报 out_of_range");
   assert.equal(item.severity, "warning");
   const sample = item.sample[0];
-  assert.ok(sample.startsWith("1-WW-FR-080-0003-000"), "样例以原始编码开头");
-  assert.ok(sample.includes("近似：1-WW-FR-"), "样例必须给出近似编码建议");
+  assert.ok(sample.startsWith("1G-GGRQ-GQ-L080-U001-Q001"), "样例以原始编码开头");
+  assert.ok(sample.includes("近似：1G-GGRQ-"), "样例必须给出近似编码建议");
   assert.ok(sample.includes("相似度"), "近似建议必须带相似度");
   const similarity = Number(sample.match(/相似度 (\d+)%/)[1]);
   assert.ok(similarity >= 82, "相似度必须达到 82% 阈值，实际 " + similarity + "%");
 });
 
 check("编码定位：建议只看同机组同系统，跨系统候选被过滤", () => {
-  const ledger = ["1-WW-FR-008-0003-000", "2-HSH-E-012-0005-W02"];
-  const hit = Core.suggestSimilarCode("1-WW-FR-008-0005-000", ledger);
-  assert.ok(hit && hit.code.startsWith("1-WW-FR-"), "1 号机组 WW 系统的笔误只能建议 WW 候选");
-  assert.equal(Core.suggestSimilarCode("1-WW-FR-008-0003-000", ledger), null, "编码本身在台账 → 无需建议");
-  assert.equal(Core.suggestSimilarCode("1-LSH-E-001-0001-000", ledger), null, "低相似度（可能是合法新码）不误报");
+  const ledger = ["1G-SLB-WB-F000-R003-Q001", "2G-GGRQ-GQ-L012-U005-Q001"];
+  const hit = Core.suggestSimilarCode("1G-SLB-WB-F000-R005-Q001", ledger);
+  assert.ok(hit && hit.code.startsWith("1G-SLB-"), "1 号机组 SLB 系统的笔误只能建议 SLB 候选");
+  assert.equal(Core.suggestSimilarCode("1G-SLB-WB-F000-R003-Q001", ledger), null, "编码本身在台账 → 无需建议");
+  assert.equal(Core.suggestSimilarCode("1G-SMQ-EXIN-L001-U001-Q001", ledger), null, "跨系统候选被过滤，不误报");
 });
 
 check("编码定位：更换产生的新管码剥掉 -R 后缀再比对，不误报疑似笔误", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因", "关联新管码"],
-    ["更换", "1", "2026-05-22", "1-WW-FR-008-0003-000", "爆管更换", "1-WW-FR-008-0003-R1"]
+    ["更换", "1", "2026-05-22", "1G-SLB-WB-F000-R003-Q001", "爆管更换", "1G-SLB-WB-F000-R003-Q002"]
   ];
   const report = Core.cleanRows({ rows, knownCodes: KNOWN, matrixRows: [], units: ["1", "2"] }).report;
   assert.equal(checkById(report, "unknown_code"), undefined);
@@ -287,7 +288,7 @@ check("准确性：夹具中每行日期/数值的清洗结果逐行核对", () 
   assert.deepEqual(checkById(report, "missing_required").rows, [6]);
   /* 炉号 2 + 1 号机组编码 → 冲突阻断 */
   assert.deepEqual(checkById(report, "boiler_mismatch").rows, [7]);
-  assert.ok(checkById(report, "boiler_mismatch").sample[0].includes("1-WW-FR-022-0012-000"));
+  assert.ok(checkById(report, "boiler_mismatch").sample[0].includes("1G-SLB-WB-B000-R013-Q001"));
   /* 重复行：业务键相同只保留首行 */
   const dup = checkById(report, "duplicate_rows");
   assert.deepEqual(dup.droppedRows, [5]);
@@ -300,8 +301,8 @@ check("准确性：清洗不丢内容——存活行的厚度/硬度/备注与�
   /* 第 10 行：更换行，关联新管码保留 -R1 后缀 */
   const row10 = rowByNumber(result, 10);
   assert.equal(row10[0], "更换");
-  assert.equal(row10[3], "1-WW-FL-010-0005-000");
-  assert.equal(row10[9], "1-WW-FL-010-0005-000-R1");
+  assert.equal(row10[3], "1G-SLB-LHD-F000-L005-Q001");
+  assert.equal(row10[9], "1G-SLB-LHD-F000-L005-Q002");
   assert.equal(row10[8], "爆管更换");
   /* 第 9 行：区间值厚度原文保留 */
   const row9 = rowByNumber(result, 9);
@@ -341,7 +342,7 @@ check("安全：未知表格只做通用清洗（去空行/去重/trim），标�
 
 check("容错：BOM 表头自动去除并提示，全角机组号正确判炉", () => {
   const rows = [["\uFEFF数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
-    ["事件", "１", "2024-03-05", "1-WW-FR-008-0003-000", "测厚"]];
+    ["事件", "１", "2024-03-05", "1G-SLB-WB-F000-R003-Q001", "测厚"]];
   const result = Core.cleanRows({ rows, ...CLEAN_CONTEXT });
   assert.ok(result.report.normalizations.some((line) => line.includes("BOM")));
   assert.equal(result.cleanRows[1][1], "１"); // 原文保留，但炉号判定成功
@@ -397,7 +398,7 @@ check("Word → 清洗 → 导入网格：与 CSV 同口径（识别/归一/重�
   /* 重排后列对位：日期归一、厚度落位第 6 列 */
   assert.equal(result.cleanRows[1][2], "2024-03-05");
   assert.equal(result.cleanRows[1][6], "6.8");
-  assert.equal(result.cleanRows[1][3], "1-WW-FR-001-0003-000");
+  assert.equal(result.cleanRows[1][3], "1G-SLB-WB-F000-R003-Q001");
   /* 无效日期（2025-02-30）警告保留 */
   assert.deepEqual(checkById(report, "invalid_date").rows, [3]);
 });
