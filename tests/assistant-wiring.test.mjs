@@ -378,8 +378,8 @@ check("材料库样例文件能被识别为材料库数据集", () => {
 checkAsync("未识别数据集上传后：对话文案不说「可导入」，卡片也不给导入按钮", async () => {
   const { sandbox, doc } = boot();
   sandbox.BTAssistant.open();
-  const csv = ["姓名,部门,日期,工时", "张三,检修部,2024-03-05,8", "李四,检测中心,2024-03-06,7.5"].join("\n");
-  const file = { name: "无关表格-考勤.csv", size: csv.length, type: "text/csv" };
+  const csv = ["供应商名称,联系人,联系电话,供货范围", "华东钢管厂,王经理,13800138000,水冷壁管", "北方耐材,李经理,13900139000,耐火浇注料"].join("\n");
+  const file = { name: "无关表格-供应商清单.csv", size: csv.length, type: "text/csv" };
   /* 接线层用 FileReader 读取 CSV */
   sandbox.FileReader = class {
     readAsText() { setTimeout(() => this.onload({ target: { result: csv } }), 0); }

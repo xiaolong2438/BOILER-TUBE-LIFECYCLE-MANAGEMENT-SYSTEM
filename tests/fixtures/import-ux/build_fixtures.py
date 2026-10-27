@@ -5,15 +5,19 @@ Run: python tests/fixtures/import-ux/build_fixtures.py
 产出（与脚本同目录）：
   1. 现场检测记录-乱序列.csv   事件台账：别名表头 + 乱序列 + 脏数据 + BOM
   2. 受热面材料台账-别名表头.csv 材料库：别名表头 + 重复行 + 缺材质
-  3. 无关表格-考勤.csv          非台账表格：必须判为 unknown、不误判
+  3. 无关表格-供应商清单.csv    非台账表格：必须判为 unknown、不误判
   4. 检测记录.xlsx              真实 Excel（openpyxl）：多工作表，首个为乱序测厚记录
   5. 检测台账.docx              真实 Word（zipfile + OOXML w:tbl）：别名表头测厚记录
 """
 import csv
+import datetime
 import os
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 固定时间戳：夹具是可复现的构建产物，重复生成不应产生无意义的二进制 diff
+FIXED_DATETIME = datetime.datetime(2024, 1, 1, 0, 0, 0)
+FIXED_ZIP_TIME = (2024, 1, 1, 0, 0, 0)
 
 
 def write_csv(name, rows, bom=True):
@@ -58,12 +62,26 @@ def build_material_csv():
 
 
 def build_unrelated_csv():
+    # 与台账无关的业务表格：既没有「日期 + 管段编码」，也没有「部件名称 + 规格型号 + 材质」
     rows = [
-        ["姓名", "部门", "日期", "工时", "备注"],
-        ["张三", "检修部", "2024-03-05", "8", "夜间抢修"],
-        ["李四", "检测中心", "2024-03-06", "7.5", ""],
+        ["供应商名称", "联系人", "联系电话", "供货范围", "备注"],
+        ["华东钢管厂", "王经理", "13800138000", "水冷壁管", "长期合作"],
+        ["北方耐材", "李经理", "13900139000", "耐火浇注料", ""],
     ]
-    write_csv("无关表格-考勤.csv", rows, bom=False)
+    write_csv("无关表格-供应商清单.csv", rows, bom=False)
+
+
+def normalize_zip_timestamps(path):
+    """把 ZIP 内全部条目的时间戳固定，保证重复生成字节一致（openpyxl 会写入当前时间）。"""
+    tmp = path + ".tmp"
+    with zipfile.ZipFile(path, "r") as src, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
+        for info in src.infolist():
+            data = src.read(info.filename)
+            fixed = zipfile.ZipInfo(info.filename, date_time=FIXED_ZIP_TIME)
+            fixed.compress_type = zipfile.ZIP_DEFLATED
+            fixed.external_attr = info.external_attr
+            dst.writestr(fixed, data)
+    os.replace(tmp, path)
 
 
 def build_xlsx():
@@ -79,8 +97,11 @@ def build_xlsx():
     ws2 = wb.create_sheet("材料库")
     ws2.append(["部件", "系统", "规格", "材质", "库存数量"])
     ws2.append(["省煤器", "ECO", "Φ51×6", "SA-210C", "10"])
+    wb.properties.created = FIXED_DATETIME
+    wb.properties.modified = FIXED_DATETIME
     path = os.path.join(HERE, "检测记录.xlsx")
     wb.save(path)
+    normalize_zip_timestamps(path)
     print("written", path)
 
 
@@ -119,9 +140,10 @@ def build_docx():
             "</Relationships>")
     path = os.path.join(HERE, "检测台账.docx")
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("[Content_Types].xml", content_types)
-        zf.writestr("_rels/.rels", rels)
-        zf.writestr("word/document.xml", document)
+        for name, content in [("[Content_Types].xml", content_types), ("_rels/.rels", rels), ("word/document.xml", document)]:
+            info = zipfile.ZipInfo(name, date_time=FIXED_ZIP_TIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            zf.writestr(info, content)
     print("written", path)
 
 

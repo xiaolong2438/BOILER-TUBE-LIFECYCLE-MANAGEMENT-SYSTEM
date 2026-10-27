@@ -113,12 +113,12 @@ window.runImportUxTests = async function () {
   });
 
   /* ---------- 场景 3：无关表格不误写库 ---------- */
-  await test('无关表格（考勤）：识别为 unknown，不自动入库、不新增确认导入', async () => {
-    const csv = ['姓名,部门,日期,工时,备注', '张三,检修部,2024-03-05,8,夜间抢修'].join('\n');
+  await test('无关表格（供应商清单）：识别为 unknown，不自动入库、不新增确认导入', async () => {
+    const csv = ['供应商名称,联系人,联系电话,供货范围,备注', '华东钢管厂,王经理,13800138000,水冷壁管,长期合作'].join('\n');
     const before = eventCount();
     /* 历史消息里可能残留此前卡片的按钮，以“新增按钮数”为准 */
     const buttonsBefore = document.querySelectorAll('[data-action-id="import-confirm"]').length;
-    window.BTAssistant.handleFile(makeFile(csv, '无关表格-考勤.csv'));
+    window.BTAssistant.handleFile(makeFile(csv, '无关表格-供应商清单.csv'));
     await until(() => messagesText().indexOf('未识别数据集') >= 0);
     await wait(300); /* 留出可能误写库的时间窗 */
     assert(eventCount() === before, '无关表格绝不能写入台账');

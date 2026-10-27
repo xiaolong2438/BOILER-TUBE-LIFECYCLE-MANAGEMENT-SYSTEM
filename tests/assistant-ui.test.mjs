@@ -143,7 +143,7 @@ check("清洗报告渲染错误/警告数量与动作按钮", () => {
 check("清洗报告：未识别数据集不把「保留行数」显示成「可导入」", () => {
   const report = {
     datasetType: "unknown",
-    fileName: "无关表格-考勤.csv",
+    fileName: "无关表格-供应商清单.csv",
     summary: { totalRows: 2, cleanRows: 2, errorCount: 0, warningCount: 0, duplicateRows: 0, issueCount: 1, importable: false },
     checks: [{ id: "unknown_type", severity: "warning", title: "未识别数据集", detail: "不会导入", rows: [] }],
     normalizations: [],

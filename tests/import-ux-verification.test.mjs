@@ -11,7 +11,7 @@ import vm from "node:vm";
  * 夹具（tests/fixtures/import-ux/，由 build_fixtures.py 生成）模拟现场真实文件：
  *   - 现场检测记录-乱序列.csv   别名表头 + 乱序列 + 日期/数值脏数据 + 笔误编码 + 重复行 + BOM
  *   - 受热面材料台账-别名表头.csv 材料库别名表头 + 重复行 + 缺材质
- *   - 无关表格-考勤.csv          非台账表格（必须判 unknown、不误写库）
+ *   - 无关表格-供应商清单.csv    非台账表格（必须判 unknown、不误写库）
  *   - 检测记录.xlsx              真实 Excel（openpyxl 生成，多工作表）
  *   - 检测台账.docx              真实 Word（OOXML 表格，别名表头 + 脏数据）
  *
@@ -91,9 +91,9 @@ check("识别：材料库别名表头靠文件名分类为「受热面材料库�
   assert.equal(Core.detectDatasetType(rows[0], "受热面材料台账-别名表头.csv"), "material_library");
 });
 
-check("识别：无关表格（考勤）判为 unknown，绝不误判成台账", () => {
-  const rows = parseCsvText(fixture("无关表格-考勤.csv"));
-  assert.equal(Core.detectDatasetType(rows[0], "无关表格-考勤.csv"), "unknown");
+check("识别：无关表格（供应商清单）判为 unknown，绝不误判成台账", () => {
+  const rows = parseCsvText(fixture("无关表格-供应商清单.csv"));
+  assert.equal(Core.detectDatasetType(rows[0], "无关表格-供应商清单.csv"), "unknown");
   assert.equal(Core.detectDatasetType(rows[0], ""), "unknown");
 });
 
@@ -330,13 +330,13 @@ check("准确性：材料库夹具——别名表头对齐，缺材质行阻断�
 });
 
 check("安全：未知表格只做通用清洗（去空行/去重/trim），标记不导入", () => {
-  const rows = parseCsvText(fixture("无关表格-考勤.csv"));
-  const result = Core.cleanRows({ rows, fileName: "无关表格-考勤.csv", matrixRows: [], knownCodes: [], units: ["1", "2"] });
+  const rows = parseCsvText(fixture("无关表格-供应商清单.csv"));
+  const result = Core.cleanRows({ rows, fileName: "无关表格-供应商清单.csv", matrixRows: [], knownCodes: [], units: ["1", "2"] });
   assert.equal(result.report.datasetType, "unknown");
   assert.equal(result.report.summary.importable, false);
   const item = checkById(result.report, "unknown_type");
   assert.ok(item.detail.includes("未识别数据集") || item.title.includes("未识别数据集"));
-  assert.ok(result.cleanRows[0].join(",").includes("姓名"), "通用清洗保留原始表头");
+  assert.ok(result.cleanRows[0].join(",").includes("供应商名称"), "通用清洗保留原始表头");
 });
 
 check("容错：BOM 表头自动去除并提示，全角机组号正确判炉", () => {
