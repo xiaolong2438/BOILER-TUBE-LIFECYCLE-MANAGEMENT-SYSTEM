@@ -1497,7 +1497,8 @@ function syncDashboardSnapshot() {
   const mediumCount = warnings.filter(item => item.level === 'MEDIUM').length;
   const trendStats = getDashboardTrendStats(warnings);
   renderDashboardHealthCore(trendStats);
-  const ledgerCount = dashboardUnit === 'all' ? 5139 * 2 : 5139;
+  const ledgerStats = tubeLedgerMatrixStats();
+  const ledgerCount = dashboardUnit === 'all' ? ledgerStats.total * 2 : ledgerStats.total;
   const leftUnit = document.getElementById('dashboard-left-unit');
   if(leftUnit) leftUnit.textContent = unitLabel;
   const highEl = document.getElementById('dashboard-high-risk-count');
@@ -2496,6 +2497,18 @@ function matrixRowCount(m) {
   if(m.spaces) count *= (m.spaces[1] - m.spaces[0] + 1);
   return count;
 }
+/* 台账矩阵统计：管理单元总数与分系统口径，随 matrix 定义自动更新（勿写死数字） */
+function tubeLedgerMatrixStats() {
+  const stats = { total: 0, slb: 0, sh: 0, rhEco: 0 };
+  matrix.forEach(item => {
+    const count = matrixRowCount(item);
+    stats.total += count;
+    if(item.sys === 'SLB') stats.slb += count;
+    else if(['DGRQ', 'DPGRQ', 'HPGRQ', 'GGRQ'].includes(item.sys)) stats.sh += count;
+    else stats.rhEco += count;
+  });
+  return stats;
+}
 function matrixRowRangeText(m) {
   if(m.special === 'rsq') return `J${m.corners[0]}~J${m.corners[1]} · ${m.layers[0]}~${m.layers[m.layers.length - 1]}层 · 喷口${m.nozzles[0]}~${m.nozzles[1]}`;
   if(m.pos) return `${m.pos} · 管1~${m.tMax}`;
@@ -2980,9 +2993,10 @@ function buildLLMContext() {
   const localCodes = [...new Set(userDB.events.map(e => e.code))].slice(0, 8);
   const recentEvents = userDB.events.slice(-8).map(e => `${e.date} ${e.code} ${e.type}: ${e.desc}`).join('\n') || '暂无本地录入事件';
   const lifecycle = Object.entries(systemLifecycleData()).slice(0, 4).map(([code, d]) => `${code}: ${d.name}, ${d.spec}, 投运/记录 ${d.install}, 风险 ${d.risk}`).join('\n');
+  const ledgerStats = tubeLedgerMatrixStats();
   const parts = [
     '系统：锅炉炉管全生命周期管理系统，覆盖 1#/2# 机组炉管台账、寿命跟踪、预警与检修记录。',
-    '总览：单炉管管理单元 5139；水冷壁 722；过热器系统 2681；再热+省煤器 1736。',
+    `总览：单炉管管理单元 ${ledgerStats.total}；水冷壁 ${ledgerStats.slb}；过热器系统 ${ledgerStats.sh}；再热+省煤器 ${ledgerStats.rhEco}。`,
     `当前实际预警：\n${formatDashboardWarningsForPrompt()}`,
     `本地录入：事件 ${userDB.events.length} 条，更换 ${userDB.replacements.length} 条；涉及管码：${localCodes.join(', ') || '暂无'}`,
     `寿命样例：\n${lifecycle}`,
