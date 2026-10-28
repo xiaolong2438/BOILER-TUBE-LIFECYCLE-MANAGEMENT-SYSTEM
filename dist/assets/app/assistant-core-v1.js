@@ -206,8 +206,7 @@
     if (!headerKey) return null;
     var pairs = headerAliasPairs(datasetType);
     var strippedHits = [];
-    var containCandidates = [];
-    var editCandidates = [];
+    var candidates = [];
     pairs.forEach(function (pair) {
       var aliasKey = aggressiveHeaderKey(pair.alias);
       if (!aliasKey) return;
@@ -222,19 +221,24 @@
       var longer = Math.max(aliasKey.length, headerKey.length);
       if (longer && (headerKey.indexOf(aliasKey) >= 0 || aliasKey.indexOf(headerKey) >= 0)) {
         if (shorter >= FUZZY_CONTAIN_MIN_LEN) {
-          containCandidates.push({ canonical: pair.canonical, score: shorter / longer });
-          return;
+          var containScore = shorter / longer;
+          if (containScore >= FUZZY_CONTAIN_MIN_SCORE) {
+            candidates.push({ canonical: pair.canonical, score: containScore });
+          }
         }
       }
       if (headerKey.length >= 3 && aliasKey.length >= 3) {
-        editCandidates.push({ canonical: pair.canonical, score: stringSimilarity(aliasKey, headerKey) });
+        var editScore = stringSimilarity(aliasKey, headerKey);
+        if (editScore >= FUZZY_EDIT_MIN_SCORE) {
+          candidates.push({ canonical: pair.canonical, score: editScore });
+        }
       }
     });
     if (strippedHits.length === 1) return { canonical: strippedHits[0], level: 'fuzzy', score: 1 };
     if (strippedHits.length > 1) return null;
-    var best = pickBestCandidate(containCandidates, FUZZY_CONTAIN_MIN_SCORE);
-    if (best) return { canonical: best.canonical, level: 'fuzzy', score: best.score };
-    best = pickBestCandidate(editCandidates, FUZZY_EDIT_MIN_SCORE);
+    /* 两级候选合并后取全局最高分：避免「包含 0.5」压过「编辑距离 0.75」这类更近的匹配
+       （如「事件类别」应归到「事件类型」而不是「数据分类」）；最高分仍并列时不映射。 */
+    var best = pickBestCandidate(candidates, Math.min(FUZZY_CONTAIN_MIN_SCORE, FUZZY_EDIT_MIN_SCORE));
     if (best) return { canonical: best.canonical, level: 'fuzzy', score: best.score };
     return null;
   }

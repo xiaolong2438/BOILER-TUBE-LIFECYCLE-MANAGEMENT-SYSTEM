@@ -44,6 +44,22 @@ check("模糊匹配：两个标准列同分时不映射，避免歧义归并", (
   assert.equal(Core.fuzzyMatchHeader("events", "编码备注"), null);
 });
 
+check("模糊匹配：两级候选合并取全局最高分——编辑距离更近的列胜出", () => {
+  /* 「事件类别」：包含「类别」→ 数据分类 0.50；编辑距离「事件类型」→ 事件类型/更换原因 0.75。
+     旧实现包含层优先，会误归到「数据分类」；现按全局最高分归到语义更近的事件类型。 */
+  assert.equal(Core.fuzzyMatchHeader("events", "事件类别").canonical, "事件类型/更换原因");
+  assert.equal(Core.fuzzyMatchHeader("events", "检测类别").canonical, "事件类型/更换原因");
+  assert.notEqual(Core.fuzzyMatchHeader("events", "事件类别").canonical, "数据分类");
+});
+
+check("模糊匹配：全局比分后并列仍不映射（宁缺勿错），常规包含匹配不回归", () => {
+  assert.equal(Core.fuzzyMatchHeader("events", "编码备注"), null);
+  assert.equal(Core.fuzzyMatchHeader("events", "设备编码").canonical, "管段编码");
+  assert.equal(Core.fuzzyMatchHeader("events", "钢管规格").canonical, "规格");
+  assert.equal(Core.fuzzyMatchHeader("events", "实测壁厚值(mm)").canonical, "厚度(mm)");
+  assert.equal(Core.fuzzyMatchHeader("events", "布氏硬度值").canonical, "硬度(HB)");
+});
+
 check("canonicalHeaderWithLevel：精确 > 模糊，override（模型映射）优先且只认合法列名", () => {
   assert.equal(Core.canonicalHeaderWithLevel("events", "管段编码").level, "exact");
   assert.equal(Core.canonicalHeaderWithLevel("events", "实测壁厚值(mm)").level, "fuzzy");
