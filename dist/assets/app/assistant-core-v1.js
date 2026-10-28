@@ -205,12 +205,19 @@
     var headerKey = aggressiveHeaderKey(rawHeader);
     if (!headerKey) return null;
     var pairs = headerAliasPairs(datasetType);
+    var strippedHits = [];
     var containCandidates = [];
     var editCandidates = [];
     pairs.forEach(function (pair) {
       var aliasKey = aggressiveHeaderKey(pair.alias);
       if (!aliasKey) return;
-      if (aliasKey === headerKey) return; /* 相等说明精确层应该已命中，跳过 */
+      /* 剥掉括号单位/标点后与别名完全一致：精确层因单位未剥离漏掉的形态
+         （如「管径(mm)」→「管径」、「壁厚（mm）」→「壁厚」），直接命中。
+         多个标准列剥后同形时不映射，保持宁缺勿错。 */
+      if (aliasKey === headerKey) {
+        if (strippedHits.indexOf(pair.canonical) < 0) strippedHits.push(pair.canonical);
+        return;
+      }
       var shorter = Math.min(aliasKey.length, headerKey.length);
       var longer = Math.max(aliasKey.length, headerKey.length);
       if (longer && (headerKey.indexOf(aliasKey) >= 0 || aliasKey.indexOf(headerKey) >= 0)) {
@@ -223,6 +230,8 @@
         editCandidates.push({ canonical: pair.canonical, score: stringSimilarity(aliasKey, headerKey) });
       }
     });
+    if (strippedHits.length === 1) return { canonical: strippedHits[0], level: 'fuzzy', score: 1 };
+    if (strippedHits.length > 1) return null;
     var best = pickBestCandidate(containCandidates, FUZZY_CONTAIN_MIN_SCORE);
     if (best) return { canonical: best.canonical, level: 'fuzzy', score: best.score };
     best = pickBestCandidate(editCandidates, FUZZY_EDIT_MIN_SCORE);
@@ -890,8 +899,18 @@
       }
       var fileText = normalizeText(fileName);
       if (fileText) {
-        if (/材料|备件|material|库存/.test(fileText)) return 'material_library';
-        if (/寿命|事件|检测|event|管段|tube/.test(fileText)) return 'events';
+        /* 文件名兜底与注册表 keywords 保持单一真相，避免文档声称支持「测厚/炉管/受热面」
+           而正则漏掉（曾导致「测厚记录.csv」识别失败）。材料库优先，与表头检测一致。 */
+        var keywordHit = function (datasetType) {
+          var keywords = (DATASET_REGISTRY[datasetType] && DATASET_REGISTRY[datasetType].keywords) || [];
+          for (var k = 0; k < keywords.length; k += 1) {
+            var word = normalizeText(keywords[k]);
+            if (word && fileText.indexOf(word) >= 0) return true;
+          }
+          return false;
+        };
+        if (keywordHit('material_library')) return 'material_library';
+        if (keywordHit('events')) return 'events';
       }
       return 'unknown';
     } catch (err) {

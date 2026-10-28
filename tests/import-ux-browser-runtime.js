@@ -182,6 +182,20 @@ window.runImportUxTests = async function () {
     if (undoButton) { undoButton.click(); await until(() => userDB.events.length === before); }
   });
 
+  /* ---------- 场景 6：页面原导入入口（数据录入页）同样方向归一 ---------- */
+  await test('页面原导入入口：反方向编码落库时归一为规范方向', async () => {
+    const header = ['数据分类', '炉号', '日期', '管段编码', '规格', '材质', '厚度(mm)', '硬度(HB)', '事件类型/更换原因', '关联新管码', '详细描述/结论'];
+    const before = userDB.events.length;
+    const stats = window.importLifecycleRows([
+      header,
+      ['事件', '2', '2026-10-27', '2G-SLB-WB-F000-L025-Q001', 'Φ63.5×7.5', 'SA-210C', '6.8', '182', '测厚', '', '页面导入归一抽查']
+    ], { batchFilter: 'all' });
+    assert(stats && stats.normalizedCount === 1, '页面导入应归一并计数，实际 ' + (stats && stats.normalizedCount));
+    const record = userDB.events[before];
+    assert(record && record.code === '2G-SLB-WB-F000-R168-Q001', '落库编码必须为规范方向：' + (record && record.code));
+    assert(stats.normalizationSamples.length === 1 && stats.normalizationSamples[0].indexOf('≙') >= 0, '归一明细必须留痕');
+  });
+
   const passed = results.filter((item) => item.passed).length;
   return {
     passed: passed === results.length,

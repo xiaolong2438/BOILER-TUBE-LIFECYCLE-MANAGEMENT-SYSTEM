@@ -92,6 +92,14 @@ check("识别：材料库别名表头靠文件名分类为「受热面材料库�
   assert.equal(Core.detectDatasetType(rows[0], "受热面材料台账-别名表头.csv"), "material_library");
 });
 
+check("识别：文件名关键词与注册表一致——测厚/炉管/记录/受热面 都能兜底分类", () => {
+  assert.equal(Core.detectDatasetType([], "测厚记录.csv"), "events");
+  assert.equal(Core.detectDatasetType([], "炉管记录.csv"), "events");
+  assert.equal(Core.detectDatasetType([], "检修记录.csv"), "events");
+  assert.equal(Core.detectDatasetType([], "受热面备件清单.csv"), "material_library");
+  assert.equal(Core.detectDatasetType([], "无关表格-供应商清单.csv"), "unknown", "无关键词文件名仍判 unknown");
+});
+
 check("识别：无关表格（供应商清单）判为 unknown，绝不误判成台账", () => {
   const rows = parseCsvText(fixture("无关表格-供应商清单.csv"));
   assert.equal(Core.detectDatasetType(rows[0], "无关表格-供应商清单.csv"), "unknown");
@@ -141,6 +149,13 @@ check("模糊定位：现场叫法逐一映射到标准字段（含括号单位�
     assert.equal(mapped.canonical, canonical, raw + " 应映射为 " + canonical + "（实际 " + mapped.canonical + "）");
     assert.ok(["exact", "fuzzy"].indexOf(mapped.level) >= 0);
   }
+});
+
+check("模糊定位：材料库带单位表头（管径(mm)/全角括号）剥离单位后入位", () => {
+  assert.equal(Core.canonicalHeaderWithLevel("material_library", "管径(mm)").canonical, "管径");
+  assert.equal(Core.canonicalHeaderWithLevel("material_library", "壁厚（mm）").canonical, "壁厚");
+  assert.equal(Core.canonicalHeaderWithLevel("material_library", "管径").level, "exact", "标准列名仍走精确层");
+  assert.equal(Core.fuzzyMatchHeader("material_library", "供应商电话"), null, "剥单位后仍无对应别名 → 不硬猜");
 });
 
 check("模糊定位：识别不了的列返回 none，绝不硬猜（天气、供应商电话）", () => {
@@ -322,12 +337,11 @@ check("准确性：材料库夹具——别名表头对齐，缺材质行阻断�
   assert.deepEqual(checkById(report, "missing_required").rows, [4]);
   const dup = checkById(report, "duplicate_rows");
   assert.deepEqual(dup.droppedRows, [3]);
-  /* 重排后逐列对位：部件名称/规格型号/材质/库存根数；未识别列（管径(mm)/壁厚(mm)）原样保留在末尾、不入库字段 */
+  /* 重排后逐列对位：带单位表头（管径(mm)/壁厚(mm)）归一入模板列，不再作为未识别尾列 */
+  assert.equal(result.cleanRows[0].length, 12, "带单位表头应全部映射入模板列");
   assert.deepEqual(result.cleanRows[1].slice(0, 12), [
-    "省煤器", "ECO", "入口第1排", "蛇形管", "Φ51×6", "", "", "SA-210C", "10", "60", "A区", "第47页"
+    "省煤器", "ECO", "入口第1排", "蛇形管", "Φ51×6", "51", "6", "SA-210C", "10", "60", "A区", "第47页"
   ]);
-  assert.deepEqual(result.cleanRows[0].slice(12), ["管径(mm)", "壁厚(mm)"]);
-  assert.deepEqual(result.cleanRows[1].slice(12), ["51", "6"]);
 });
 
 check("安全：未知表格只做通用清洗（去空行/去重/trim），标记不导入", () => {
@@ -420,6 +434,16 @@ check("便捷性：2000 行脏数据清洗毫秒级完成（AI 助手不卡顿�
   const elapsed = Date.now() - started;
   assert.equal(result.report.summary.totalRows, 2000);
   assert.ok(elapsed < 3000, "2000 行清洗应在 3 秒内完成，实际 " + elapsed + "ms");
+});
+
+check("便捷性：页面批量导入与手工录入同样接入方向归一（与助手同口径）", () => {
+  const app = readFileSync(resolve(here, "../assets/app/app-v7.9.js"), "utf8");
+  assert.ok(/function normalizeCodeDirection\(/.test(app), "必须提供页面侧归一助手");
+  assert.ok(/function importLifecycleRows[\s\S]{0,6000}normalizeCodeDirection\(code\)/.test(app), "批量导入必须归一管段编码");
+  assert.ok(/function importLifecycleRows[\s\S]{0,6000}normalizeCodeDirection\(relatedCode\)/.test(app), "批量导入必须归一关联新管码");
+  assert.ok(/function addUserEvent[\s\S]{0,1400}normalizeCodeDirection\(code\)/.test(app), "手工录入必须归一");
+  assert.ok(/function addReplacement[\s\S]{0,1800}normalizeCodeDirection\(oldCode\)/.test(app), "更换登记必须归一旧管码");
+  assert.ok(/normalizedCount/.test(app), "导入结果必须可反馈归一数量");
 });
 
 check("便捷性：助手与页面原导入共用同一清洗口径（合同常量在位）", () => {

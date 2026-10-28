@@ -318,6 +318,13 @@ function normalizeBoiler(value) {
 function getBatchBoilerFilter() {
   return document.getElementById('dm-batch-boiler')?.value || 'all';
 }
+/* 方向感知归一（与 AI 助手清洗同一口径）：现场可归近一端计数，落库统一为台账规范方向。
+   依赖 assistant-core 的 canonicalTubeCode；组件未加载时原样返回，不阻断保存。 */
+function normalizeCodeDirection(code) {
+  const core = window.BTAssistantCore;
+  if (!core || typeof core.canonicalTubeCode !== 'function' || !Array.isArray(matrix) || !matrix.length) return null;
+  return core.canonicalTubeCode(code, matrix);
+}
 function eventBoiler(record) {
   return normalizeBoiler(record?.boiler) || getBoilerFromCode(record?.code);
 }
@@ -336,7 +343,7 @@ function syncReplacementBoilerFromCode() {
 }
 function addUserEvent() {
   const boiler = document.getElementById('dm-boiler').value;
-  const code = document.getElementById('dm-code').value.trim().toUpperCase();
+  let code = document.getElementById('dm-code').value.trim().toUpperCase();
   const spec = document.getElementById('dm-spec').value.trim();
   const material = document.getElementById('dm-material').value.trim();
   const thickness = document.getElementById('dm-thickness').value.trim();
@@ -346,28 +353,34 @@ function addUserEvent() {
   const desc = document.getElementById('dm-desc').value.trim();
   if(!boiler || !code || !date || !desc) { showToast('请填写机组、管段编码、日期和详细数据/结论', 'warn'); return; }
   if(getBoilerFromCode(code) && getBoilerFromCode(code) !== boiler) { showToast('所选机组与管段编码开头不一致，请核对。', 'warn'); return; }
+  const normalized = normalizeCodeDirection(code);
+  if(normalized) code = normalized.code;
   const newEvent = {boiler, code, spec, material, thickness, hardness, type, date, desc, ts: Date.now()};
   userDB.events.push(newEvent);
   saveDB();
   mlog('create', { record: newEvent, source: 'manual' });
-  showToast('保存成功，请前往【管段综合分析】验证', 'ok');
+  showToast(normalized ? `保存成功（编码已按规范方向归一为 ${code}）` : '保存成功，请前往【管段综合分析】验证', 'ok');
   ['dm-code','dm-spec','dm-material','dm-thickness','dm-hardness','dm-desc'].forEach(id => document.getElementById(id).value = '');
 }
 function addReplacement() {
   const boiler = document.getElementById('dm-rep-boiler').value;
-  const oldCode = document.getElementById('dm-oldcode').value.trim().toUpperCase();
-  const newCode = document.getElementById('dm-newcode').value.trim().toUpperCase();
+  let oldCode = document.getElementById('dm-oldcode').value.trim().toUpperCase();
+  let newCode = document.getElementById('dm-newcode').value.trim().toUpperCase();
   const reason = document.getElementById('dm-reason').value.trim();
   const date = document.getElementById('dm-rep-date').value;
   if(!boiler || !oldCode || !newCode || !date) { showToast('请填写机组、旧管段编码、新管段编码和更换日期', 'warn'); return; }
   if((getBoilerFromCode(oldCode) && getBoilerFromCode(oldCode) !== boiler) || (getBoilerFromCode(newCode) && getBoilerFromCode(newCode) !== boiler)) { showToast('所选机组与旧/新管段编码开头不一致，请核对。', 'warn'); return; }
+  const normalizedOld = normalizeCodeDirection(oldCode);
+  if(normalizedOld) oldCode = normalizedOld.code;
+  const normalizedNew = normalizeCodeDirection(newCode);
+  if(normalizedNew) newCode = normalizedNew.code;
   const newReplacement = {boiler, oldCode, newCode, reason, date, ts: Date.now()};
   userDB.replacements.push(newReplacement);
   userDB.events.push({boiler, code: oldCode, type: '报废更换', date, desc: `更换为 ${newCode}，原因：${reason}`, ts: Date.now()});
   userDB.events.push({boiler, code: newCode, type: '安装投运', date, desc: `替换 ${oldCode}，继承历史`, ts: Date.now()});
   saveDB();
   mlog('replace', { record: newReplacement, source: 'manual' });
-  showToast('更换登记成功', 'ok');
+  showToast(normalizedOld || normalizedNew ? '更换登记成功（编码已按规范方向归一）' : '更换登记成功', 'ok');
 }
 function canManageTubeData() {
   try { return getAssistantRole() !== 'viewer'; } catch (err) { return true; }
@@ -587,7 +600,7 @@ function exportCSV() {
 // ========== 核心修复：防重复导入逻辑 ==========
 function importLifecycleRows(rawRows, options = {}) {
   const rows = Array.isArray(rawRows) ? rawRows : [];
-  const stats = { importedEvents: 0, importedReplacements: 0, skippedDuplicates: 0, skippedMismatch: 0, addedEventTs: [], addedReplacementTs: [], errors: [] };
+  const stats = { importedEvents: 0, importedReplacements: 0, skippedDuplicates: 0, skippedMismatch: 0, normalizedCount: 0, normalizationSamples: [], addedEventTs: [], addedReplacementTs: [], errors: [] };
   if(rows.length < 2) { stats.errors.push('CSV 文件为空'); return stats; }
   const headers = (rows[0] || []).map(item => String(item ?? '').replace(/^\uFEFF/, '').trim());
   const hasNewColumns = headers.includes('炉号') && headers.includes('厚度(mm)');
@@ -619,13 +632,24 @@ function importLifecycleRows(rawRows, options = {}) {
     const category = cols[0].trim();
     const boiler = normalizeBoiler(hasNewColumns ? cols[1] : getBoilerFromCode(cols[2] || ''));
     const date = (hasNewColumns ? cols[2] : cols[1] || '').trim();
-    const code = (hasNewColumns ? cols[3] : cols[2] || '').trim().toUpperCase();
+    let code = (hasNewColumns ? cols[3] : cols[2] || '').trim().toUpperCase();
     const spec = hasNewColumns ? (cols[4] || '').trim() : '';
     const material = hasNewColumns ? (cols[5] || '').trim() : '';
     const thickness = hasNewColumns ? (cols[6] || '').trim() : '';
     const hardness = hasNewColumns ? (cols[7] || '').trim() : '';
     const typeOrReason = (hasNewColumns ? cols[8] : cols[3] || '').trim();
-    const relatedCode = (hasNewColumns ? cols[9] : cols[4] || '').trim().toUpperCase();
+    let relatedCode = (hasNewColumns ? cols[9] : cols[4] || '').trim().toUpperCase();
+    /* 方向感知归一：页面导入与 AI 助手同一口径，反方向编码按同一物理位置换算为规范方向 */
+    const canonicalCode = normalizeCodeDirection(code);
+    if(canonicalCode) {
+      stats.normalizationSamples.push(code + ' ≙ ' + canonicalCode.code);
+      code = canonicalCode.code;
+    }
+    const canonicalRelated = normalizeCodeDirection(relatedCode);
+    if(canonicalRelated) {
+      stats.normalizationSamples.push(relatedCode + ' ≙ ' + canonicalRelated.code);
+      relatedCode = canonicalRelated.code;
+    }
     const desc = hasNewColumns ? ((cols[10] || '').trim()) : (cols[5] ? cols[5].trim() : '');
     const ts = Date.now() + i;
     const rowBoiler = boiler || getBoilerFromCode(code) || getBoilerFromCode(relatedCode);
@@ -674,6 +698,7 @@ function importLifecycleRows(rawRows, options = {}) {
   stats.importedReplacements = importReplacements;
   stats.skippedDuplicates = skipDuplicates;
   stats.skippedMismatch = skipBoilerMismatch;
+  stats.normalizedCount = stats.normalizationSamples.length;
   mlog('import', { dataset: 'events', stats: stats, fileName: options.fileName || '' });
   return stats;
 }
@@ -688,7 +713,7 @@ function importCSV(event) {
       if (lines.length < 2) { showToast('CSV 文件为空', 'warn'); return; }
       const rawRows = lines.map(parseCSVLine);
       const result = importLifecycleRows(rawRows, { batchFilter: getBatchBoilerFilter(), fileName: file.name });
-      showToast(`导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}`, 'ok', 6000);
+      showToast(`导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}${result.normalizedCount ? `、方向归一 ${result.normalizedCount} 条` : ''}`, 'ok', 6000);
     } catch (err) {
       console.error(err);
       showToast('CSV 解析失败，请检查文件格式是否正确。', 'error');
@@ -724,7 +749,7 @@ function importXLSX(event) {
         return;
       }
       const result = importLifecycleRows(grid, { batchFilter: getBatchBoilerFilter(), fileName: file.name });
-      showToast(`Excel 导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}`, 'ok', 6000);
+      showToast(`Excel 导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}${result.normalizedCount ? `、方向归一 ${result.normalizedCount} 条` : ''}`, 'ok', 6000);
     } catch (err) {
       console.error(err);
       showToast('Excel 解析失败，请确认使用的是系统提供的模板文件。', 'error');
