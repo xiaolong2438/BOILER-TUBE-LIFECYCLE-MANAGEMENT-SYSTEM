@@ -556,6 +556,75 @@
     return true;
   }
 
+  /* ---------------- 方向感知归一 ----------------
+   * 现场可从任意一端计数（炉左/炉右、炉前/炉后、上/下），方向字母与序号互为镜像：
+   * L-n ≡ R-(总数+1-n)。台账矩阵展开只认规范方向（dirs/posLetters 首位），
+   * 这里把「反方向但矩阵合法」的编码无损换算成同一物理位置的规范编码，
+   * 避免同一根管以两个身份入库（历史分裂、报废不彻底）。
+   * 返回 { code: 规范编码, changed: true }；不适用（结构非法/矩阵外/已是规范方向/
+   * 燃烧器区域无方向段）返回 null，调用方按原编码继续走既有校验。 */
+  var DIR_COMPLEMENT = { L: 'R', R: 'L', F: 'B', B: 'F', U: 'D', D: 'U' };
+
+  function canonicalTubeCode(code, matrixRows) {
+    var normalized = normalizeCode(code);
+    if (!normalized) return null;
+    var parsed = parseTubeCodeParts(normalized);
+    if (!parsed) return null;
+    var rows = Array.isArray(matrixRows) ? matrixRows : [];
+    var row = null;
+    for (var i = 0; i < rows.length; i += 1) {
+      if (matrixRowMatch(rows[i], parsed)) { row = rows[i]; break; }
+    }
+    if (!row || row.special === 'rsq') return null;
+    var dirCanonical = row.dirs && row.dirs.length ? String(row.dirs[0]).toUpperCase() : '';
+    var posCanonical = row.posLetters && row.posLetters.length ? String(row.posLetters[0]).toUpperCase() : '';
+    var pos2Canonical = row.pos2Letters && row.pos2Letters.length ? String(row.pos2Letters[0]).toUpperCase() : '';
+    var pad3 = function (n) { return String(n).padStart(3, '0'); };
+    var changed = false;
+
+    /* 逐段换算：管号方向（墙面用 FBLR、过/再热器用 UD）与排/小屏号方位互为镜像 */
+    var posSeg = parsed.pos;
+    if (posCanonical && parsed.pos && parsed.pos.charAt(0) !== posCanonical &&
+        DIR_COMPLEMENT[posCanonical] === parsed.pos.charAt(0)) {
+      posSeg = posCanonical + pad3(row.pMax + 1 - parsed.posNum);
+      changed = true;
+    }
+    var pos2Seg = parsed.pos2;
+    if (pos2Canonical && parsed.pos2 && parsed.pos2.charAt(0) !== pos2Canonical &&
+        DIR_COMPLEMENT[pos2Canonical] === parsed.pos2.charAt(0)) {
+      pos2Seg = pos2Canonical + pad3(row.p2Max + 1 - parsed.pos2Num);
+      changed = true;
+    }
+    var dirSeg = parsed.dir ? parsed.dir + pad3(parsed.tube) : '';
+    if (parsed.dir && dirCanonical && parsed.dir !== dirCanonical &&
+        DIR_COMPLEMENT[dirCanonical] === parsed.dir) {
+      dirSeg = dirCanonical + pad3(row.tMax + 1 - parsed.tube);
+      changed = true;
+    }
+    if (!changed) return null;
+
+    /* 按该系统段的语形重建编码（Q 流水号沿用原始写法，宽度不动） */
+    var body = [];
+    if (row.pos) {
+      body.push(posSeg, dirSeg);
+    } else {
+      if (parsed.space !== null) body.push(parsed.space + 'KJ');
+      body.push(posSeg);
+      if (pos2Seg) body.push(pos2Seg);
+      if (dirSeg) body.push(dirSeg);
+    }
+    var segs = normalized.split('-');
+    var canonical = [segs[0], segs[1], segs[2]].concat(body, [segs[segs.length - 1]]).join('-');
+    /* 自检：换算结果必须仍落在同一矩阵行（同一物理位置），否则放弃归一 */
+    var reparsed = parseTubeCodeParts(canonical);
+    if (!reparsed) return null;
+    var stillMatched = false;
+    for (var j = 0; j < rows.length; j += 1) {
+      if (matrixRowMatch(rows[j], reparsed)) { stillMatched = true; break; }
+    }
+    return stillMatched ? { code: canonical, changed: true } : null;
+  }
+
   function validateTubeCode(code, matrixRows) {
     var normalized = normalizeCode(code);
     if (!normalized) return { valid: false, reason: '管段编码为空', code: '' };
@@ -1071,6 +1140,8 @@
     var outOfRangeSamples = [];
     var unknownLedgerRows = [];
     var unknownLedgerSamples = [];
+    var directionNormalizedRows = [];
+    var directionNormalizedSamples = [];
     var duplicateDroppedRows = [];
 
     var lastNonEmptyHeader = -1;
@@ -1162,6 +1233,25 @@
           boilerMismatchRows.push(rowNumber);
           if (boilerMismatchSamples.length < 5) boilerMismatchSamples.push(boilerRaw ? boilerRaw + ' / ' + (code || relatedCode) : (code || relatedCode));
           return;
+        }
+
+        /* 方向感知归一：反方向编码按同一物理位置换算成规范方向（台账只存规范身份），
+           换算结果进 direction_normalized 警告行，人工确认后入库；管段编码与关联新管码同口径。 */
+        if (matrixRows.length) {
+          var canonicalCode = canonicalTubeCode(code, matrixRows);
+          if (canonicalCode) {
+            normalizations.push('第 ' + rowNumber + ' 行编码「' + code + '」计数方向与台账规范相反，已按同一物理位置归一为 ' + canonicalCode.code);
+            directionNormalizedRows.push(rowNumber);
+            if (directionNormalizedSamples.length < 5) directionNormalizedSamples.push(code + ' ≙ ' + canonicalCode.code);
+            code = canonicalCode.code;
+          }
+          var canonicalRelated = canonicalTubeCode(relatedCode, matrixRows);
+          if (canonicalRelated) {
+            normalizations.push('第 ' + rowNumber + ' 行关联新管码「' + relatedCode + '」已按同一物理位置归一为 ' + canonicalRelated.code);
+            directionNormalizedRows.push(rowNumber);
+            if (directionNormalizedSamples.length < 5) directionNormalizedSamples.push(relatedCode + ' ≙ ' + canonicalRelated.code);
+            relatedCode = canonicalRelated.code;
+          }
         }
 
         var normalizedDate = normalizeDateText(dateRaw);
@@ -1404,6 +1494,11 @@
       pushCheck(checks, 'unknown_code', 'warning', '编码未在台账中找到',
         '共 ' + unknownLedgerRows.length + ' 行管段编码在台账（已有记录 + 矩阵范围）中不存在，但找到了高度相似的编码，疑似录入笔误；行仍会导入，请逐条核对。',
         unknownLedgerRows, '对照「炉管台账」核对屏号/管圈号/管序号；确属新管请先用编码生成器登记。', unknownLedgerSamples);
+    }
+    if (directionNormalizedRows.length) {
+      pushCheck(checks, 'direction_normalized', 'warning', '编码计数方向已归一',
+        '共 ' + directionNormalizedRows.length + ' 行编码的计数方向与台账规范方向相反（现场从另一端计数），已按同一物理位置自动换算为规范编码并留痕；行仍导入，请抽查换算结果。',
+        directionNormalizedRows, '现场可从任意一端计数，系统按台账规范方向（台账矩阵展开口径）统一换算，无需人工换算。', directionNormalizedSamples);
     }
     if (extraHeaderColumns > 0) {
       pushCheck(checks, 'extra_columns', 'info', '表头末尾存在空列',
@@ -2278,6 +2373,7 @@
     normalizeDatasetType: normalizeDatasetType,
     expandMatrixCodes: expandMatrixCodes,
     suggestSimilarCode: suggestSimilarCode,
+    canonicalTubeCode: canonicalTubeCode,
     buildTubeCodeLedger: buildTubeCodeLedger,
     stringSimilarity: stringSimilarity,
     toolCatalog: toolCatalog,

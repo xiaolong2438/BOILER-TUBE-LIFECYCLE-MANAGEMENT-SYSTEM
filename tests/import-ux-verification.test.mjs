@@ -430,6 +430,92 @@ check("便捷性：助手与页面原导入共用同一清洗口径（合同常�
   assert.ok(/function importLifecycleRows\(/.test(app), "页面导入函数必须在位");
 });
 
+/* ================= F. 方向感知归一（现场就近计数，台账身份唯一） =================
+ * 方向字母与序号互为镜像：L-n ≡ R-(总数+1-n)。台账矩阵展开只生成规范方向
+ * （dirs/posLetters 首位），清洗层把「反方向但矩阵合法」的编码无损换算成
+ * 同一物理位置的规范编码并留痕，避免同一根管以两个身份入库。 */
+
+/* 覆盖各段位语形的矩阵行（规范方向 = dirs/posLetters 首位，与页面矩阵同构） */
+const DIR_MATRIX = [
+  { sys: "SLB", comp: "WB", pos: "F000", dirs: ["R", "L"], tMax: 192 },
+  { sys: "SLB", comp: "WB", pos: "L000", dirs: ["F", "B"], tMax: 169 },
+  { sys: "SLB", comp: "LHD", pos: "F000", dirs: ["L", "R"], tMax: 96 },
+  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["U", "D"], tMax: 12 },
+  { sys: "DPGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 6, pos2Letters: ["L", "R"], p2Max: 4, dirs: ["U", "D"], tMax: 14 },
+  { sys: "DZRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 112, dirs: ["U", "D"], tMax: 6, spaces: [1, 5], tubeOptional: true },
+  { sys: "SMQ", comp: "EXIN", posLetters: ["L", "R"], pMax: 124, dirs: ["U", "D"], tMax: 1 }
+];
+
+check("归一：墙面反方向管号按同一物理位置镜像（前墙 L025 ≙ R168）", () => {
+  const got = Core.canonicalTubeCode("2G-SLB-WB-F000-L025-Q001", DIR_MATRIX);
+  assert.ok(got, "反方向编码必须给出归一结果");
+  assert.equal(got.code, "2G-SLB-WB-F000-R168-Q001");
+  const same = Core.canonicalTubeCode("2G-SLB-WB-F000-R025-Q001", DIR_MATRIX);
+  assert.equal(same, null, "规范方向不归一、不产生噪音");
+});
+
+check("归一：覆盖全部段位——侧墙 F↔B、冷灰斗、过/再热器排号与管号、小屏号、检修空间", () => {
+  assert.equal(Core.canonicalTubeCode("2G-SLB-WB-L000-B020-Q001", DIR_MATRIX).code, "2G-SLB-WB-L000-F150-Q001");
+  assert.equal(Core.canonicalTubeCode("2G-SLB-LHD-F000-R016-Q001", DIR_MATRIX).code, "2G-SLB-LHD-F000-L081-Q001");
+  assert.equal(Core.canonicalTubeCode("1G-GGRQ-GQ-R005-D003-Q001", DIR_MATRIX).code, "1G-GGRQ-GQ-L028-U010-Q001");
+  assert.equal(Core.canonicalTubeCode("1G-DPGRQ-GQ-R003-R002-D005-Q001", DIR_MATRIX).code, "1G-DPGRQ-GQ-L004-L003-U010-Q001");
+  assert.equal(Core.canonicalTubeCode("1G-DZRQ-GQ-4KJ-R065-Q001", DIR_MATRIX).code, "1G-DZRQ-GQ-4KJ-L048-Q001");
+});
+
+check("归一：Q 流水号原样保留（宽度不动）、燃烧器区域无方向段不归一、越界镜像不适用", () => {
+  assert.equal(Core.canonicalTubeCode("2G-SLB-WB-F000-L025-Q16", DIR_MATRIX).code, "2G-SLB-WB-F000-R168-Q16");
+  assert.equal(Core.canonicalTubeCode("2G-SLB-RSQ-J2-C05-Q001", DIR_MATRIX), null);
+  assert.equal(Core.canonicalTubeCode("2G-SLB-WB-F000-L200-Q001", DIR_MATRIX), null, "镜像后越界的编码不在矩阵内，走既有 out_of_range 路径");
+  assert.equal(Core.canonicalTubeCode("无关文本", DIR_MATRIX), null);
+});
+
+check("归一：tMax=1 时两侧计数指向同一根管，只换方向字母", () => {
+  assert.equal(Core.canonicalTubeCode("1G-SMQ-EXIN-L010-D001-Q001", DIR_MATRIX).code, "1G-SMQ-EXIN-L010-U001-Q001");
+});
+
+check("归一（清洗集成）：反方向编码进 direction_normalized 警告行，清洗网格落规范编码", () => {
+  const rows = [
+    ["数据分类", "炉号", "日期", "管段编码", "厚度(mm)", "事件类型/更换原因", "详细描述/结论"],
+    ["事件", "2", "2026-10-27", "2G-SLB-WB-F000-L025-Q001", "6.8", "测厚", "从炉左数第25根"],
+    ["事件", "2", "2026-10-27", "2G-SLB-WB-F000-R025-Q001", "7.1", "测厚", "规范方向另一根管"]
+  ];
+  const result = Core.cleanRows({ rows, fileName: "方向归一.csv", matrixRows: DIR_MATRIX, knownCodes: [], units: ["1", "2"] });
+  const item = checkById(result.report, "direction_normalized");
+  assert.ok(item, "必须输出 direction_normalized 检查项");
+  assert.equal(item.severity, "warning");
+  assert.deepEqual(item.rows, [1]);
+  assert.ok(item.sample[0].includes("2G-SLB-WB-F000-L025-Q001 ≙ 2G-SLB-WB-F000-R168-Q001"), "样例必须展示 原编码 ≙ 规范编码");
+  assert.ok(result.report.normalizations.some((n) => n.includes("已按同一物理位置归一为 2G-SLB-WB-F000-R168-Q001")), "归一必须留痕");
+  assert.equal(rowByNumber(result, 1)[3], "2G-SLB-WB-F000-R168-Q001", "清洗网格必须落规范编码");
+  /* 警告行 → 待人工确认，不静默自动入库 */
+  const split = splitByWarnings(result.cleanRows, result.report);
+  assert.equal(split.flaggedRows.length, 1);
+  assert.equal(split.auto.length, 1);
+});
+
+check("归一（跨方向去重）：同一记录两种数法只保留首行，不再分裂身份", () => {
+  const rows = [
+    ["数据分类", "炉号", "日期", "管段编码", "厚度(mm)", "事件类型/更换原因", "详细描述/结论"],
+    ["事件", "2", "2026-10-27", "2G-SLB-WB-F000-L025-Q001", "6.8", "测厚", "同一根管"],
+    ["事件", "2", "2026-10-27", "2G-SLB-WB-F000-R168-Q001", "6.8", "测厚", "同一根管"]
+  ];
+  const result = Core.cleanRows({ rows, fileName: "跨方向.csv", matrixRows: DIR_MATRIX, knownCodes: [], units: ["1", "2"] });
+  const dup = checkById(result.report, "duplicate_rows");
+  assert.ok(dup, "归一后两行同键，必须触发重复去重");
+  assert.deepEqual(dup.droppedRows, [2]);
+  assert.deepEqual(dup.keptRows, [1]);
+});
+
+check("归一（不误伤）：越界编码仍走 out_of_range 近似建议，不产生归一项", () => {
+  const rows = [
+    ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
+    ["事件", "2", "2026-10-27", "2G-SLB-WB-F000-L200-Q001", "测厚"]
+  ];
+  const result = Core.cleanRows({ rows, fileName: "越界.csv", matrixRows: DIR_MATRIX, knownCodes: [], units: ["1", "2"] });
+  assert.equal(checkById(result.report, "direction_normalized"), undefined);
+  assert.ok(checkById(result.report, "out_of_range"), "越界编码必须走既有 out_of_range 路径");
+});
+
 /* ================= 输出 ================= */
 
 let failed = 0;
