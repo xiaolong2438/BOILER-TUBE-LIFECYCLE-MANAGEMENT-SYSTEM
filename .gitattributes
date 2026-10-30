@@ -1,0 +1,5 @@
+# 已封装清洗包按字节校验，不允许跨平台换行转换。
+data-cleaning/verified/* -text whitespace=cr-at-eol
+
+# 清洗器本身的 SHA256 纳入包标识，跨平台统一 LF。
+scripts/clean_boiler_film_records.py text eol=lf

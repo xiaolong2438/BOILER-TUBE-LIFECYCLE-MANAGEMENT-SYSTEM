@@ -1925,13 +1925,14 @@
 
   function normCode(value) {
     var module = core();
+    if (typeof global.normalizedTubeCode === 'function') return global.normalizedTubeCode(value);
     if (module && typeof module.normalizeCode === 'function') return module.normalizeCode(value);
     return text(value).trim().toUpperCase();
   }
 
   function matchEventFilters(event, filters) {
     var code = normCode(event.code);
-    if (filters.code && code.indexOf(filters.code) < 0) return false;
+    if (filters.code && code.indexOf(normCode(filters.code)) < 0) return false;
     if (filters.unit && code.indexOf(filters.unit + '-') !== 0) return false;
     if (filters.sys) {
       var sysList = Array.isArray(filters.sys) ? filters.sys : [filters.sys];
@@ -1979,7 +1980,7 @@
     }
     if (dataset === 'replacements') {
       var replacementRows = (snap.replacements || []).filter(function (record) {
-        if (filters.code && normCode(record.oldCode).indexOf(filters.code) < 0 && normCode(record.newCode).indexOf(filters.code) < 0) return false;
+        if (filters.code && normCode(record.oldCode).indexOf(normCode(filters.code)) < 0 && normCode(record.newCode).indexOf(normCode(filters.code)) < 0) return false;
         if (filters.unit && normCode(record.oldCode).indexOf(filters.unit + '-') !== 0) return false;
         if (filters.dateFrom && text(record.date) && text(record.date) < filters.dateFrom) return false;
         if (filters.dateTo && text(record.date) && text(record.date) > filters.dateTo) return false;
@@ -2031,7 +2032,7 @@
           var sysList = Array.isArray(filters.sys) ? filters.sys : [filters.sys];
           if (sysList.indexOf(text(row.sys)) < 0) return false;
         }
-        if (filters.code && text(row.code).indexOf(filters.code) < 0) return false;
+        if (filters.code && normCode(row.code).indexOf(normCode(filters.code)) < 0) return false;
         return true;
       });
       return {
@@ -2051,7 +2052,7 @@
     }
     if (dataset === 'warnings') {
       var warningRows = (snap.warnings || []).filter(function (item) {
-        if (filters.code && text(item.code).indexOf(filters.code) < 0) return false;
+        if (filters.code && normCode(item.code).indexOf(normCode(filters.code)) < 0) return false;
         if (filters.unit && text(item.code).indexOf(filters.unit + '-') !== 0) return false;
         if (filters.riskLevel && item.level !== filters.riskLevel) return false;
         return true;
