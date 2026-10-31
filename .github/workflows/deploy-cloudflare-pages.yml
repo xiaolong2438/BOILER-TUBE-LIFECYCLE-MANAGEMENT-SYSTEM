@@ -39,6 +39,8 @@ jobs:
             node "$f"
           done
           python tests/resolve_d1_id.test.py
+          python -m pip install openpyxl==3.1.5
+          python tests/test_clean_boiler_film_records.py
 
       - name: Prepare static site
         shell: bash
@@ -96,6 +98,7 @@ jobs:
           fi
 
       - name: Prepare Cloudflare config and D1
+        id: database
         if: steps.cloudflare.outputs.ready == 'true'
         shell: bash
         env:
@@ -128,19 +131,52 @@ jobs:
           database_id = "$D1_DATABASE_ID"
           EOF
           npx --yes wrangler@latest pages project create boiler-tube-lifecycle-system --production-branch=main || true
-          cat > reset-schema.sql <<EOF
-          DROP TABLE IF EXISTS sessions;
-          DROP TABLE IF EXISTS users;
-          DROP TABLE IF EXISTS app_kv;
-          EOF
-          npx --yes wrangler@latest d1 execute DB --remote --file=reset-schema.sql
+          # The schema is idempotent; normal releases must preserve all existing rows.
           npx --yes wrangler@latest d1 execute DB --remote --file=migrations/0001_init.sql
-          if [[ -n "${APP_ADMIN_USERNAME:-}" && -n "${APP_ADMIN_PASSWORD:-}" ]]; then
-            python scripts/hash_password_sql.py "$APP_ADMIN_USERNAME" "$APP_ADMIN_PASSWORD" admin > seed-admin.sql
-            npx --yes wrangler@latest d1 execute DB --remote --file=seed-admin.sql
-            npx --yes wrangler@latest d1 execute DB --remote --command="SELECT COUNT(*) AS admin_user_count FROM users;" --json
+          echo "admin_seeded=false" >> "$GITHUB_OUTPUT"
+          if [[ -n "${APP_ADMIN_USERNAME//[[:space:]]/}" && -n "${APP_ADMIN_PASSWORD//[[:space:]]/}" ]]; then
+            npx --yes wrangler@latest d1 execute DB --remote --command="SELECT COUNT(*) AS admin_user_count FROM users WHERE role = 'admin';" --json > admin-count.json
+            ADMIN_COUNT="$(python -c 'import json; data = json.load(open("admin-count.json")); count = data[0]["results"][0]["admin_user_count"]; assert type(count) is int and count >= 0; print(count)')"
+            if [[ "$ADMIN_COUNT" == "0" ]]; then
+              # Keep the manual password-reset helper unchanged; deployment only inserts.
+              umask 077
+              trap 'rm -f seed-admin.sql seed-admin-result.json' EXIT
+              python - > seed-admin.sql <<'PY'
+          import base64
+          import hashlib
+          import os
+          from scripts.hash_password_sql import ITERATIONS, sql_literal
+
+          username = os.environ["APP_ADMIN_USERNAME"].strip()
+          password = os.environ["APP_ADMIN_PASSWORD"].strip()
+          if not username or len(password) < 8:
+              raise SystemExit("Admin seed requires a username and a password of at least 8 characters.")
+          salt = os.urandom(16)
+          digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, ITERATIONS, dklen=32)
+          print(
+              "INSERT INTO users (username, role, password_hash, salt, iterations) "
+              f"SELECT {sql_literal(username)}, 'admin', {sql_literal(base64.b64encode(digest).decode('ascii'))}, "
+              f"{sql_literal(base64.b64encode(salt).decode('ascii'))}, {ITERATIONS} "
+              "WHERE NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin') "
+              "ON CONFLICT(username) DO NOTHING;"
+          )
+          PY
+              # Wrangler may include SQL in diagnostics; never log credential material.
+              if ! npx --yes wrangler@latest d1 execute DB --remote --file=seed-admin.sql --json > seed-admin-result.json 2>&1; then
+                echo "::error::Admin initialization failed; existing users were not overwritten."
+                exit 1
+              fi
+              ADMIN_INSERTED="$(python -c 'import json; data = json.load(open("seed-admin-result.json")); count = data[0]["meta"]["changes"]; assert type(count) is int and count in (0, 1); print(count)')"
+              if [[ "$ADMIN_INSERTED" == "1" ]]; then
+                echo "admin_seeded=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "::warning::Admin seed skipped because an admin or the configured username already exists; no account was changed."
+              fi
+            else
+              echo "Existing admin accounts preserved; bootstrap credentials were not applied."
+            fi
           else
-            echo "::warning::APP_ADMIN_USERNAME and APP_ADMIN_PASSWORD are not configured. Login will be enabled, but no admin user will be seeded."
+            echo "::warning::APP_ADMIN_USERNAME or APP_ADMIN_PASSWORD is missing. Existing accounts are unchanged; a first installation still needs an admin."
           fi
 
       - name: Publish to Cloudflare Pages
@@ -175,20 +211,25 @@ jobs:
           fi
 
       - name: Smoke test deployed login
-        if: steps.cloudflare.outputs.ready == 'true'
+        if: steps.cloudflare.outputs.ready == 'true' && steps.database.outputs.admin_seeded == 'true'
         shell: bash
         env:
           APP_ADMIN_USERNAME: ${{ secrets.APP_ADMIN_USERNAME }}
           APP_ADMIN_PASSWORD: ${{ secrets.APP_ADMIN_PASSWORD }}
         run: |
           set -euo pipefail
+          if [[ -z "${APP_ADMIN_USERNAME//[[:space:]]/}" || -z "${APP_ADMIN_PASSWORD//[[:space:]]/}" ]]; then
+            echo "::warning::Login smoke test skipped because admin seed credentials are missing."
+            exit 0
+          fi
+          umask 077
+          trap 'rm -f login-response.json session-response.json login-cookies.txt' EXIT
           payload="$(python -c 'import json, os; print(json.dumps({"username": os.environ["APP_ADMIN_USERNAME"], "password": os.environ["APP_ADMIN_PASSWORD"]}))')"
           status="$(curl -sS -o login-response.json -c login-cookies.txt -w "%{http_code}" \
             -H 'Content-Type: application/json' \
             -d "$payload" \
             https://btgs.wegpt.top/api/auth/login)"
           echo "login_status=$status"
-          cat login-response.json
           if [[ "$status" != "200" ]]; then
             echo "::error::Deployed login endpoint rejected the seeded admin credentials."
             exit 1
@@ -196,7 +237,6 @@ jobs:
           session_status="$(curl -sS -o session-response.json -b login-cookies.txt -w "%{http_code}" \
             https://btgs.wegpt.top/api/auth/session)"
           echo "session_status=$session_status"
-          cat session-response.json
           if [[ "$session_status" != "200" ]]; then
             echo "::error::Deployed session endpoint did not accept the login cookie."
             exit 1

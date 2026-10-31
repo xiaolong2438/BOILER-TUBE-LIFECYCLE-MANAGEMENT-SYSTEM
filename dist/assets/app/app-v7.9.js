@@ -325,6 +325,36 @@ function normalizeCodeDirection(code) {
   if (!core || typeof core.canonicalTubeCode !== 'function' || !Array.isArray(matrix) || !matrix.length) return null;
   return core.canonicalTubeCode(code, matrix);
 }
+function normalizedTubeCode(value) {
+  const code = String(value || '').trim().toUpperCase();
+  return normalizeCodeDirection(code)?.code || code;
+}
+function tubePositionKey(value) {
+  const code = normalizedTubeCode(value);
+  const parsed = parseTubeCode(code);
+  if(!parsed || parsed.pos?.endsWith('000') && parsed.sys !== 'SLB') return code;
+  return code.replace(/-[QW]\d{1,3}$/, '');
+}
+function tubeVersionKey(value) {
+  const code = normalizedTubeCode(value);
+  const parsed = parseTubeCode(code);
+  return parsed ? `${tubePositionKey(code)}#${parsed.seq}` : code;
+}
+function sameTubeMeasurement(a, b) {
+  const pa = parseTubeCode(a), pb = parseTubeCode(b);
+  return normalizedTubeCode(a) === normalizedTubeCode(b) || Boolean(pa && pb && pa.partKind === pb.partKind && tubeVersionKey(a) === tubeVersionKey(b));
+}
+function isExactInspectionDate(value) {
+  const text = String(value || '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) && Number.isFinite(new Date(text).getTime());
+}
+function tubeEvidenceEvents(code) {
+  const position = tubePositionKey(code);
+  const local = userDB.events.filter(e => tubePositionKey(e.code) === position);
+  const replacements = userDB.replacements.filter(r => tubePositionKey(r.oldCode) === position || tubePositionKey(r.newCode) === position);
+  // 未建立更换边界时按位置汇总；有更换记录时只取明确属于该版本的证据。
+  return replacements.length ? local.filter(e => tubeVersionKey(e.code) === tubeVersionKey(code)) : local;
+}
 function eventBoiler(record) {
   return normalizeBoiler(record?.boiler) || getBoilerFromCode(record?.code);
 }
@@ -442,7 +472,7 @@ function openEditEvent(ts) {
       <div class="form-group"><label>厚度(mm)</label><input type="number" id="de-thickness" min="0" step="0.01" value="${escapeHTML(record.thickness || '')}" /></div>
       <div class="form-group"><label>硬度(HB)</label><input type="number" id="de-hardness" min="0" step="1" value="${escapeHTML(record.hardness || '')}" /></div>
       <div class="form-group"><label>事件类型</label><input type="text" id="de-type" list="de-type-options" value="${escapeHTML(record.type || '')}" /><datalist id="de-type-options">${typeOptions}</datalist></div>
-      <div class="form-group"><label>日期</label><input type="date" id="de-date" value="${escapeHTML(record.date || '')}" /></div>
+      <div class="form-group"><label>日期${/^\d{4}$/.test(record.date || '') ? '（原记录仅有年份，请补全实际日期）' : ''}</label><input type="date" id="de-date" value="${isExactInspectionDate(record.date) ? escapeHTML(record.date) : ''}" /></div>
       <div class="form-group"><label>详细数据/结论</label><textarea id="de-desc" rows="3">${escapeHTML(record.desc || '')}</textarea></div>
       <div style="display:flex; gap:10px; margin-top:6px;">
         <button class="btn" style="flex:1;" onclick="saveEventEdit(${Number(record.ts)})">💾 保存修改</button>
@@ -605,6 +635,8 @@ function importLifecycleRows(rawRows, options = {}) {
   const headers = (rows[0] || []).map(item => String(item ?? '').replace(/^\uFEFF/, '').trim());
   const hasNewColumns = headers.includes('炉号') && headers.includes('厚度(mm)');
   const batchFilter = options.batchFilter || 'all';
+  const nextTimestamp = [...userDB.events, ...userDB.replacements].reduce((latest, record) => Math.max(latest, Number(record.ts) || 0), Date.now()) + 1;
+  const sourceValue = (cols, name) => headers.includes(name) ? (cols[headers.indexOf(name)] || '').trim() : '';
   let importEvents = 0, importReplacements = 0, skipDuplicates = 0, skipBoilerMismatch = 0;
 
   // 查重辅助函数
@@ -651,7 +683,7 @@ function importLifecycleRows(rawRows, options = {}) {
       relatedCode = canonicalRelated.code;
     }
     const desc = hasNewColumns ? ((cols[10] || '').trim()) : (cols[5] ? cols[5].trim() : '');
-    const ts = Date.now() + i;
+    const ts = nextTimestamp + i;
     const rowBoiler = boiler || getBoilerFromCode(code) || getBoilerFromCode(relatedCode);
     const codeMismatch = (getBoilerFromCode(code) && rowBoiler && getBoilerFromCode(code) !== rowBoiler) || (relatedCode && getBoilerFromCode(relatedCode) && rowBoiler && getBoilerFromCode(relatedCode) !== rowBoiler);
     const filterMismatch = batchFilter !== 'all' && rowBoiler !== batchFilter;
@@ -662,6 +694,8 @@ function importLifecycleRows(rawRows, options = {}) {
 
     if (category === '事件' || category === 'event') {
       const eventRecord = { boiler: rowBoiler, code, spec, material, thickness, hardness, type: typeOrReason, date, desc, ts };
+      const sourceId = sourceValue(cols, '来源ID');
+      if(sourceId) Object.assign(eventRecord, { sourceId, batch: sourceValue(cols, '检修批次'), datePrecision: sourceValue(cols, '日期精度'), inspectionResult: sourceValue(cols, '检测结果') });
       if (!isEventExist(eventRecord)) {
           userDB.events.push(eventRecord);
           stats.addedEventTs.push(eventRecord.ts);
@@ -903,8 +937,8 @@ const matrix = [
   { name:'燃烧器区域', sys:'SLB', comp:'RSQ', special:'rsq', corners:[1,4], layers:['A','B','C','D','E','F'], nozzles:[1,8], spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['L','R'], p2Max:4, dirs:['U','D'], tMax:14, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
   { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['U','D'], tMax:13, spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
-  { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['U','D'], tMax:12, spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
-  { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['U','D'], tMax:7, spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh' },
+  { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['U','D'], tMax:12, fieldDirs:['F','B'], fieldDefault:'F', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
+  { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['U','D'], tMax:7, fieldDirs:['F','B'], spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh' },
   { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,4], posLetters:['L','R'], pMax:112, dirs:['U','D'], tMax:5, spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
   { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['U','D'], tMax:6, tubeOptional:true, spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-rh' },
   { name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1, spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', mat:'按材料库分项', badge:'badge-eco' },
@@ -1089,8 +1123,8 @@ function renderGeneratorFields() {
       <div class="form-group"><label>喷口序号</label><input type="number" id="f-nozzle" min="${row.nozzles[0]}" max="${row.nozzles[1]}" value="1" /></div>`;
   } else if(row && row.pos) {
     html = `<div class="form-group"><label>方位（墙/坡）</label><select id="f-pos">${(GENERATOR_WALL_OPTIONS[comp] || []).map(([v, label]) => `<option value="${v}">${label}</option>`).join('')}</select></div>
-      <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.dirs)}</select></div>
-      <div class="form-group"><label>管号 (3位, 1~${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.tMax}" value="1" /></div>`;
+      <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...row.fieldDirs, ...row.dirs] : row.dirs)}</select></div>
+      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? '现场F/B总数待核；U/D参考1~' : '1~'}${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? 999 : row.tMax}" value="1" /></div>`;
   } else if(row) {
     const posNums = max => Array.from({length: max}, (_, i) => `<option value="${i + 1}">${m0pad(i + 1, 3)}</option>`).join('');
     html = `${row.spaces ? `<div class="form-group"><label>检修空间（低过/低再）</label><select id="f-space"><option value="">省略 · 默认第1空间</option>${Array.from({length: row.spaces[1] - row.spaces[0] + 1}, (_, i) => { const n = row.spaces[0] + i; return n === 1 ? '' : `<option value="${n}KJ">${n}KJ · 第${n}检修空间</option>`; }).join('')}</select></div>` : ''}
@@ -1098,10 +1132,10 @@ function renderGeneratorFields() {
       <div class="form-group"><label>${row.pos2Letters ? '片号 (3位, 1~' + row.pMax + ')' : '排/屏号 (3位, 1~' + row.pMax + ')'}</label><select id="f-pos-num">${posNums(row.pMax)}</select></div>
       ${row.pos2Letters ? `<div class="form-group"><label>小屏号方位</label><select id="f-pos2-letter">${dirOptions(row.pos2Letters)}</select></div>
       <div class="form-group"><label>小屏号 (3位, 1~${row.p2Max})</label><select id="f-pos2-num">${posNums(row.p2Max)}</select></div>` : ''}
-      <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.dirs)}</select></div>
-      <div class="form-group"><label>管号 (3位, 1~${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.tMax}" value="1" /></div>`;
+      <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...row.fieldDirs, ...row.dirs] : row.dirs)}</select></div>
+      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? '现场F/B总数待核；U/D参考1~' : '1~'}${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? 999 : row.tMax}" value="1" /></div>`;
   }
-  html += `<div class="form-group"><label>流水号 Q (同批次唯一)</label><input type="number" id="f-seq" min="1" max="999" value="1" /></div>`;
+  html += `<div class="form-group"><label for="f-part-kind">检测部位</label><select id="f-part-kind"><option value="Q">Q · 管子</option><option value="W">W · 弯头</option></select></div><div class="form-group"><label>流水号 (同批次唯一)</label><input type="number" id="f-seq" min="1" max="999" value="1" /></div>`;
   box.innerHTML = html;
   box.querySelectorAll('select, input').forEach(el => el.addEventListener('input', genCode));
   if(compSelect) compSelect.value = comp;
@@ -1148,11 +1182,13 @@ function genCode() {
   } else {
     body = `${val('f-pos-letter')}${m0pad(num('f-pos-num'), 3)}-${val('f-dir')}${m0pad(num('f-tube'), 3)}`;
   }
-  const code = `${b}-${sys}-${comp}-${body}-Q${seq}`;
+  const partKind = val('f-part-kind') === 'W' ? 'W' : 'Q';
+  const code = `${b}-${sys}-${comp}-${body}-${partKind}${seq}`;
   out.innerHTML = code.split('-').map(seg => `<span class="code-segment">${escapeHTML(seg)}</span>`).join('-');
   const matched = validateCodeAgainstMatrix(code);
   const desc = document.getElementById('codeDesc');
-  if(desc) desc.textContent = matched ? `${matched.row.name} · ${matched.row.spec}` : '当前编号超出台账矩阵范围，请核对排/屏与管号编号。';
+  const fieldPosition = window.BTAssistantCore?.validateTubeCode(code, matrix)?.fieldPosition;
+  if(desc) desc.textContent = matched ? `${matched.row.name} · ${matched.row.spec}` : fieldPosition ? '现场管位编码有效；每屏总管数及与U/D管圈映射待核，保持原方向。' : '当前编号超出台账矩阵范围，请核对排/屏与管号编号。';
   window._curCode = code;
 }
 /* ========== 新编码规则 ==========
@@ -1166,11 +1202,13 @@ function parseTubeCode(code) {
   if(!head) return null;
   const parsed = { raw, unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], pos: null, posNum: null, pos2: null, pos2Num: null, space: null, corner: null, layer: '', nozzle: null, dir: null, tube: null, seq: null };
   const parts = head[4] ? head[4].split('-') : [];
-  const tail = parts.length && /^Q\d{1,3}$/.test(parts[parts.length - 1]) ? parts.pop() : null;
+  /* 尾段 Q=直管部位、W=弯头部位；同编号 Q/W 是同一根管的两个部位 */
+  const tail = parts.length && /^[QW]\d{1,3}$/.test(parts[parts.length - 1]) ? parts.pop() : null;
   if(!tail) return null;
   parsed.seq = Number(tail.slice(1));
+  parsed.partKind = tail[0];
   const POS_RE = /^([FBLR])(\d{3})$/;
-  const TUBE_RE = /^([UD])(\d{3})$/;
+  const TUBE_RE = /^(?:GGRQ|GZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UD])(\d{3})$/;
   const WALL_RE = /^([FBLR])000$/;
   if(parsed.sys === 'SLB' && (parsed.comp === 'WB' || parsed.comp === 'LHD')) {
     if(parts.length !== 2) return null;
@@ -1264,7 +1302,7 @@ function validateCodeAgainstRules(code) {
 function classifyWarningLevel(text, status = '') {
   const value = `${text || ''} ${status || ''}`.toLowerCase();
   if(status === 'danger' || /爆管|泄漏|报废|更换|danger|high|蠕变损伤[6-9]\d|壁厚减薄至\s*[0-3]\.?[0-9]?/.test(value)) return 'HIGH';
-  if(status === 'warn' || /warn|medium|预警|关注|减薄|腐蚀|蠕变|金相|裂纹|超标/.test(value)) return 'MEDIUM';
+  if(status === 'warn' || /warn|medium|预警|关注|减薄|腐蚀|蠕变|金相|裂纹|超标|发现异物|氧化皮|不合格/.test(value)) return 'MEDIUM';
   return 'INFO';
 }
 function warningClass(level) {
@@ -1279,7 +1317,7 @@ function collectRetiredTubeCodes() {
   return retiredCodes;
 }
 function isRetiredTubeCode(code, retiredCodes = collectRetiredTubeCodes()) {
-  return retiredCodes.has(code);
+  return retiredCodes.has(code) || [...retiredCodes].some(retired => sameTubeMeasurement(retired, code) || parseTubeCode(retired)?.partKind === 'Q' && tubeVersionKey(retired) === tubeVersionKey(code));
 }
 const DASHBOARD_SURFACE_HEALTH = [
   { sys: 'SLB', name: '水冷壁', score: 88, unit1: 1, unit2: -1, meta: '磨损/腐蚀' },
@@ -1598,10 +1636,10 @@ function formatDashboardWarningsForPrompt() {
 function extractThicknessData(code, options = {}) {
   const includeSystem = options.includeSystem !== false;
   const timelineEvents = includeSystem ? (systemLifecycleData()[code]?.timeline || []).map(item => ({ code, type: item.t || '', date: item.date, desc: item.d || '', source: '系统寿命样例' })) : [];
-  const localEvents = userDB.events.filter(e => e.code === code).map(e => ({ ...e, source: '本地录入' }));
+  const localEvents = userDB.events.filter(e => sameTubeMeasurement(e.code, code)).map(e => ({ ...e, source: '本地录入' }));
   const data = [];
   [...timelineEvents, ...localEvents]
-    .filter(e => e.code === code && (positiveThickness(e.thickness) !== null || String(e.type).includes('测厚') || String(e.desc).includes('壁厚') || String(e.desc).includes('减薄')))
+    .filter(e => sameTubeMeasurement(e.code, code) && isExactInspectionDate(e.date) && (positiveThickness(e.thickness) !== null || String(e.type).includes('测厚') || String(e.desc).includes('壁厚') || String(e.desc).includes('减薄')))
     .forEach(e => {
       const typedThickness = parseFloat(e.thickness);
       const match = String(e.desc).match(/(?:壁厚|减薄至|厚度)\s*[:：]?\s*(\d+\.?\d*)/i);
@@ -1677,11 +1715,10 @@ function buildBarChart() { const box = document.getElementById('barChart'); if(!
 function copyCode() { if(window._curCode) { navigator.clipboard?.writeText(window._curCode); showToast(`已复制编码：${window._curCode}`, 'ok'); } }
 
 function getTubeProfileData(rawCode) {
-  const code = String(rawCode || '').trim().toUpperCase();
+  const code = normalizedTubeCode(rawCode);
   if(!code) return null;
-  const localEvents = userDB.events
-    .filter(e => e.code === code)
-    .sort((a,b) => new Date(a.date) - new Date(b.date));
+  const localEvents = tubeEvidenceEvents(code)
+    .sort((a,b) => String(a.date).localeCompare(String(b.date)));
   let d = systemLifecycleData()[code];
   let source = d ? 'system' : '';
   let badge = d ? 'badge-sh' : 'badge-ww';
@@ -1734,7 +1771,9 @@ function getTubeProfileData(rawCode) {
     }
   }
   if(!d) return null;
-  const localEvts = localEvents.map(e => ({date: e.date, t: e.type, d: `${escapeHTML(e.desc)} <span style="color:var(--accent);font-size:10px;border:1px solid var(--accent);padding:1px 4px;border-radius:3px;">手工录入</span>`}));
+  const adverse = localEvents.some(e => /发现异物|氧化皮|裂纹|不合格|泄漏/.test(`${e.type || ''} ${e.desc || ''}`));
+  if(adverse) d = { ...d, status: d.status === 'danger' ? 'danger' : 'warn', risk: '同管检测记录存在异常观察，请核实处置及复检闭环' };
+  const localEvts = localEvents.map(e => ({date: e.date, t: e.type, d: `${escapeHTML(e.code)} · ${escapeHTML(e.desc)} <span style="color:var(--accent);font-size:10px;border:1px solid var(--accent);padding:1px 4px;border-radius:3px;">手工录入</span>`}));
   const timeline = [...(d.timeline || []), ...localEvts].sort((a,b) => new Date(a.date) - new Date(b.date));
   const thicknessData = extractThicknessData(code, { includeSystem: false });
   return { code, data: d, source, badge, timeline, thicknessData, localEvents };
@@ -2476,6 +2515,7 @@ function getInspectionAsOfDate(asOfYear) {
   return new Date(year, 11, 31, 23, 59, 59);
 }
 function yearsSinceDate(dateText, asOfYear) {
+  if(/^\d{4}$/.test(String(dateText || ''))) return Math.max(0, Number(asOfYear) - Number(dateText));
   const date = new Date(dateText || 0);
   if(Number.isNaN(date.getTime())) return null;
   return Math.max(0, (getInspectionAsOfDate(asOfYear) - date) / (365.25 * 24 * 60 * 60 * 1000));
@@ -2540,7 +2580,7 @@ function matrixRowRangeText(m) {
   const posText = `${m.posLetters.join('/')}${pad(1, 3)}~${m.pMax}`;
   const pos2Text = m.pos2Letters ? ` × ${m.pos2Letters.join('/')}${pad(1, 3)}~${m.p2Max}` : '';
   const spaceText = m.spaces ? ` · 空间${m.spaces[0]}~${m.spaces[1]}KJ` : '';
-  return `${posText}${pos2Text}${spaceText} · ${m.dirs.join('/')}1~${m.tMax}`;
+  return `${posText}${pos2Text}${spaceText} · ${m.dirs.join('/')}1~${m.tMax}${m.fieldDirs ? '；现场F/B管位总数待核，不与U/D换算' : ''}`;
 }
 function getGeneratedTubeLedgerRows(boiler = 'all') {
   const boilers = boiler === 'all' ? ['1', '2'] : [String(boiler)];
@@ -2562,13 +2602,14 @@ function getGeneratedTubeLedgerRows(boiler = 'all') {
       });
     });
   });
-  const byCode = new Map(rows.map(row => [row.code, row]));
+  const byCode = new Map(rows.map(row => [tubePositionKey(row.code), row]));
   userDB.events.forEach(event => {
-    const code = String(event.code || '').toUpperCase();
-    if(!code || byCode.has(code)) return;
+    const code = normalizedTubeCode(event.code);
+    const position = tubePositionKey(code);
+    if(!code || byCode.has(position)) return;
     if(boiler !== 'all' && eventBoiler(event) !== String(boiler)) return;
     const comp = matchComponentFromCode(code);
-    byCode.set(code, {
+    byCode.set(position, {
       code,
       boiler: eventBoiler(event) || getCodeBoiler(code),
       sys: getCodeSystem(code),
@@ -2605,8 +2646,9 @@ function collectTubeInspectionRecords(boiler = 'all') {
     const recordBoiler = getCodeBoiler(normalized);
     if(boiler !== 'all' && recordBoiler !== String(boiler)) return;
     const candidate = { code: normalized, date, type: type || '检查', desc: desc || '', source };
-    const old = records.get(normalized);
-    if(!old || new Date(candidate.date) > new Date(old.date)) records.set(normalized, candidate);
+    const position = tubePositionKey(normalized);
+    const old = records.get(position);
+    if(!old || String(candidate.date).localeCompare(String(old.date)) > 0) records.set(position, candidate);
   };
   Object.entries(systemLifecycleData()).forEach(([code, item]) => {
     (item.timeline || []).forEach(event => {
@@ -2641,7 +2683,7 @@ function maintenanceOverdueAction(row) {
 function buildMaintenanceOverdueRows(asOfYear, boiler = 'all') {
   const inspectionMap = collectTubeInspectionRecords(boiler);
   return getGeneratedTubeLedgerRows(boiler).map(row => {
-    const latest = inspectionMap.get(row.code);
+    const latest = inspectionMap.get(tubePositionKey(row.code));
     const years = latest ? yearsSinceDate(latest.date, asOfYear) : null;
     const aging = classifyInspectionAging(years ?? 999, Boolean(latest));
     return {
@@ -3495,8 +3537,8 @@ function resolveMaterialTheoryThickness(code, pipeType) {
   const inventory = validateCodeAgainstMatrix(code)?.row;
   const component = matchComponentFromCode(code);
   const lifecycle = systemLifecycleData()[code];
-  const events = userDB.events.filter(event => event.code === code)
-    .sort((a,b) => new Date(b.date) - new Date(a.date));
+  const events = userDB.events.filter(event => sameTubeMeasurement(event.code, code))
+    .sort((a,b) => String(b.date).localeCompare(String(a.date)));
   const localSpec = events.find(event => event.spec)?.spec;
   const localMaterial = events.find(event => event.material)?.material;
   const spec = localSpec || lifecycle?.spec || inventory?.spec || component?.spec || '';
@@ -3523,7 +3565,7 @@ function resolveMaterialTheoryThickness(code, pipeType) {
     reason, material: selected?.material || material, spec: selected?.spec || spec, rule: selected || false, meta };
 }
 function resolveTubeTheoryThreshold(code, pipeType) { return resolveMaterialTheoryThickness(code, pipeType); }
-function selectedTubePipeType(code) { return window.__tubePipeTypes?.[code]; }
+function selectedTubePipeType(code) { return window.__tubePipeTypes?.[code] ?? (parseTubeCode(code)?.partKind === 'W' ? 'bend' : undefined); }
 function formatTheoryDetails(info) {
   const mm = value => value === null || value === undefined ? '未提供' : `${value.toFixed(2)}mm`;
   return `名义壁厚 ${mm(info.nominalWall)} · 直管理论厚度 ${mm(info.straight)} · 弯管外侧理论厚度 ${mm(info.bend)} · 最终采用 ${info.pipeType === 'straight' ? '直管' : info.pipeType === 'bend' ? '弯管外侧' : '管型未指定'} ${mm(info.threshold)}。${info.reason || info.source}`;
@@ -3555,10 +3597,10 @@ function assessPredictionQuality(history, outliers = 0) {
   return { points: history.length, span, score, reliable: history.length >= 3 && span >= 1 && score >= 55 };
 }
 function collectAICompositeSignals(code, history = []) {
-  const events = userDB.events
-    .filter(event => event.code === code)
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const events = tubeEvidenceEvents(code)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const hardnessHistory = events
+    .filter(event => sameTubeMeasurement(event.code, code) && isExactInspectionDate(event.date))
     .map(event => ({ date: event.date, value: parseFloat(event.hardness), source: event.type || '记录', desc: event.desc || '' }))
     .filter(point => point.value > 0 && Number.isFinite(point.value) && Number.isFinite(new Date(point.date).getTime()));
   const metallographyPattern = /金相|组织|晶粒|碳化物|球化|晶界|蠕变|脱碳|裂纹|氧化|过热|珠光体|贝氏体|马氏体/i;

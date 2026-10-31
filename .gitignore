@@ -5,3 +5,10 @@
 # 系统与编辑器
 .DS_Store
 Thumbs.db
+__pycache__/
+*.pyc
+
+# 清洗草稿与旧版只在本地归档，发布使用 verified
+/data-cleaning/archive/
+/data-cleaning/.*.staging-*/
+~$*.xlsx
