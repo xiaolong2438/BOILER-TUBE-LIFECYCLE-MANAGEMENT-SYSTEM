@@ -1360,6 +1360,21 @@ function setDashboardUnit(unit) {
   syncDashboardSnapshot();
   renderDashboardWarnings();
 }
+/* 待处置任务/风险信号的短结果：部位（弯头/管子）+ 关键结论（如 弯头氧化皮），完整明细悬停可见 */
+function shortEventResult(event) {
+  const tail = /-([QW])(?:\d{1,3})?$/.exec(String(event.code || '').trim().toUpperCase());
+  const partLabel = tail ? (tail[1] === 'W' ? '弯头' : '管子') : '';
+  const text = `${event.type || ''} ${event.desc || ''} ${event.result || ''}`;
+  const keywords = [['氧化皮', '氧化皮'], ['裂纹', '裂纹'], ['泄漏', '泄漏'], ['不合格', '不合格'], ['异物', '异物'], ['腐蚀', '腐蚀'], ['减薄', '减薄']];
+  for (const [needle, label] of keywords) {
+    if (text.indexOf(needle) >= 0) return partLabel + label;
+  }
+  if (/测厚/.test(text)) {
+    const thickness = event.thickness !== undefined && event.thickness !== null && event.thickness !== '' ? ` ${event.thickness}mm` : '';
+    return partLabel + '测厚' + thickness;
+  }
+  return partLabel + (String(event.type || '').trim() || '检查记录');
+}
 function collectDashboardWarnings(options = {}) {
   const limit = Number(options.limit) || 6;
   const retiredCodes = collectRetiredTubeCodes();
@@ -1367,13 +1382,13 @@ function collectDashboardWarnings(options = {}) {
     .filter(([code]) => !isRetiredTubeCode(code, retiredCodes))
     .map(([code, item]) => {
       const level = classifyWarningLevel(item.risk, item.status);
-      return { code, level, source: '系统寿命数据', text: `${item.name} · ${item.risk}`, sort: level === 'HIGH' ? 0 : level === 'MEDIUM' ? 1 : 2 };
+      return { code, level, source: '系统寿命数据', text: `${item.name} · ${item.risk}`, short: item.risk, sort: level === 'HIGH' ? 0 : level === 'MEDIUM' ? 1 : 2 };
     });
   const localWarnings = userDB.events
     .filter(event => !isRetiredTubeCode(event.code, retiredCodes))
     .map(event => {
       const level = classifyWarningLevel(`${event.type} ${event.desc}`, '');
-      return { code: event.code, level, source: '本地录入', text: `${event.date} ${event.type} · ${event.desc}`, sort: level === 'HIGH' ? 0 : level === 'MEDIUM' ? 1 : 2, ts: event.ts || 0 };
+      return { code: event.code, level, source: '本地录入', text: `${event.date} ${event.type} · ${event.desc}`, short: shortEventResult(event), sort: level === 'HIGH' ? 0 : level === 'MEDIUM' ? 1 : 2, ts: event.ts || 0 };
     })
     .filter(item => item.level !== 'INFO' || /测厚|检验|评估|金相|蠕变|腐蚀|减薄/.test(item.text));
   const measuredWarnings = [...new Set(userDB.events.map(event => event.code))]
@@ -1387,6 +1402,7 @@ function collectDashboardWarnings(options = {}) {
       if(warning.level === 'normal') return null;
       const level = warning.level === 'replace' ? 'HIGH' : 'MEDIUM';
       return { code, level, source: '材料库理论厚度判定', sort: warning.level === 'replace' ? -2 : -1,
+        short: `${warning.label} · 实测 ${current.val}mm`,
         text: `${warning.label} · 实测 ${current.val}mm · ${info.threshold === null ? info.reason : `采用${info.pipeType === 'bend' ? '弯管外侧' : '直管'} ${info.threshold}mm；裕量 ${warning.margin.toFixed(2)}mm`}` };
     }).filter(Boolean);
   const measuredCodes = new Set(measuredWarnings.map(item => item.code));
@@ -1616,7 +1632,7 @@ function renderDashboardWarnings() {
   if(warnings.length === 0) {
     box.innerHTML = `<div class="command-warning alert-info"><strong>当前无预警</strong><span>${escapeHTML(getDashboardUnitLabel())}暂无需要优先关注的管段</span></div>`;
   } else {
-    box.innerHTML = warnings.map(item => `<button type="button" class="command-warning ${warningClass(item.level)}" onclick="openTubeProfile('${escapeHTML(item.code)}')"><strong>${escapeHTML(item.code)}</strong><span>${escapeHTML(item.text)}</span></button>`).join('');
+    box.innerHTML = warnings.map(item => `<button type="button" class="command-warning ${warningClass(item.level)}" onclick="openTubeProfile('${escapeHTML(item.code)}')"><strong>${escapeHTML(item.code)}</strong><span>${escapeHTML(item.short || item.text)}</span></button>`).join('');
   }
   renderHeroTasks();
 }
@@ -1635,7 +1651,7 @@ function renderHeroTasks() {
     const prio = item.level === 'HIGH' ? 'P' + Math.min(1 + index, 3) : item.level === 'MEDIUM' ? 'P' + Math.min(2 + index, 3) : 'P3';
     const tone = item.level === 'HIGH' ? ' danger' : item.level === 'MEDIUM' ? ' warn' : '';
     const boiler = String(item.code || '')[0] === '2' ? '2' : '1';
-    return `<button type="button" class="hero-task-item${tone}" data-dashboard-boiler="${boiler}" onclick="openTubeProfile('${escapeHTML(item.code)}')" title="打开管段档案 ${escapeHTML(item.code)}"><div class="prio">${prio}</div><div><div class="title">${escapeHTML(item.text)}</div><div class="meta">${escapeHTML(item.code)} · ${escapeHTML(item.source)}</div></div></button>`;
+    return `<button type="button" class="hero-task-item${tone}" data-dashboard-boiler="${boiler}" onclick="openTubeProfile('${escapeHTML(item.code)}')" title="打开管段档案 ${escapeHTML(item.code)} · ${escapeHTML(item.text)}"><div class="prio">${prio}</div><div><div class="title">${escapeHTML(item.code)}</div><div class="meta">${escapeHTML(item.short || item.text)}</div></div></button>`;
   }).join('');
   host.querySelectorAll('[data-dashboard-boiler]').forEach(item => {
     item.style.display = dashboardUnit === 'all' || item.dataset.dashboardBoiler === dashboardUnit ? '' : 'none';

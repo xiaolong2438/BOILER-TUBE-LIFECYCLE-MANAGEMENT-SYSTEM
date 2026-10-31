@@ -42,4 +42,21 @@ assert.match(styleSource, /@media \(max-width: 700px\)[\s\S]*\.health-core-grid/
 assert.doesNotMatch(html, /先定位高风险受热面/);
 assert.doesNotMatch(html, /首页聚焦设备专工最需要的四件事/);
 
+// 待处置任务/风险信号：管编码 + 短结果（完整明细悬停可见）
+assert.match(externalJs, /function shortEventResult\(event\)/);
+assert.match(externalJs, /short: shortEventResult\(event\)/);
+assert.match(externalJs, /<div class="title">\$\{escapeHTML\(item\.code\)\}<\/div><div class="meta">\$\{escapeHTML\(item\.short \|\| item\.text\)\}<\/div>/, "任务卡标题=编码、摘要=短结果");
+assert.match(externalJs, /title="打开管段档案 \$\{escapeHTML\(item\.code\)\} · \$\{escapeHTML\(item\.text\)\}"/, "完整明细保留在悬停提示");
+assert.match(externalJs, /<strong>\$\{escapeHTML\(item\.code\)\}<\/strong><span>\$\{escapeHTML\(item\.short \|\| item\.text\)\}<\/span>/, "风险信号列表同用短结果");
+
+// 行为验证：shortEventResult 自包含，可独立执行
+import vm from "node:vm";
+const shortCtx = vm.createContext({});
+vm.runInContext(externalJs.slice(externalJs.indexOf("function shortEventResult"), externalJs.indexOf("function collectDashboardWarnings")), shortCtx);
+const shortOf = event => vm.runInContext(`shortEventResult(${JSON.stringify(event)})`, shortCtx);
+assert.equal(shortOf({ code: '1G-GGRQ-GQ-L025-F002-W', type: '无损检测', desc: '批次：2026年1号机C修；结果：发现异物，割开检查为氧化皮；结果性质：异常观察' }), '弯头氧化皮', '氧化皮优先于异物，部位取编码尾字母');
+assert.equal(shortOf({ code: '1G-GGRQ-GQ-L002-F002-W001', type: '无损检测', desc: '发现异物' }), '弯头异物', '历史数字尾同样识别部位');
+assert.equal(shortOf({ code: '1G-GZRQ-GQ-L001-F001-Q', type: '测厚', desc: '测厚', thickness: '3.1' }), '管子测厚 3.1mm');
+assert.equal(shortOf({ code: '1G-GGRQ-GQ-L001-F001-W', type: '射线', desc: '合格' }), '弯头射线');
+
 console.log("ok - dashboard command center structure");
