@@ -4287,6 +4287,52 @@ function getAssistantRole() {
 // ========== 受热面设计图纸 ==========
 const DESIGN_DRAWINGS_KEY = 'boiler_design_drawings';
 const DRAWING_MAX_BYTES = 4 * 1024 * 1024;
+// 高温过热器12回路材质分段基准（图纸148M211-0 + 用户确认2026-10-31）。
+// 每回路=前腿F00k(向下)+底部弯头+后腿F(25-k)(向上)；frontSegs沿流程(顶→底)、rearSegs沿流程(底→顶)。
+// W记录对应底弯件=frontSegs末段；与 scripts/clean_boiler_film_records.py 的 GGRQ_LOOP_SEGMENTS 保持一致。
+const GGRQ_LOOP_BASELINE = [
+  { loop: 1, front: 1, rear: 24, frontSegs: [['Φ54×9', '12Cr1MoVG'], ['Φ54×9', 'SA-213T91'], ['Φ54×7.5', 'SA-213TP347H']], rearSegs: [['Φ54×11', 'SA-213T91'], ['Φ54×11', 'SA-213T22']] },
+  { loop: 2, front: 2, rear: 23, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213TP304H']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 3, front: 3, rear: 22, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213TP304H']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 4, front: 4, rear: 21, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213TP304H']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 5, front: 5, rear: 20, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 6, front: 6, rear: 19, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 7, front: 7, rear: 18, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 8, front: 8, rear: 17, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 9, front: 9, rear: 16, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 10, front: 10, rear: 15, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 11, front: 11, rear: 14, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 12, front: 12, rear: 13, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] }
+];
+function ggrqLoopForTube(tubeNo) {
+  const loopNo = tubeNo <= 12 ? tubeNo : 25 - tubeNo;
+  return GGRQ_LOOP_BASELINE.find(l => l.loop === loopNo) || null;
+}
+function ggrqBottomBendAttrs(tubeNo) {
+  const loop = ggrqLoopForTube(tubeNo);
+  return loop ? loop.frontSegs[loop.frontSegs.length - 1] : null;
+}
+function renderGGRQLoopBaseline() {
+  const host = document.getElementById('ggrqLoopBaseline');
+  if (!host) return;
+  const chip = seg => '<span style="display:inline-block; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; white-space:nowrap;">' + escapeHTML(seg[0] + ' ' + seg[1]) + '</span>';
+  const bendChip = seg => '<span style="display:inline-block; background:var(--bg); border:1px solid var(--warn, #d97706); border-radius:4px; padding:2px 8px; font-size:11px; font-weight:700; white-space:nowrap;">' + escapeHTML(seg[0] + ' ' + seg[1]) + '【底弯】</span>';
+  const arrow = '<span style="color:var(--text-dim); margin:0 2px;">→</span>';
+  const rows = GGRQ_LOOP_BASELINE.map(l => {
+    const segs = l.frontSegs.map((seg, idx) => (idx === l.frontSegs.length - 1 ? bendChip(seg) : chip(seg)));
+    l.rearSegs.forEach(seg => segs.push(chip(seg)));
+    return '<tr>' +
+      '<td style="padding:6px 10px; white-space:nowrap; font-weight:700;">回路' + l.loop + '</td>' +
+      '<td style="padding:6px 10px; white-space:nowrap;">F' + String(l.front).padStart(3, '0') + '↓ + F' + String(l.rear).padStart(3, '0') + '↑</td>' +
+      '<td style="padding:6px 10px;">' + segs.join(arrow) + '</td>' +
+      '</tr>';
+  }).join('');
+  host.innerHTML = '<table style="width:100%; border-collapse:collapse; font-size:12px;">' +
+    '<thead><tr style="color:var(--text-dim); text-align:left; border-bottom:1px solid var(--border);">' +
+    '<th style="padding:6px 10px; font-weight:600;">回路</th><th style="padding:6px 10px; font-weight:600;">管组</th>' +
+    '<th style="padding:6px 10px; font-weight:600;">沿蒸汽流程分段（入口联箱 → 底弯 → 出口联箱）</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
 let designDrawings = [];
 try { designDrawings = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '[]'); } catch (err) { designDrawings = []; }
 if (!Array.isArray(designDrawings)) designDrawings = [];
@@ -4346,6 +4392,7 @@ function drawingSurfaceLabel(sys) {
   return rule ? rule.sys + ' · ' + rule.label : (sys || '通用');
 }
 function renderDesignDrawings() {
+  renderGGRQLoopBaseline();
   const grid = document.getElementById('drawingsGrid');
   if (!grid) return;
   const filter = document.getElementById('drawingSysFilter');
