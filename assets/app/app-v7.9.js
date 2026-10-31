@@ -952,7 +952,7 @@ const matrix = [
   { name:'燃烧器区域', sys:'SLB', comp:'RSQ', special:'rsq', corners:[1,4], layers:['A','B','C','D','E','F'], nozzles:[1,8], spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['L','R'], p2Max:4, dirs:['U','D'], tMax:14, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
   { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['U','D'], tMax:13, spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
-  { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['U','D'], tMax:12, fieldDirs:['F','B'], fieldDefault:'F', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
+  { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['U','D'], tMax:12, fieldDirs:['F','B'], fieldTMax:24, fieldDefault:'F', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
   { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['U','D'], tMax:7, fieldDirs:['F','B'], spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh' },
   { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,4], posLetters:['L','R'], pMax:112, dirs:['U','D'], tMax:5, spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
   { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['U','D'], tMax:6, tubeOptional:true, spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-rh' },
@@ -1139,7 +1139,7 @@ function renderGeneratorFields() {
   } else if(row && row.pos) {
     html = `<div class="form-group"><label>方位（墙/坡）</label><select id="f-pos">${(GENERATOR_WALL_OPTIONS[comp] || []).map(([v, label]) => `<option value="${v}">${label}</option>`).join('')}</select></div>
       <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...row.fieldDirs, ...row.dirs] : row.dirs)}</select></div>
-      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? '现场F/B总数待核；U/D参考1~' : '1~'}${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? 999 : row.tMax}" value="1" /></div>`;
+      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? (row.fieldTMax ? '现场F/B 1~' + row.fieldTMax + '；U/D管圈参考1~' : '现场F/B总数待核；U/D参考1~') : '1~'}${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? (row.fieldTMax || 999) : row.tMax}" value="1" /></div>`;
   } else if(row) {
     const posNums = max => Array.from({length: max}, (_, i) => `<option value="${i + 1}">${m0pad(i + 1, 3)}</option>`).join('');
     html = `${row.spaces ? `<div class="form-group"><label>检修空间（低过/低再）</label><select id="f-space"><option value="">省略 · 默认第1空间</option>${Array.from({length: row.spaces[1] - row.spaces[0] + 1}, (_, i) => { const n = row.spaces[0] + i; return n === 1 ? '' : `<option value="${n}KJ">${n}KJ · 第${n}检修空间</option>`; }).join('')}</select></div>` : ''}
@@ -1148,7 +1148,7 @@ function renderGeneratorFields() {
       ${row.pos2Letters ? `<div class="form-group"><label>小屏号方位</label><select id="f-pos2-letter">${dirOptions(row.pos2Letters)}</select></div>
       <div class="form-group"><label>小屏号 (3位, 1~${row.p2Max})</label><select id="f-pos2-num">${posNums(row.p2Max)}</select></div>` : ''}
       <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...row.fieldDirs, ...row.dirs] : row.dirs)}</select></div>
-      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? '现场F/B总数待核；U/D参考1~' : '1~'}${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? 999 : row.tMax}" value="1" /></div>`;
+      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? (row.fieldTMax ? '现场F/B 1~' + row.fieldTMax + '；U/D管圈参考1~' : '现场F/B总数待核；U/D参考1~') : '1~'}${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? (row.fieldTMax || 999) : row.tMax}" value="1" /></div>`;
   }
   html += `<div class="form-group"><label for="f-part-kind">检测部位</label><select id="f-part-kind"><option value="Q">Q · 管子</option><option value="W">W · 弯头</option></select></div>`;
   box.innerHTML = html;
@@ -1202,7 +1202,7 @@ function genCode() {
   const matched = validateCodeAgainstMatrix(code);
   const desc = document.getElementById('codeDesc');
   const fieldPosition = window.BTAssistantCore?.validateTubeCode(code, matrix)?.fieldPosition;
-  if(desc) desc.textContent = matched ? `${matched.row.name} · ${matched.row.spec}` : fieldPosition ? '现场管位编码有效；每屏总管数及与U/D管圈映射待核，保持原方向。' : '当前编号超出台账矩阵范围，请核对排/屏与管号编号。';
+  if(desc) desc.textContent = matched ? `${matched.row.name} · ${matched.row.spec}` : fieldPosition ? '现场管位编码有效（按每屏管数校验），保持现场计数方向。' : '当前编号超出台账矩阵范围，请核对排/屏与管号编号。';
   window._curCode = code;
 }
 /* ========== 新编码规则 ==========
@@ -2594,7 +2594,7 @@ function matrixRowRangeText(m) {
   const posText = `${m.posLetters.join('/')}${pad(1, 3)}~${m.pMax}`;
   const pos2Text = m.pos2Letters ? ` × ${m.pos2Letters.join('/')}${pad(1, 3)}~${m.p2Max}` : '';
   const spaceText = m.spaces ? ` · 空间${m.spaces[0]}~${m.spaces[1]}KJ` : '';
-  return `${posText}${pos2Text}${spaceText} · ${m.dirs.join('/')}1~${m.tMax}${m.fieldDirs ? '；现场F/B管位总数待核，不与U/D换算' : ''}`;
+  return `${posText}${pos2Text}${spaceText} · ${m.dirs.join('/')}1~${m.tMax}${m.fieldDirs ? (m.fieldTMax ? `；现场${m.fieldDirs.join('/')}1~${m.fieldTMax}（F↔B镜像归一）` : '；现场F/B管位总数待核') : ''}`;
 }
 function getGeneratedTubeLedgerRows(boiler = 'all') {
   const boilers = boiler === 'all' ? ['1', '2'] : [String(boiler)];

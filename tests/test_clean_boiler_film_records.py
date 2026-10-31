@@ -88,7 +88,8 @@ class CleaningSemanticsTest(unittest.TestCase):
         self.assertIn('L002-F002', anomalies[0].code)
         self.assertEqual(anomalies[0].result, clean.OBSERVED_ANOMALY)
         self.assertFalse(any(r.origin == '汇总展开' and r.location_key == anomalies[0].location_key for r in summary))
-        self.assertTrue(all('-B001-' in r.code for r in self.result.records if r.source_row == 8))
+        self.assertTrue(all('-F024-' in r.code for r in self.result.records if r.source_row == 8),
+                        '炉后第1根按确认几何镜像为F024')
         self.assertTrue(all(r.date in ('2026', '2022', '2021') and clean.YEAR_NOTE in r.desc for r in self.result.records))
 
     def test_reproducible_package_integrity_and_no_partial_overwrite(self):

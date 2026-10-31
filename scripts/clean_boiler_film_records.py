@@ -33,7 +33,17 @@ import openpyxl
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
-RULE_VERSION = "film-records-physical-codes-v3"
+RULE_VERSION = "film-records-physical-codes-v4"
+# 用户确认（2026-10-31）：高过每屏24根，F001–F024 ↔ B024–B001；L001–L032 ↔ R032–R001。
+GGRQ_TUBES_PER_SCREEN = 24
+# 源2026第4/5行备注“炉后往炉前数”的弯头材质区带（尾段数字是清单流水，材质只按管位算）。
+GGRQ_BAND_BY_REAR = {
+    1: "TP347H", 24: "TP347H",
+    **{k: "304H" for k in (2, 3, 4, 21, 22, 23)},
+    **{k: "T91" for k in (5, 6, 7, 12, 13, 18, 19, 20)},
+    **{k: "12CrMoVG" for k in (8, 9, 10, 11, 14, 15, 16, 17)},
+}
+BAND_MARKER = "炉后往炉前数第1、24弯头"
 BATCH_META = {
     "2026年1号机C修": {"year": 2026, "unit": 1},
     "2022年1号机A修": {"year": 2022, "unit": 1},
@@ -110,6 +120,8 @@ class Record:
     result: str
     result_nature: str
     remark: str
+    spec_basis_note: str = ""
+    material_basis_note: str = ""
     notes: list[str] = field(default_factory=list)
     import_serial: int | None = None
     code: str = ""
@@ -126,11 +138,11 @@ class Record:
 
     @property
     def spec_basis(self) -> str:
-        return "源行单值，仅格式规范化" if self.spec else "多值或未提供，待确认；未按W流水号分配"
+        return self.spec_basis_note or ("源行单值，仅格式规范化" if self.spec else "多值或未提供，待确认；未按W流水号分配")
 
     @property
     def material_basis(self) -> str:
-        return "源行单值，保留原牌号" if self.material else "多值或未提供，待确认；未按W流水号分配"
+        return self.material_basis_note or ("源行单值，保留原牌号" if self.material else "多值或未提供，待确认；未按W流水号分配")
 
     @property
     def desc(self) -> str:
@@ -253,6 +265,7 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
     material = materials[0] if len(materials) == 1 else ""
     codes = lines(codes_raw)
     atoms: list[dict[str, Any]] = []
+    mirror_note = ""
     summary = SUMMARY_RE.fullmatch(position)
     if summary:
         if batch != "2026年1号机C修":
@@ -265,6 +278,14 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
         if len(set(tubes)) != len(tubes) or qty != (end - start + 1) * len(tubes):
             raise ValueError(f"汇总总量与位置枚举不一致：{batch}!C{row_num}")
         direction = "F" if summary["direction"] == "前" else "B"
+        if direction == "B":
+            if batch != "2026年1号机C修" or system != "高温过热器":
+                raise ValueError("炉后计数目前仅2026高过已确认每屏24根；其他批次需先确认再镜像")
+            tubes = [GGRQ_TUBES_PER_SCREEN + 1 - t for t in tubes]
+            direction = "F"
+            mirror_note = "用户已确认高过每屏24根（F001–F024↔B024–B001）：源“炉后第{0}根”≙F{1:03d}，编码落规范方向F".format(
+                "+".join(str(GGRQ_TUBES_PER_SCREEN + 1 - t) for t in sorted(tubes, reverse=True)),
+                min(tubes))
         locations = [f"{BATCH_META[batch]['unit']}G-{SYS_MAP[system]}-GQ-L{s:03d}-{direction}{t:03d}"
                      for s in range(start, end + 1) for t in tubes]
         anomalies: dict[str, tuple[str, int, list[str]]] = {}
@@ -299,14 +320,29 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
                 "notes": notes,
             })
     records = []
+    band_applies = (batch == "2026年1号机C修" and system == "高温过热器"
+                    and BAND_MARKER in remark and len(materials) == 4 and len(specs) >= 3)
     for i, atom in enumerate(atoms, 1):
         notes = list(atom["notes"])
-        if len(materials) > 1:
-            notes.append("源备注物理弯头计数与F/B几何关系未确认，材质不按清单流水推断")
-        if summary and summary["direction"] == "后":
-            notes.append("保留炉后计数B001；每屏物理管总数未知，不反算为F024或F022")
+        material_note = ""
+        spec_note = ""
+        if band_applies and atom["kind"] == "W":
+            match = re.fullmatch(r".*-F(\d{3})", atom["location"])
+            leg = int(match[1]) if match else 0
+            shorthand = GGRQ_BAND_BY_REAR.get(GGRQ_TUBES_PER_SCREEN + 1 - leg) if leg else None
+            full = next((c for c in materials if shorthand and shorthand.upper() in c.upper()), "") if shorthand else ""
+            if full:
+                material = full
+                spec = specs[min(materials.index(full), len(specs) - 1)]
+                material_note = "按用户确认每屏24根与备注弯头区带映射（炉后计数↔F管位）"
+                spec_note = "按区带材质与源行规格-材质配对"
+                notes.append(f"材质按管位区带映射：F{leg:03d}=炉后第{GGRQ_TUBES_PER_SCREEN + 1 - leg}弯头→{shorthand}")
+        if len(materials) > 1 and not band_applies:
+            notes.append("备注弯头区带与24根几何的对应仅2026高过已确认；本行材质不按清单流水推断")
+        if mirror_note:
+            notes.append(mirror_note)
         if summary and codes and spec == "Φ54×7.5" and material == "304H":
-            notes.append("规格/牌号按本源行保留；与其他行候选对应关系有疑点，需材料专业确认")
+            notes.append("规格/牌号按本源行保留；材质304H与区带映射一致，Φ54×7.5与其他行配对(304H↔Φ51×8)不一致，需材料专业确认")
         records.append(Record(
             batch=batch, year=BATCH_META[batch]["year"], unit=BATCH_META[batch]["unit"],
             source_row=row_num, source_seq=seq, item_order=i, source_order=prior_count + i,
@@ -315,7 +351,8 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
             source_position=position, position=atom["location"].split("-GQ-", 1)[1] + "；源位置：" + position,
             spec_candidates=specs, material_candidates=materials, spec=spec, material=material,
             method=method, source_result=result_raw, result=atom["result"],
-            result_nature=atom["nature"], remark=remark, notes=notes,
+            result_nature=atom["nature"], remark=remark,
+            spec_basis_note=spec_note, material_basis_note=material_note, notes=notes,
         ))
     return records
 
@@ -348,20 +385,20 @@ def clean_source(path: Path | str) -> CleanResult:
                                     "candidate_ids": [r.source_id for r in records], "expanded_count": len(records)})
                 if not records[0].material or not records[0].spec:
                     issues.append(issue("UNCONFIRMED_ATTRIBUTES", "高", batch, [row_num],
-                                        "多值/缺失材质规格不能由W流水号分配；备注物理计数与编码方向需核证",
-                                        "仅源行单值进入规格/材质列；候选列表和原备注保留在描述及审计",
-                                        ["逐位置材质/规格", "备注弯头组与F/B位置的对应关系"]))
+                                        "多值材质/规格的逐管对应（12/7弯头区带与每屏24根的关系及计数方向）未确认",
+                                        "材质规格留空；候选列表和原备注保留在描述及审计",
+                                        ["2022/2021的12/7弯头区带对应前12根还是后12根、按哪个方向计数"]))
                 if SUMMARY_RE.fullmatch(raw[2]):
                     issues.append(issue("SUMMARY_EXPANSION", "说明", batch, [row_num],
                                         f"汇总行展开{len(records)}条，含{sum(r.result_nature == '异常观察' for r in records)}条异常观察",
                                         "按本源行屏号/管位枚举；仅排除本批次本汇总的异常位置，不扣除其他年度检查"))
                     if "炉后" in raw[2]:
-                        issues.append(issue("UNCONFIRMED_GEOMETRY", "高", batch, [row_num],
-                                            "炉后B001与炉前F编号的换算需要实际总数，源表不能确认独立物理管总数",
-                                            "保留B001，不使用22/24假定总管数换算", ["每屏管/弯头/管圈的物理关系及总数"]))
+                        issues.append(issue("GEOMETRY_CONFIRMED", "说明", batch, [row_num],
+                                            "高过每屏24根已由用户确认（F001–F024↔B024–B001、L001–L032↔R032–R001）",
+                                            "炉后第N根镜像为F(25-N)规范方向；系统已启用同口径归一", []))
                     if records[0].spec == "Φ54×7.5" and records[0].material == "304H":
                         issues.append(issue("SOURCE_SPEC_REVIEW", "高", batch, [row_num],
-                                            "本行明确规格Φ54×7.5、材质304H；与其他行候选对应关系有疑点",
+                                            "本行明确规格Φ54×7.5、材质304H；材质304H与区带映射一致，Φ54×7.5与第4/5行配对(304H↔Φ51×8)不一致",
                                             "全64项一律保留本源行单值，不把59项擅改Φ51×8", ["该汇总行真实规格及牌号"]))
             issues.append(issue("YEAR_PRECISION", "高", batch, [], "只提供年份，未提供实际检测月日",
                                 "日期写年份文本；每条描述注明日期精度=年；未生成01-01", ["实际检测日期（若可取得）"]))
@@ -421,10 +458,14 @@ def validate(result: CleanResult) -> list[str]:
         for r in candidates:
             if r.date != str(meta["year"]) or YEAR_NOTE not in r.desc:
                 errors.append(f"{r.source_id}日期精度丢失")
-            if r.material != (r.material_candidates[0] if len(r.material_candidates) == 1 else ""):
-                errors.append(f"{r.source_id}材质并非源行单值")
-            if r.spec != (r.spec_candidates[0] if len(r.spec_candidates) == 1 else ""):
-                errors.append(f"{r.source_id}规格并非源行单值")
+            if r.material and r.material not in r.material_candidates:
+                errors.append(f"{r.source_id}材质不在源行候选内")
+            if r.spec and r.spec not in r.spec_candidates:
+                errors.append(f"{r.source_id}规格不在源行候选内")
+            if r.material and len(r.material_candidates) > 1 and not r.material_basis_note:
+                errors.append(f"{r.source_id}多值材质行赋值必须有映射依据")
+            if r.spec and len(r.spec_candidates) > 1 and not r.spec_basis_note:
+                errors.append(f"{r.source_id}多值规格行赋值必须有映射依据")
             if r.disposition == "导入":
                 match = CODE_RE.fullmatch(r.code)
                 if not match or match["unit"] != str(meta["unit"]) or match["serial"] is not None:
@@ -562,10 +603,10 @@ def release_notes(result: CleanResult) -> str:
         "四、仍需确认，未冒充事实\n"
         "2026第29/32行均写第24屏，重复候选隔离；未改27，未补造27屏合格。第27屏仅是核对建议。\n"
         f"{stats['imported_material_unconfirmed']}条多值材质留空，{stats['imported_spec_unconfirmed']}条多值规格留空；"
-        "原候选列表和备注已保留。高再单值Φ60×4可以保留。F/B反向关系未确认，不用W数字查材质。\n"
-        "实际检测月日、逐位置材质/规格、第38行规格疑点、12CrMoVG与12Cr1MoVG牌号差异均需原始凭据确认。\n"
-        "22是检查出现的管位编号，24是备注弯头编号；都不是已确认的每屏独立物理管总数。"
-        "保留B001，不宣称B001等于F024/F022，不发布已确认全炉管总数。\n"
+        "原候选列表和备注已保留。高再单值Φ60×4可以保留。\n"
+        "实际检测月日、2022/2021的12/7弯头区带对应、第38行规格疑点、12CrMoVG与12Cr1MoVG牌号差异均需原始凭据确认。\n"
+        "高过每屏24根及两组镜像（F↔B、L↔R）为用户确认口径：2026第4/5行32条材质规格已按区带+管位计算，"
+        "炉后第N根编码落F(25-N)；2022/2021的12弯头区带对应（前12根还是后12根、计数方向）未确认，材质仍留空。\n"
         "位置/方向未知时依规则使用000/U或隔离待核，不猜成第1根或第27屏。\n\n"
         "五、追溯和验证\n"
         "manifest.json包含源文件/清洗器SHA256、规则版本、每条来源映射、问题清单、产物SHA256。"
@@ -582,7 +623,7 @@ def write_audit(path: Path, result: CleanResult, style: Any) -> None:
     workbook.remove(workbook.active)
     notes = [["规则版本", RULE_VERSION], ["源文件", result.source_path], ["源SHA256", result.source_sha256],
              ["发布边界", "全部批次包含汇总展开91项；本版不与旧373/91直接叠加；年精度须目标系统支持"],
-             ["物理身份", "编码=位置+Q/W字母尾，永久唯一；流水号只在溯源列；F/B几何、独立物理管总数未确认"],
+             ["物理身份", "编码=位置+Q/W字母尾，永久唯一；流水号只在溯源列；高过每屏24根及F↔B、L↔R镜像为用户确认口径"],
              ["日期", YEAR_NOTE], ["原编号说明", result.source_rules]]
     append_table(workbook, "发布说明", ["项目", "内容"], notes, style)
     stats = result.statistics()

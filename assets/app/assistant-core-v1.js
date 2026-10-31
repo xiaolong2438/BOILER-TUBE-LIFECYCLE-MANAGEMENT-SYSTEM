@@ -580,11 +580,12 @@
    * 返回 { code: 规范编码, changed: true }；不适用（结构非法/矩阵外/已是规范方向/
    * 燃烧器区域无方向段）返回 null，调用方按原编码继续走既有校验。 */
   var DIR_COMPLEMENT = { L: 'R', R: 'L', F: 'B', B: 'F', U: 'D', D: 'U' };
+  var pad3 = function (n) { return String(n).padStart(3, '0'); };
 
   // 现场F/B管位与既有U/D管圈的总数关系尚未确认，只校验格式和屏号。
   function fieldPositionMatches(row, parsed) {
     if (!row || !parsed || (row.fieldDirs || []).indexOf(parsed.dir) < 0) return false;
-    return matrixRowMatch(Object.assign({}, row, { dirs: row.fieldDirs, tMax: 999 }), parsed);
+    return matrixRowMatch(Object.assign({}, row, { dirs: row.fieldDirs, tMax: row.fieldTMax || 999 }), parsed);
   }
 
   function canonicalTubeCode(code, matrixRows) {
@@ -597,11 +598,39 @@
     for (var i = 0; i < rows.length; i += 1) {
       if (matrixRowMatch(rows[i], parsed)) { row = rows[i]; break; }
     }
-    if (!row || row.special === 'rsq') return null;
+    if (!row || row.special === 'rsq') {
+      /* 现场F/B管位（如高过每屏24根，用户已确认）：不进U/D管圈台账，
+         但屏号R↔L与管位B↔F按已确认总数做镜像归一，同一物理位置只留规范身份。 */
+      if (!row) {
+        for (var fi = 0; fi < rows.length; fi += 1) {
+          if (fieldPositionMatches(rows[fi], parsed)) {
+            var fieldRow = rows[fi];
+            var posC = fieldRow.posLetters && fieldRow.posLetters.length ? String(fieldRow.posLetters[0]).toUpperCase() : '';
+            var dirC = fieldRow.fieldDirs && fieldRow.fieldDirs.length ? String(fieldRow.fieldDirs[0]).toUpperCase() : '';
+            var fTotal = fieldRow.fieldTMax || 0;
+            var newPos = parsed.pos, newDirSeg = '';
+            if (posC && parsed.pos && parsed.pos.charAt(0) !== posC && DIR_COMPLEMENT[posC] === parsed.pos.charAt(0)) {
+              newPos = posC + pad3(fieldRow.pMax + 1 - parsed.posNum);
+            }
+            if (dirC && parsed.dir && fTotal > 0 && parsed.dir.charAt(0) !== dirC && DIR_COMPLEMENT[dirC] === parsed.dir.charAt(0)) {
+              newDirSeg = dirC + pad3(fTotal + 1 - parsed.tube);
+            }
+            if (newPos === parsed.pos && !newDirSeg) return null;
+            var fieldBody = parsed.space !== null ? [parsed.space + 'KJ', newPos] : [newPos];
+            fieldBody.push(newDirSeg || parsed.dir + pad3(parsed.tube));
+            var fieldSegs = normalized.split('-');
+            var fieldCandidate = [fieldSegs[0], fieldSegs[1], fieldSegs[2]].concat(fieldBody, [fieldSegs[fieldSegs.length - 1]]).join('-');
+            var fieldReparsed = parseTubeCodeParts(fieldCandidate);
+            if (!fieldReparsed || !fieldPositionMatches(fieldRow, fieldReparsed)) return null;
+            return { code: fieldCandidate, changed: true };
+          }
+        }
+      }
+      return null;
+    }
     var dirCanonical = row.dirs && row.dirs.length ? String(row.dirs[0]).toUpperCase() : '';
     var posCanonical = row.posLetters && row.posLetters.length ? String(row.posLetters[0]).toUpperCase() : '';
     var pos2Canonical = row.pos2Letters && row.pos2Letters.length ? String(row.pos2Letters[0]).toUpperCase() : '';
-    var pad3 = function (n) { return String(n).padStart(3, '0'); };
     var changed = false;
 
     /* 逐段换算：管号方向（墙面用 FBLR、过/再热器用 UD）与排/小屏号方位互为镜像 */
@@ -668,7 +697,7 @@
       }
       result.matched = hit;
       result.fieldPosition = !hit && rows.some(function (row) { return fieldPositionMatches(row, parsed); });
-      if (result.fieldPosition) result.reason = '现场管位编码有效；F/B总管数及与U/D管圈映射待核实，保持原方向';
+      if (result.fieldPosition) result.reason = '现场管位编码有效（按每屏管数校验），保持现场计数方向';
       else if (!hit) result.reason = '编码格式有效，但未落入台账矩阵的排/屏或管号范围';
     }
     return result;
