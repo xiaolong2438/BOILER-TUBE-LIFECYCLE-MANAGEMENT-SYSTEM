@@ -1,63 +1,63 @@
 {
   "artifacts": [
     {
-      "bytes": 16708,
+      "bytes": 14421,
       "file": "增量_2026年1号机C修_汇总展开91.xlsx",
       "records": 91,
       "role": "import_subset_already_in_all",
-      "sha256": "cfe8810ce8aae266707f9a187bf96fbfdbbf5899de275bd110ac2aabc998b17d"
+      "sha256": "2f289486d9a5a58705200f3d314f056186a3c352e207522d68b10a804afe2a5f"
     },
     {
-      "bytes": 25488,
+      "bytes": 20650,
       "file": "导入_2021年2号机A修.xlsx",
       "records": 152,
       "role": "import",
-      "sha256": "7cdc5ec4e905093206d546d0a073d3e3d3f343d373fa01d823a1f8e97bc01864"
+      "sha256": "84d6ef6b430578bc2ed6f3407b5411150811648a7d61a312913b329a5f40aae0"
     },
     {
-      "bytes": 25485,
+      "bytes": 20656,
       "file": "导入_2022年1号机A修.xlsx",
       "records": 152,
       "role": "import",
-      "sha256": "37456f963ddbdea41ff5f91f48d5a585135e504face0782988bf68a366bb7b05"
+      "sha256": "b7420b92acd9a2f51de3b7fa89f7519f68cf0db119e7639aaeb9760ac7ef3257"
     },
     {
-      "bytes": 25516,
+      "bytes": 21170,
       "file": "导入_2026年1号机C修.xlsx",
       "records": 160,
       "role": "import",
-      "sha256": "bb9f42b1ee2b3e9d22bd1ac28a5e89c8747da59b102710f91b6ab433b793104d"
+      "sha256": "1374e0e55c4946597b0cfeea4ef846c600e24362e05cccf7e880391df94ff1c3"
     },
     {
-      "bytes": 352899,
+      "bytes": 112431,
       "file": "导入_全部批次.csv",
       "records": 464,
       "role": "import",
-      "sha256": "816afa48d7317cf690ada238b8b7943229ee74d0ed1e2593115153c096bafaf3"
+      "sha256": "6e69777879f63846bc17b000b54a8e63f1e10a99b1d799ef2d398b7d6d24a7b5"
     },
     {
-      "bytes": 64073,
+      "bytes": 50457,
       "file": "导入_全部批次.xlsx",
       "records": 464,
       "role": "import",
-      "sha256": "d79f67e19ac27094374f86a34e5b515db936fd0357e87c8f566ab38b7afbcf3f"
+      "sha256": "b9cec284b42b926d70ae40b1200f730ddcddffac593b0eece437abf239cd220c"
     },
     {
-      "bytes": 4465,
+      "bytes": 4813,
       "file": "导入发布说明.txt",
       "records": null,
       "role": "audit",
-      "sha256": "c53687aa0aa4af40f8f34ed5084ff8aa39024996407eadcfd315184af9697344"
+      "sha256": "5fe82b841f153def559c40bfa2f2c3c2b2eb503bf094de61010fbe4cea6a607c"
     },
     {
-      "bytes": 95986,
+      "bytes": 96019,
       "file": "数据清洗审计.xlsx",
       "records": null,
       "role": "audit",
-      "sha256": "77dff441358cf380b95b0271ad1d918bc6da6d75def7f31ccf91dbddb73da3fa"
+      "sha256": "99c56822004b5edb466e4bd9058e63815f1255864afbb43a6dae50e01eb9e5ad"
     }
   ],
-  "cleaner_sha256": "1744f5a92b452e492da970b63b8e75e1147ddb4dd848dffbd8c4b41118f7392e",
+  "cleaner_sha256": "f168e4504c50f154a9a99629370a6f89aa62b3a1fabf0b154f8d409afc4b33b2",
   "import_warning": "字母尾物理编码；464条含91展开与确认的L027；月精度日期须目标系统支持；不得与旧版叠加",
   "issues": [
     {
@@ -127,7 +127,7 @@
       "source_rows": []
     }
   ],
-  "package_id": "5906ce871ab5edf1004a0a4b0960dca367249b733218186f94334c322768e428",
+  "package_id": "a8fc90cfcf8ec42c010b548bb844df619cbb10f23682e307f4b6cd608f174190",
   "row_map": [
     {
       "all_batches_excel_row": 2,
@@ -22031,7 +22031,7 @@
       "year": 2021
     }
   ],
-  "rule_version": "film-records-physical-codes-v8",
+  "rule_version": "film-records-physical-codes-v9",
   "semantic_sha256": "1474c091cda514b2b806e7704f97d5a23b4a3418c90a6d4ce9adc50e93855b11",
   "source": {
     "path": "C:\\Users\\DLX\\Desktop\\锅炉拍片记录1.xlsx",

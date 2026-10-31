@@ -123,7 +123,7 @@ function resolvePackageDir() {
   for (const name of ['verified', 'verified-physical']) {
     try {
       const manifest = JSON.parse(readFileSync(new URL(`../data-cleaning/${name}/manifest.json`, import.meta.url), 'utf8'));
-      if (manifest.rule_version === 'film-records-physical-codes-v8') return `../data-cleaning/${name}`;
+      if (manifest.rule_version === 'film-records-physical-codes-v9') return `../data-cleaning/${name}`;
     } catch { /* 目录未发布，尝试下一个 */ }
   }
   throw new Error('找不到字母尾物理编码规则的数据包');
@@ -163,6 +163,16 @@ assert.equal(ctx.userDB.events.filter(e => e.code.includes('-B0')).length, 0, '�
 const l027 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L027-F001-W');
 assert.equal(l027.result_nature ?? '合格', '合格');
 assert.ok(l027, '用户确认的第27屏已按L027导入');
+assert.ok(ctx.userDB.events.every(e => !e.desc || !/来源ID|批次：|依据/.test(e.desc)), 'v9：发布包描述列只含检测内容，溯源与依据留专属列/审计');
+
+// 同来源ID重导：内容一致幂等跳过；描述等有变化原位更新、不产生重复（v9换包迁移口径）
+const eventsBeforeUpdate = ctx.userDB.events.length;
+const mutated = actual.map((cells, idx) => (idx === 1 ? cells.map((c, i) => (i === 10 ? '方法：射线；结果：合格（换包后瘦身描述）' : c)) : cells));
+const reimported = ctx.importLifecycleRows(mutated);
+assert.equal(reimported.updatedEvents, 1, '同来源ID且内容有变化→原位更新');
+assert.equal(reimported.skippedDuplicates, 463, '其余463条同内容幂等跳过');
+assert.equal(ctx.userDB.events.length, eventsBeforeUpdate, '更新不新增记录');
+assert.ok(ctx.userDB.events.some(e => e.desc === '方法：射线；结果：合格（换包后瘦身描述）'), '描述已刷新');
 assert.equal(ctx.userDB.events.filter(e => e.code === '1G-GGRQ-GQ-L024-F001-W').length, 1, '第29行L024保留，不重复');
 const row38 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L013-F002-W');
 assert.equal(row38.spec, 'Φ51×8', '图纸148M211-0确认304H规格为Φ51×8');
