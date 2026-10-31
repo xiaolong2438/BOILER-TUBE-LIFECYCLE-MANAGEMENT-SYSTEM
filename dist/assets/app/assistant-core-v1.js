@@ -680,7 +680,7 @@
     var normalized = normalizeCode(code);
     if (!normalized) return { valid: false, reason: '管段编码为空', code: '' };
     if (!TUBE_CODE_PATTERN.test(normalized)) {
-      return { valid: false, reason: '管段编码格式不符合规则（示例：2G-SLB-WB-F000-R025-Q16）', code: normalized };
+      return { valid: false, reason: '管段编码格式不符合规则（示例：2G-SLB-WB-F000-R025-Q）', code: normalized };
     }
     var parsed = parseTubeCodeParts(normalized);
     if (!parsed) {
@@ -1546,7 +1546,7 @@
     }
     if (unmatchedRows.length) {
       pushCheck(checks, 'unmatched_code', 'warning', '管段编码格式不符合规则',
-        '共 ' + unmatchedRows.length + ' 行管段编码不符合新编码规则（示例：2G-SLB-WB-F000-R025-Q16），仍会导入。',
+        '共 ' + unmatchedRows.length + ' 行管段编码不符合新编码规则（示例：2G-SLB-WB-F000-R025-Q），仍会导入。',
         unmatchedRows, '建议按编码生成器重新生成管段编码。', unmatchedSamples);
     }
     if (retiredRows.length) {
@@ -2234,7 +2234,7 @@
       case 'edit':
         return info.editResult
           ? info.editResult.reply
-          : '我可以修改单条记录的单个字段。请给出管段编码、字段和新值，例如：「把 2G-SLB-WB-F000-R025-Q16 的最新测厚记录厚度改成 6.8」。';
+          : '我可以修改单条记录的单个字段。请给出管段编码、字段和新值，例如：「把 2G-SLB-WB-F000-R025-Q 的最新测厚记录厚度改成 6.8」。';
       case 'undo':
         return '准备撤销最近一次导入，执行前会二次确认。';
       default:

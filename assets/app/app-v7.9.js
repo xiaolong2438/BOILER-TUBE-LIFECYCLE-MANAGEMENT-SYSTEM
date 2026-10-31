@@ -1602,7 +1602,7 @@ function syncDashboardSnapshot() {
     overhaulEl.textContent = nextOverhaul[dashboardUnit] || '2027 A修';
   }
   const ledgerNote = document.getElementById('dashboard-ledger-note');
-  if(ledgerNote) ledgerNote.textContent = dashboardUnit === 'all' ? '全厂两台炉，按新编码规则（机组G-SYS-COMP-位置-Q流水号）覆盖全受热面' : `${unitLabel}，按新编码规则覆盖全受热面`;
+  if(ledgerNote) ledgerNote.textContent = dashboardUnit === 'all' ? '全厂两台炉，按新编码规则（机组G-SYS-COMP-位置-Q/W）覆盖全受热面' : `${unitLabel}，按新编码规则覆盖全受热面`;
   document.querySelectorAll('[data-dashboard-boiler]').forEach(item => {
     item.style.display = dashboardUnit === 'all' || item.dataset.dashboardBoiler === dashboardUnit ? '' : 'none';
   });
@@ -1944,7 +1944,7 @@ function loadComponentLifecycle(sys, label, boilerFilter = 'all', surfaceFilter 
       </div>
       <div class="alert alert-info" style="margin-top:15px;"><div>ℹ</div><div>当前卡片是 ${escapeHTML(title)} 汇总视角，不会限制查询范围；可在这里继续查询全部受热面任意管段。</div></div>
       <div class="search-box" style="margin-top:15px;">
-        <input type="text" id="componentGlobalSearchInput" placeholder="全受热面管段查询：输入任意系统管码，例如 2G-SLB-WB-F000-R025-Q16" onkeypress="if(event.key==='Enter')openTubeProfile(this.value.trim().toUpperCase())" />
+        <input type="text" id="componentGlobalSearchInput" placeholder="全受热面管段查询：输入任意系统管码，例如 2G-SLB-WB-F000-R025-Q" onkeypress="if(event.key==='Enter')openTubeProfile(this.value.trim().toUpperCase())" />
         <button class="btn" onclick="openTubeProfile(document.getElementById('componentGlobalSearchInput').value.trim().toUpperCase())">全受热面查询</button>
       </div>
     </div>
@@ -4225,7 +4225,7 @@ function updateEventRecord(ts, field, value) {
     next = String(num);
   } else if(key === 'code') {
     next = next.toUpperCase();
-    if(!isValidTubeCodeStructure(next)) return { ok: false, error: '管段编码格式不正确，示例：2G-SLB-WB-F000-R025-Q16。' };
+    if(!isValidTubeCodeStructure(next)) return { ok: false, error: '管段编码格式不正确，示例：2G-SLB-WB-F000-R025-Q。' };
     const boiler = getBoilerFromCode(next);
     if(boiler) target.boiler = boiler;
   } else if(!next) {

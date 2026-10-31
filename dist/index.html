@@ -221,18 +221,18 @@
   <section class="view" id="view-generator">
     <div class="section-title"><h2>编码生成器</h2><span class="sub">CODE GENERATOR </span></div>
     <div class="card">
-      <div class="card-title">编码结构 · {机组}G-SYS-COMP-位置-Q流水号</div>
+      <div class="card-title">编码结构 · {机组}G-SYS-COMP-位置-Q/W（Q=管子、W=弯头）</div>
       <div style="text-align:center; margin: 15px 0;">
         <span class="fmt-seg" style="color:#00e676">机组 1G/2G</span> - 
         <span class="fmt-seg" style="color:#ffcc00">系统 SLB/GZRQ/GGRQ/HPGRQ/DPGRQ/DGRQ/DZRQ/SMQ</span> - 
         <span class="fmt-seg" style="color:#48cae4">部件 GQ/WB/SG/EXIN/EXOUT/LHD/RSQ</span> - 
         <span class="fmt-seg" style="color:#ff9f43">方位+排/屏/管号</span> - 
-        <span class="fmt-seg" style="color:#a29bfe">Q流水号</span>
+        <span class="fmt-seg" style="color:#a29bfe">Q/W 部位</span>
       </div>
       <div style="text-align:center; color:var(--text-dim); font-size:12px; line-height:1.9;">
         方位/方向：A侧→R · B侧→L · 炉左往右→L · 炉右往左→R · 炉前往后→F · 炉后往前→B · 下往上→D · 上往下→U<br/>
         无明确排/屏号用 000 占位，无明确方向默认 U；低过/低再取样默认第1检修空间（可省略）。<br/>
-        示例：2G-SLB-WB-F000-R025-Q16（2号炉水冷壁前墙炉右往炉左第25根）· 1G-DZRQ-GQ-4KJ-L065-Q001 · 2G-SLB-LHD-F000-L016-Q001
+        示例：2G-SLB-WB-F000-R025-Q（2号炉水冷壁前墙炉右往炉左第25根）· 1G-GGRQ-GQ-L002-F004-W（1号炉高过第2屏炉前第4根弯头）· 1G-DZRQ-GQ-4KJ-L065-Q
       </div>
     </div>
     <div class="card">
