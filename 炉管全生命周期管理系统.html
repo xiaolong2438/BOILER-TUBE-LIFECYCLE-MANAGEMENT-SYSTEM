@@ -58,6 +58,7 @@
     <button class="nav-btn" data-view="components"><svg viewBox="0 0 24 24"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg><span>受热面材料库</span></button>
     <button class="nav-btn" data-view="headers"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/></svg><span>集箱库</span></button>
     <button class="nav-btn" data-view="diagram"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg><span>炉管分布图</span></button>
+    <button class="nav-btn" data-view="drawings"><svg viewBox="0 0 24 24"><path d="M4 4h11l5 5v11a0 0 0 0 1 0 0H4a0 0 0 0 1 0 0z"/><path d="M14 4v5h5"/><path d="M8 13h8M8 17h5"/></svg><span>设计图纸</span></button>
   </div>
 </nav>
 
@@ -236,7 +237,7 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-title">交互式编码生成</div>
+      <div class="card-title">交互式编码生成 <button class="btn btn-outline" style="float:right; padding:4px 12px; font-size:12px;" onclick="openDrawingsForSys(document.getElementById('f-system')?.value || '')">📄 设计图纸</button></div>
       <div class="form-grid">
         <div class="form-group"><label>[1] 机组</label><select id="f-boiler"><option value="1G">1号机组</option><option value="2G">2号机组</option></select></div>
         <div class="form-group"><label>[2] 系统代码</label><select id="f-system"></select></div>
@@ -475,7 +476,7 @@
     <div class="section-title"><h2>数据录入与管理</h2><span class="sub">DATA MANAGEMENT · CSV 便捷录入 & LocalStorage</span></div>
     <div class="grid-2">
       <div class="card">
-        <div class="card-title">新增寿命事件 / 检测记录</div>
+        <div class="card-title">新增寿命事件 / 检测记录 <button class="btn btn-outline" style="float:right; padding:4px 12px; font-size:12px;" onclick="openDrawingsForSys('')">📄 设计图纸</button></div>
         <div class="form-group"><label>机组/炉号</label><select id="dm-boiler"><option value="1">1号机组</option><option value="2">2号机组</option></select></div>
         <div class="form-group"><label>管段编码</label><input type="text" id="dm-code" placeholder="例: 1G-SLB-WB-F000-R015-Q001" oninput="syncDataEntryBoilerFromCode()" /></div>
         <div class="form-group"><label>规格</label><input type="text" id="dm-spec" placeholder="例: Φ63.5×7.5" /></div>
@@ -842,6 +843,24 @@
     </div>
 
     <div class="card" id="zoneDetail" style="margin-top:20px; display:none;"></div>
+  </section>
+
+  <section class="view" id="view-drawings">
+    <div class="section-title"><h2>受热面设计图纸</h2><span class="sub">DESIGN DRAWINGS · 材料分界图/总图备查</span></div>
+    <div class="card">
+      <div class="card-title">图纸库</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+        <label class="btn" style="cursor:pointer;">📤 上传图纸（图片/PDF）<input type="file" id="drawingFileInput" accept="image/png,image/jpeg,image/webp,application/pdf" multiple style="display:none;" onchange="handleDrawingUpload(event)"></label>
+        <select id="drawingSysFilter" onchange="renderDesignDrawings()" style="padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text);">
+          <option value="">全部受热面</option>
+        </select>
+        <span style="font-size:12px; color:var(--text-dim);">单个文件 ≤ 4MB；图纸保存在本机浏览器并随配置云端同步，换设备需重新上传文件。</span>
+      </div>
+      <div id="drawingsGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px;"></div>
+    </div>
+    <div class="alert alert-info" style="margin-top:15px;">
+      <div><strong>用途</strong>核对编码与检测数据时，可在此调阅对应受热面的材料分界图/总图（如 148M211-0 高温过热器材料分界图），核对管排规格与材质。在「编码生成」「数据录入」页也有直达按钮。</div>
+    </div>
   </section>
 </main>
 

@@ -1676,7 +1676,7 @@ function switchView(viewId, { updateHash = true } = {}) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b === btn));
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === target));
   const titleEl = document.getElementById('topbar-title');
-  const VIEW_TITLES = { dashboard: '炉管风险驾驶舱', 'tube-analysis': '管段综合分析', 'maintenance-plan': '检修计划指挥', datamgr: '数据录入与管理', generator: '编码生成器', inventory: '全量管段台账', maintainlog: '维护记录', components: '受热面材料库', headers: '集箱库', diagram: '炉管分布图' };
+  const VIEW_TITLES = { dashboard: '炉管风险驾驶舱', 'tube-analysis': '管段综合分析', 'maintenance-plan': '检修计划指挥', datamgr: '数据录入与管理', generator: '编码生成器', inventory: '全量管段台账', maintainlog: '维护记录', components: '受热面材料库', headers: '集箱库', diagram: '炉管分布图', drawings: '受热面设计图纸' };
   if(titleEl) titleEl.textContent = VIEW_TITLES[viewId] || (btn ? btn.querySelector('span')?.textContent : '') || titleEl.textContent;
   if(window.scrollY > 8) window.scrollTo({ top: 0, behavior: 'smooth' });
   document.body.classList.remove('rail-open');
@@ -4284,6 +4284,140 @@ function getAssistantRole() {
   return 'editor';
 }
 
+// ========== 受热面设计图纸 ==========
+const DESIGN_DRAWINGS_KEY = 'boiler_design_drawings';
+const DRAWING_MAX_BYTES = 4 * 1024 * 1024;
+let designDrawings = [];
+try { designDrawings = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '[]'); } catch (err) { designDrawings = []; }
+if (!Array.isArray(designDrawings)) designDrawings = [];
+
+function saveDesignDrawings() {
+  localStorage.setItem(DESIGN_DRAWINGS_KEY, JSON.stringify(designDrawings));
+  queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings);
+  renderDesignDrawings();
+}
+function designDrawingsForSys(sys) {
+  return designDrawings.filter(d => !sys || d.sys === sys || !d.sys);
+}
+function fmtDrawingSize(bytes) {
+  return bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+}
+function handleDrawingUpload(event) {
+  if (!canManageTubeData()) { showToast('当前权限为只读，不能上传图纸。', 'warn'); event.target.value = ''; return; }
+  const files = [...(event.target.files || [])];
+  event.target.value = '';
+  if (!files.length) return;
+  const sys = document.getElementById('drawingSysFilter')?.value || '';
+  let queued = files.length;
+  files.forEach(file => {
+    if (file.size > DRAWING_MAX_BYTES) { showToast('「' + file.name + '」超过 4MB，未上传', 'error'); queued -= 1; if (!queued) renderDesignDrawings(); return; }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const data = String(e.target.result || '');
+      const fileType = file.type === 'application/pdf' || /\.pdf$/i.test(file.name) ? 'pdf' : 'image';
+      designDrawings.push({
+        id: 'dw' + Date.now() + Math.random().toString(36).slice(2, 7),
+        name: file.name.replace(/\.[^.]+$/, ''),
+        drawingNo: '',
+        sys,
+        fileName: file.name, fileType: fileType, size: file.size,
+        uploadedAt: new Date().toISOString().slice(0, 10),
+        data: data
+      });
+      saveDesignDrawings();
+      queued -= 1;
+      if (!queued) showToast('已上传 ' + files.length + ' 个图纸文件', 'ok');
+    };
+    reader.onerror = function() { queued -= 1; showToast('「' + file.name + '」读取失败', 'error'); };
+    reader.readAsDataURL(file);
+  });
+}
+function deleteDesignDrawing(id) {
+  if (!canManageTubeData()) { showToast('当前权限为只读，不能删除图纸。', 'warn'); return; }
+  const drawing = designDrawings.find(d => d.id === id);
+  if (!drawing) return;
+  if (!confirm('确定删除图纸「' + (drawing.name || drawing.fileName) + '」？')) return;
+  designDrawings = designDrawings.filter(d => d.id !== id);
+  saveDesignDrawings();
+  mlog('delete', { record: { id: id, name: drawing.name }, source: 'manual' });
+}
+function drawingSurfaceLabel(sys) {
+  const rule = CODE_SYSTEMS.find(item => item.sys === sys);
+  return rule ? rule.sys + ' · ' + rule.label : (sys || '通用');
+}
+function renderDesignDrawings() {
+  const grid = document.getElementById('drawingsGrid');
+  if (!grid) return;
+  const filter = document.getElementById('drawingSysFilter');
+  if (filter && !filter.options.length) {
+    filter.innerHTML = '<option value="">全部受热面</option>' + CODE_SYSTEMS.map(item => '<option value="' + escapeHTML(item.sys) + '">' + escapeHTML(item.sys) + ' · ' + escapeHTML(item.label) + '</option>').join('');
+    filter.value = localStorage.getItem('boiler_drawings_filter') || '';
+  }
+  const sys = filter ? filter.value : '';
+  const list = designDrawingsForSys(sys).sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
+  grid.innerHTML = list.length ? list.map(d => {
+    const thumb = d.fileType === 'image'
+      ? '<img src="' + d.data + '" alt="' + escapeHTML(d.name) + '" style="width:100%; height:130px; object-fit:cover; border-radius:6px 6px 0 0; cursor:pointer;" onclick="openDrawingViewer(\'' + d.id + '\')">'
+      : '<div style="width:100%; height:130px; border-radius:6px 6px 0 0; display:flex; align-items:center; justify-content:center; background:var(--bg); cursor:pointer; font-size:44px;" onclick="openDrawingViewer(\'' + d.id + '\')">📄</div>';
+    return '<div class="card" style="margin:0; padding:0; overflow:hidden;">' +
+      thumb +
+      '<div style="padding:10px 12px;">' +
+      '<div style="font-weight:700; cursor:pointer;" onclick="openDrawingViewer(\'' + d.id + '\')">' + escapeHTML(d.name || d.fileName) + '</div>' +
+      '<div style="font-size:11px; color:var(--text-dim); margin:4px 0;">' + escapeHTML(drawingSurfaceLabel(d.sys)) + ' · ' + escapeHTML(d.drawingNo || '未填图号') + ' · ' + fmtDrawingSize(d.size) + ' · ' + escapeHTML(d.uploadedAt) + '</div>' +
+      '<div style="display:flex; gap:8px; margin-top:8px;">' +
+      '<button class="btn btn-outline" style="padding:3px 10px; font-size:11px;" onclick="openDrawingViewer(\'' + d.id + '\')">查看</button>' +
+      '<button class="btn btn-outline" style="padding:3px 10px; font-size:11px;" onclick="renameDesignDrawing(\'' + d.id + '\')">改名/图号</button>' +
+      '<button class="btn btn-outline" style="padding:3px 10px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteDesignDrawing(\'' + d.id + '\')">删除</button>' +
+      '</div></div></div>';
+  }).join('') : '<div style="color:var(--text-dim); padding:20px; text-align:center;">暂无图纸。点击上方「上传图纸」导入材料分界图/总图（图片或 PDF，如 148M211-0 高温过热器材料分界图）。</div>';
+}
+function openDrawingsForSys(sys) {
+  const filter = document.getElementById('drawingSysFilter');
+  if (filter && sys) { filter.value = sys; localStorage.setItem('boiler_drawings_filter', sys); }
+  switchView('drawings');
+  renderDesignDrawings();
+}
+function renameDesignDrawing(id) {
+  if (!canManageTubeData()) { showToast('当前权限为只读。', 'warn'); return; }
+  const drawing = designDrawings.find(d => d.id === id);
+  if (!drawing) return;
+  const name = prompt('图纸名称：', drawing.name || '');
+  if (name === null) return;
+  const drawingNo = prompt('图号（如 148M211-0）：', drawing.drawingNo || '');
+  if (drawingNo === null) return;
+  drawing.name = name.trim() || drawing.name;
+  drawing.drawingNo = drawingNo.trim();
+  saveDesignDrawings();
+}
+let drawingViewerUrl = '';
+function openDrawingViewer(id) {
+  const drawing = designDrawings.find(d => d.id === id);
+  if (!drawing) { showToast('未找到图纸文件（可能未随本机存储）。', 'warn'); return; }
+  if (drawingViewerUrl) { URL.revokeObjectURL(drawingViewerUrl); drawingViewerUrl = ''; }
+  const bin = atob(drawing.data.split(',')[1] || '');
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  const mime = (drawing.data.match(/^data:([^;]+);/) || [])[1] || 'application/octet-stream';
+  const blob = new Blob([bytes], { type: drawing.fileType === 'pdf' ? 'application/pdf' : mime });
+  drawingViewerUrl = URL.createObjectURL(blob);
+  const body = drawing.fileType === 'pdf'
+    ? '<iframe src="' + drawingViewerUrl + '" style="width:100%; height:72vh; border:0; border-radius:6px;" title="' + escapeHTML(drawing.name) + '"></iframe>'
+    : '<img src="' + drawingViewerUrl + '" style="width:100%; border-radius:6px;" alt="' + escapeHTML(drawing.name) + '">';
+  openDataEditModal(
+    '<div class="data-edit-panel" role="dialog" aria-modal="true" style="max-width:1100px; width:96vw;">' +
+    '<div class="data-edit-head">' +
+    '<h3 id="dataEditTitle">' + escapeHTML(drawing.name || drawing.fileName) + (drawing.drawingNo ? ' · ' + escapeHTML(drawing.drawingNo) : '') + '</h3>' +
+    '<button type="button" class="data-edit-close" onclick="closeDrawingViewer()" aria-label="关闭">×</button>' +
+    '</div>' +
+    '<p class="data-edit-sub">' + escapeHTML(drawingSurfaceLabel(drawing.sys)) + ' · ' + fmtDrawingSize(drawing.size) + '</p>' +
+    body +
+    '</div>');
+}
+function closeDrawingViewer() {
+  if (drawingViewerUrl) { URL.revokeObjectURL(drawingViewerUrl); drawingViewerUrl = ''; }
+  closeDataEditModal();
+}
+
 // ========== INIT ==========
 initNav();
 animateCounters();
@@ -4295,6 +4429,7 @@ renderHeaders();
 loadLifecycle();
 renderMatrix();
 renderDataManagerTables();
+renderDesignDrawings();
 updateLifecycleDropdown();
 populateAIThicknessTargets();
 loadLLMConfigToForm();
