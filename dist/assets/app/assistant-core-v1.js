@@ -15,8 +15,9 @@
   var VERSION = 'v1';
   var DEFAULT_UNITS = ['1', '2'];
 
-  /* 新编码规则：{机组}G-SYS-COMP-位置-Q/W流水号，示例 2G-SLB-WB-F000-R025-Q16 / 1G-DZRQ-GQ-4KJ-L065-Q001 / 1G-GGRQ-GQ-L002-F004-W01 */
-  var TUBE_CODE_SOURCE = '[12]G-(?:SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|EXIN|EXOUT|LHD|RSQ)-(?:[FBLR]000-[FBLR]\\d{3}|J\\d{1,2}-[A-Z]\\d{1,2}|[FBLR]\\d{3}-[FBLR]\\d{3}-[FBLRUD]\\d{3}|[FBLR]\\d{3}-[FBLRUD]\\d{3}|(?:[1-9]\\d?KJ-)?[FBLR]\\d{3}(?:-[FBLRUD]\\d{3})?)-[QW]\\d{1,3}';
+  /* 新编码规则：{机组}G-SYS-COMP-位置-Q/W，字母即部位身份（Q=管子、W=弯头）；
+     位置段唯一确定物理对象，历史流水数字仅兼容旧数据（解析后忽略）。 */
+  var TUBE_CODE_SOURCE = '[12]G-(?:SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|EXIN|EXOUT|LHD|RSQ)-(?:[FBLR]000-[FBLR]\\d{3}|J\\d{1,2}-[A-Z]\\d{1,2}|[FBLR]\\d{3}-[FBLR]\\d{3}-[FBLRUD]\\d{3}|[FBLR]\\d{3}-[FBLRUD]\\d{3}|(?:[1-9]\\d?KJ-)?[FBLR]\\d{3}(?:-[FBLRUD]\\d{3})?)-[QW]\\d{0,3}';
   var TUBE_CODE_PATTERN = new RegExp('^' + TUBE_CODE_SOURCE + '$');
 
   /* 受热面系统代码（与页面 CODE_SYSTEMS 一致） */
@@ -490,10 +491,10 @@
     if (!head) return null;
     var parsed = { unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], space: null, pos: '', posNum: null, pos2: '', pos2Num: null, corner: null, layer: '', nozzle: null, dir: '', tube: null, seq: null };
     var parts = head[4] ? head[4].split('-') : [];
-    /* 尾段 Q=直管部位、W=弯头部位；同编号 Q/W 是同一根管的两个部位 */
-    var tail = parts.length && /^[QW]\d{1,3}$/.test(parts[parts.length - 1]) ? parts.pop() : null;
+    /* 尾段 Q=直管、W=弯头；字母即身份，历史流水数字可选（兼容旧数据），解析后忽略 */
+    var tail = parts.length && /^[QW]\d{0,3}$/.test(parts[parts.length - 1]) ? parts.pop() : null;
     if (!tail) return null;
-    parsed.seq = Number(tail.slice(1));
+    parsed.seq = tail.length > 1 ? Number(tail.slice(1)) : null;
     parsed.partKind = tail[0];
     var POS_RE = /^([FBLR])(\d{3})$/;
     var TUBE_RE = /^(?:GGRQ|GZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UD])(\d{3})$/;
@@ -680,8 +681,7 @@
   var MATRIX_EXPAND_LIMIT = 30000;  /* 矩阵展开的编码数量上限，防止异常矩阵拖垮清洗 */
   var CODE_SUGGEST_MIN_SCORE = 0.82; /* 低于该相似度不给出建议，避免把合法新码误报成疑似错码 */
 
-  /* 台账矩阵 → 基础编码集合（流水号固定 Q001，按行内首选方位/方向展开）：2G-SLB-WB-F000-R025-Q001。
-     用于判断「这个编码在台账里是否存在」，以及给疑似错码找最近的真实编码。 */
+  /* 台账矩阵 → 基础编码集合（字母尾即身份，按行内首选方位/方向展开）：2G-SLB-WB-F000-R025-Q。 */
   function expandMatrixCodes(matrixRows, units) {
     var out = [];
     var seen = {};
@@ -699,7 +699,7 @@
           for (var c = row.corners[0]; c <= row.corners[1] && out.length < MATRIX_EXPAND_LIMIT; c += 1) {
             (row.layers || []).forEach(function (layer) {
               for (var n = row.nozzles[0]; n <= row.nozzles[1] && out.length < MATRIX_EXPAND_LIMIT; n += 1) {
-                var rsqCode = prefix + '-J' + c + '-' + layer + pad2(n) + '-Q001';
+                var rsqCode = prefix + '-J' + c + '-' + layer + pad2(n) + '-Q';
                 if (!seen[rsqCode]) { seen[rsqCode] = true; out.push(rsqCode); }
               }
             });
@@ -720,7 +720,7 @@
             for (var pj = 0; pj < pos2List.length && out.length < MATRIX_EXPAND_LIMIT; pj += 1) {
               for (var t = 1; t <= row.tMax && out.length < MATRIX_EXPAND_LIMIT; t += 1) {
                 var head = [spaceList[si], posList[pi], pos2List[pj]].filter(Boolean).join('-');
-                var code = prefix + '-' + [head, dir + String(t).padStart(3, '0')].filter(Boolean).join('-') + '-Q001';
+                var code = prefix + '-' + [head, dir + String(t).padStart(3, '0')].filter(Boolean).join('-') + '-Q';
                 if (!seen[code]) { seen[code] = true; out.push(code); }
               }
             }
@@ -748,10 +748,10 @@
       /* 前缀过滤：机组号或系统代码不同的候选直接跳过，也把计算量压下来 */
       if (targetParts.length >= 2 && candidateParts.length >= 2 &&
           (targetParts[0] !== candidateParts[0] || targetParts[1] !== candidateParts[1])) continue;
-      var targetTail = target.match(/-([QW])(\d{1,3})$/);
-      var candidateTail = candidate.match(/-([QW])(\d{1,3})$/);
+      var targetTail = target.match(/-([QW])(\d*)$/);
+      var candidateTail = candidate.match(/-([QW])(\d*)$/);
       if (targetTail && candidateTail && targetTail[1] !== candidateTail[1]) continue;
-      if (targetTail && candidateTail) candidate = candidate.replace(/-[QW]\d{1,3}$/, targetTail[0]);
+      if (targetTail && candidateTail) candidate = candidate.replace(/-[QW]\d*$/, targetTail[0]);
       if (candidate === target) continue;
       var score = stringSimilarity(targetKey, candidate.replace(/-/g, ''));
       if (!best || score > best.similarity) {
@@ -1322,13 +1322,13 @@
           if (retiredSamples.length < 5) retiredSamples.push(code);
         }
         /* 智能编码匹配：编码不在台账（已有记录 + 矩阵展开）时，找最相似的真实编码给建议。
-           新规则下更换产生的新管码是同位置新流水号（…-Q002），台账里已有同位置编码就不算笔误。 */
+           编码是位置身份，不带流水数字；同位置不同字母尾是不同部位，不能互相建议。 */
         var codeSuggestion = null;
         if (code && !retiredCodes[code] && ledger.list.length) {
           var baseCode = code.replace(/-R\d+$/i, '');
-          var baseNoSeq = baseCode.replace(/-[QW]\d{1,3}$/i, '');
+          var baseNoSeq = baseCode.replace(/-[QW]\d*$/i, '');
           var knownSamePosition = baseNoSeq && ledger.list.some(function (known) {
-            return String(known).replace(/-[QW]\d{1,3}$/i, '') === baseNoSeq;
+            return String(known).replace(/-[QW]\d*$/i, '') === baseNoSeq;
           });
           var fieldCode = validateTubeCode(code, matrixRows).fieldPosition;
           if (!ledger.set[baseCode] && !knownSamePosition && !fieldCode) codeSuggestion = suggestSimilarCode(baseCode, ledger.list);

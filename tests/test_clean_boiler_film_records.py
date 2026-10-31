@@ -61,7 +61,9 @@ class CleaningSemanticsTest(unittest.TestCase):
         for batch in clean.BATCH_META:
             records = [r for r in self.result.records if r.batch == batch]
             self.assertEqual([r.import_serial for r in records], list(range(1, len(records) + 1)))
-            self.assertEqual(len({r.code.rsplit('-', 1)[1] for r in records}), len(records))
+            self.assertEqual([r.import_serial for r in records], list(range(1, len(records) + 1)))
+            self.assertTrue(all(r.code == f"{r.location_key}-{r.part_kind}" for r in records),
+                            "编码必须是字母尾物理编码，不含流水数字")
             self.assertTrue(all(r.code.startswith(f"{clean.BATCH_META[batch]['unit']}G-") for r in records))
         self.assertEqual(hashlib.sha256(self.source.read_bytes()).hexdigest(), self.before)
 

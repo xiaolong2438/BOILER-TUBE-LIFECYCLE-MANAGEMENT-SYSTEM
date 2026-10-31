@@ -327,33 +327,35 @@ function normalizeCodeDirection(code) {
 }
 function normalizedTubeCode(value) {
   const code = String(value || '').trim().toUpperCase();
-  return normalizeCodeDirection(code)?.code || code;
+  const canonical = normalizeCodeDirection(code)?.code || code;
+  /* 位置段已唯一确定物理管/弯头；历史流水数字不代表部位，统一归一到字母尾。 */
+  return canonical.replace(/-([QW])\d{1,3}$/, '-$1');
 }
 function tubePositionKey(value) {
   const code = normalizedTubeCode(value);
   const parsed = parseTubeCode(code);
   if(!parsed || parsed.pos?.endsWith('000') && parsed.sys !== 'SLB') return code;
-  return code.replace(/-[QW]\d{1,3}$/, '');
-}
-function tubeVersionKey(value) {
-  const code = normalizedTubeCode(value);
-  const parsed = parseTubeCode(code);
-  return parsed ? `${tubePositionKey(code)}#${parsed.seq}` : code;
+  return code.replace(/-[QW]\d*$/, '');
 }
 function sameTubeMeasurement(a, b) {
   const pa = parseTubeCode(a), pb = parseTubeCode(b);
-  return normalizedTubeCode(a) === normalizedTubeCode(b) || Boolean(pa && pb && pa.partKind === pb.partKind && tubeVersionKey(a) === tubeVersionKey(b));
+  return normalizedTubeCode(a) === normalizedTubeCode(b) || Boolean(pa && pb && pa.partKind === pb.partKind && tubePositionKey(a) === tubePositionKey(b));
 }
 function isExactInspectionDate(value) {
   const text = String(value || '');
   return /^\d{4}-\d{2}-\d{2}$/.test(text) && Number.isFinite(new Date(text).getTime());
 }
+/* 编码即管位永久身份：全部历史都挂在同一编码下；更换边界之后才算当前这根管的证据。 */
 function tubeEvidenceEvents(code) {
   const position = tubePositionKey(code);
-  const local = userDB.events.filter(e => tubePositionKey(e.code) === position);
-  const replacements = userDB.replacements.filter(r => tubePositionKey(r.oldCode) === position || tubePositionKey(r.newCode) === position);
-  // 未建立更换边界时按位置汇总；有更换记录时只取明确属于该版本的证据。
-  return replacements.length ? local.filter(e => tubeVersionKey(e.code) === tubeVersionKey(code)) : local;
+  return userDB.events.filter(e => tubePositionKey(e.code) === position);
+}
+function currentTubeEvents(code) {
+  const position = tubePositionKey(code);
+  const installed = userDB.replacements
+    .filter(r => tubePositionKey(r.oldCode) === position || tubePositionKey(r.newCode) === position)
+    .map(r => String(r.date || '')).filter(Boolean).sort().pop();
+  return installed ? tubeEvidenceEvents(code).filter(e => String(e.date).localeCompare(installed) >= 0) : tubeEvidenceEvents(code);
 }
 function eventBoiler(record) {
   return normalizeBoiler(record?.boiler) || getBoilerFromCode(record?.code);
@@ -373,7 +375,7 @@ function syncReplacementBoilerFromCode() {
 }
 function addUserEvent() {
   const boiler = document.getElementById('dm-boiler').value;
-  let code = document.getElementById('dm-code').value.trim().toUpperCase();
+  let code = normalizedTubeCode(document.getElementById('dm-code').value.trim().toUpperCase());
   const spec = document.getElementById('dm-spec').value.trim();
   const material = document.getElementById('dm-material').value.trim();
   const thickness = document.getElementById('dm-thickness').value.trim();
@@ -394,8 +396,8 @@ function addUserEvent() {
 }
 function addReplacement() {
   const boiler = document.getElementById('dm-rep-boiler').value;
-  let oldCode = document.getElementById('dm-oldcode').value.trim().toUpperCase();
-  let newCode = document.getElementById('dm-newcode').value.trim().toUpperCase();
+  let oldCode = normalizedTubeCode(document.getElementById('dm-oldcode').value.trim().toUpperCase());
+  let newCode = normalizedTubeCode(document.getElementById('dm-newcode').value.trim().toUpperCase());
   const reason = document.getElementById('dm-reason').value.trim();
   const date = document.getElementById('dm-rep-date').value;
   if(!boiler || !oldCode || !newCode || !date) { showToast('请填写机组、旧管段编码、新管段编码和更换日期', 'warn'); return; }
@@ -489,7 +491,7 @@ function saveEventEdit(ts) {
   const target = userDB.events.find(e => Number(e.ts) === Number(ts));
   if(!target) { showToast('没有找到这条记录，可能已被删除。', 'warn'); closeDataEditModal(); return; }
   const boiler = document.getElementById('de-boiler').value;
-  const code = document.getElementById('de-code').value.trim().toUpperCase();
+  const code = normalizedTubeCode(document.getElementById('de-code').value.trim().toUpperCase());
   const spec = document.getElementById('de-spec').value.trim();
   const material = document.getElementById('de-material').value.trim();
   const thickness = document.getElementById('de-thickness').value.trim();
@@ -586,8 +588,8 @@ function saveReplacementEdit(ts) {
   const target = userDB.replacements.find(r => Number(r.ts) === Number(ts));
   if(!target) { showToast('没有找到这条更换记录，可能已被删除。', 'warn'); closeDataEditModal(); return; }
   const boiler = document.getElementById('dr-boiler').value;
-  const oldCode = document.getElementById('dr-oldcode').value.trim().toUpperCase();
-  const newCode = document.getElementById('dr-newcode').value.trim().toUpperCase();
+  const oldCode = normalizedTubeCode(document.getElementById('dr-oldcode').value.trim().toUpperCase());
+  const newCode = normalizedTubeCode(document.getElementById('dr-newcode').value.trim().toUpperCase());
   const reason = document.getElementById('dr-reason').value.trim();
   const date = document.getElementById('dr-rep-date').value;
   if(!boiler || !oldCode || !newCode || !date) { showToast('机组、旧管段编码、新管段编码和更换日期不能为空', 'warn'); return; }
@@ -671,17 +673,19 @@ function importLifecycleRows(rawRows, options = {}) {
     const hardness = hasNewColumns ? (cols[7] || '').trim() : '';
     const typeOrReason = (hasNewColumns ? cols[8] : cols[3] || '').trim();
     let relatedCode = (hasNewColumns ? cols[9] : cols[4] || '').trim().toUpperCase();
-    /* 方向感知归一：页面导入与 AI 助手同一口径，反方向编码按同一物理位置换算为规范方向 */
+    /* 位置编码即永久身份：历史流水数字一律归一到字母尾，跨年份记录自动聚合 */
     const canonicalCode = normalizeCodeDirection(code);
     if(canonicalCode) {
       stats.normalizationSamples.push(code + ' ≙ ' + canonicalCode.code);
       code = canonicalCode.code;
     }
+    code = code.replace(/-([QW])\d{1,3}$/, '-$1');
     const canonicalRelated = normalizeCodeDirection(relatedCode);
     if(canonicalRelated) {
       stats.normalizationSamples.push(relatedCode + ' ≙ ' + canonicalRelated.code);
       relatedCode = canonicalRelated.code;
     }
+    relatedCode = relatedCode.replace(/-([QW])\d{1,3}$/, '-$1');
     const desc = hasNewColumns ? ((cols[10] || '').trim()) : (cols[5] ? cols[5].trim() : '');
     const ts = nextTimestamp + i;
     const rowBoiler = boiler || getBoilerFromCode(code) || getBoilerFromCode(relatedCode);
@@ -875,6 +879,17 @@ function demoDataEnabled() {
   return !hasRealTubeData(); /* 自动：真实数据到位即隐藏演示 */
 }
 function systemLifecycleData() { return demoDataEnabled() ? LIFECYCLE_DATA : {}; }
+/* 样例数据键是历史写法（-Q001）；按物理身份匹配，新旧编码都能查到同一条。 */
+function findLifecycleEntry(code) {
+  const target = normalizedTubeCode(code);
+  if(!target) return null;
+  const data = systemLifecycleData();
+  if(data[target]) return data[target];
+  for(const [key, value] of Object.entries(data)) {
+    if(normalizedTubeCode(key) === target) return value;
+  }
+  return null;
+}
 function applyDemoDataToggle() {
   const btn = document.getElementById('demo-data-toggle');
   if(!btn) return;
@@ -1067,7 +1082,7 @@ function resolveWallThicknessWarning(target) {
   const code = typeof target === 'string' ? target : '';
   const inventory = code ? validateCodeAgainstMatrix(code) : null;
   const component = code ? matchComponentFromCode(code) : null;
-  const lifecycle = code ? systemLifecycleData()[code] : null;
+  const lifecycle = code ? findLifecycleEntry(code) : null;
   const meta = typeof target === 'string'
     ? { sys: getCodeSystem(code), zone: '', spec: [lifecycle?.spec, inventory?.row?.spec, component?.spec].filter(Boolean).join(' '), material: [lifecycle?.spec, inventory?.row?.mat, component?.mat].filter(Boolean).join(' ') }
     : target;
@@ -1135,7 +1150,7 @@ function renderGeneratorFields() {
       <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...row.fieldDirs, ...row.dirs] : row.dirs)}</select></div>
       <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? '现场F/B总数待核；U/D参考1~' : '1~'}${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? 999 : row.tMax}" value="1" /></div>`;
   }
-  html += `<div class="form-group"><label for="f-part-kind">检测部位</label><select id="f-part-kind"><option value="Q">Q · 管子</option><option value="W">W · 弯头</option></select></div><div class="form-group"><label>流水号 (同批次唯一)</label><input type="number" id="f-seq" min="1" max="999" value="1" /></div>`;
+  html += `<div class="form-group"><label for="f-part-kind">检测部位</label><select id="f-part-kind"><option value="Q">Q · 管子</option><option value="W">W · 弯头</option></select></div>`;
   box.innerHTML = html;
   box.querySelectorAll('select, input').forEach(el => el.addEventListener('input', genCode));
   if(compSelect) compSelect.value = comp;
@@ -1168,7 +1183,6 @@ function genCode() {
   const comp = compSelect ? compSelect.value : 'GQ';
   const val = id => document.getElementById(id)?.value || '';
   const num = id => Math.max(1, Number(val(id) || 1));
-  const seq = m0pad(num('f-seq'), 3);
   let body = '';
   if(sys === 'SLB' && comp === 'RSQ') {
     body = `J${val('f-corner')}-${val('f-layer')}${m0pad(num('f-nozzle'), 2)}`;
@@ -1183,7 +1197,7 @@ function genCode() {
     body = `${val('f-pos-letter')}${m0pad(num('f-pos-num'), 3)}-${val('f-dir')}${m0pad(num('f-tube'), 3)}`;
   }
   const partKind = val('f-part-kind') === 'W' ? 'W' : 'Q';
-  const code = `${b}-${sys}-${comp}-${body}-${partKind}${seq}`;
+  const code = `${b}-${sys}-${comp}-${body}-${partKind}`;
   out.innerHTML = code.split('-').map(seg => `<span class="code-segment">${escapeHTML(seg)}</span>`).join('-');
   const matched = validateCodeAgainstMatrix(code);
   const desc = document.getElementById('codeDesc');
@@ -1202,10 +1216,10 @@ function parseTubeCode(code) {
   if(!head) return null;
   const parsed = { raw, unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], pos: null, posNum: null, pos2: null, pos2Num: null, space: null, corner: null, layer: '', nozzle: null, dir: null, tube: null, seq: null };
   const parts = head[4] ? head[4].split('-') : [];
-  /* 尾段 Q=直管部位、W=弯头部位；同编号 Q/W 是同一根管的两个部位 */
-  const tail = parts.length && /^[QW]\d{1,3}$/.test(parts[parts.length - 1]) ? parts.pop() : null;
+  /* 尾段 Q=直管部位、W=弯头部位，字母即身份；历史流水数字可选（兼容旧数据），解析后忽略 */
+  const tail = parts.length && /^[QW]\d{0,3}$/.test(parts[parts.length - 1]) ? parts.pop() : null;
   if(!tail) return null;
-  parsed.seq = Number(tail.slice(1));
+  parsed.seq = tail.length > 1 ? Number(tail.slice(1)) : null;
   parsed.partKind = tail[0];
   const POS_RE = /^([FBLR])(\d{3})$/;
   const TUBE_RE = /^(?:GGRQ|GZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UD])(\d{3})$/;
@@ -1317,7 +1331,7 @@ function collectRetiredTubeCodes() {
   return retiredCodes;
 }
 function isRetiredTubeCode(code, retiredCodes = collectRetiredTubeCodes()) {
-  return retiredCodes.has(code) || [...retiredCodes].some(retired => sameTubeMeasurement(retired, code) || parseTubeCode(retired)?.partKind === 'Q' && tubeVersionKey(retired) === tubeVersionKey(code));
+  return retiredCodes.has(code) || retiredCodes.has(normalizedTubeCode(code));
 }
 const DASHBOARD_SURFACE_HEALTH = [
   { sys: 'SLB', name: '水冷壁', score: 88, unit1: 1, unit2: -1, meta: '磨损/腐蚀' },
@@ -1635,8 +1649,8 @@ function formatDashboardWarningsForPrompt() {
 }
 function extractThicknessData(code, options = {}) {
   const includeSystem = options.includeSystem !== false;
-  const timelineEvents = includeSystem ? (systemLifecycleData()[code]?.timeline || []).map(item => ({ code, type: item.t || '', date: item.date, desc: item.d || '', source: '系统寿命样例' })) : [];
-  const localEvents = userDB.events.filter(e => sameTubeMeasurement(e.code, code)).map(e => ({ ...e, source: '本地录入' }));
+  const timelineEvents = includeSystem ? (findLifecycleEntry(code)?.timeline || []).map(item => ({ code, type: item.t || '', date: item.date, desc: item.d || '', source: '系统寿命样例' })) : [];
+  const localEvents = currentTubeEvents(code).filter(e => sameTubeMeasurement(e.code, code)).map(e => ({ ...e, source: '本地录入' }));
   const data = [];
   [...timelineEvents, ...localEvents]
     .filter(e => sameTubeMeasurement(e.code, code) && isExactInspectionDate(e.date) && (positiveThickness(e.thickness) !== null || String(e.type).includes('测厚') || String(e.desc).includes('壁厚') || String(e.desc).includes('减薄')))
@@ -1719,7 +1733,7 @@ function getTubeProfileData(rawCode) {
   if(!code) return null;
   const localEvents = tubeEvidenceEvents(code)
     .sort((a,b) => String(a.date).localeCompare(String(b.date)));
-  let d = systemLifecycleData()[code];
+  let d = findLifecycleEntry(code);
   let source = d ? 'system' : '';
   let badge = d ? 'badge-sh' : 'badge-ww';
   if(!d && localEvents.length > 0) {
@@ -2528,7 +2542,7 @@ function matrixExpandCodes(m, unit) {
     for(let c = m.corners[0]; c <= m.corners[1]; c += 1) {
       for(const layer of m.layers) {
         for(let n = m.nozzles[0]; n <= m.nozzles[1]; n += 1) {
-          out.push({ code: `${prefix}-J${c}-${layer}${pad(n, 2)}-Q001`, loc: `${c}号角 · ${layer}层第${n}喷口` });
+          out.push({ code: `${prefix}-J${c}-${layer}${pad(n, 2)}-Q`, loc: `${c}号角 · ${layer}层第${n}喷口` });
         }
       }
     }
@@ -2549,7 +2563,7 @@ function matrixExpandCodes(m, unit) {
             p2 ? `第${parseInt(p2.slice(1), 10)}小屏` : '',
             `${dir}${pad(t, 3)}`
           ].filter(Boolean);
-          out.push({ code: `${prefix}-${[head, `${dir}${pad(t, 3)}`].filter(Boolean).join('-')}-Q001`, loc: locParts.join(' · ') });
+          out.push({ code: `${prefix}-${[head, `${dir}${pad(t, 3)}`].filter(Boolean).join('-')}-Q`, loc: locParts.join(' · ') });
         }
       }
     }
@@ -3481,7 +3495,7 @@ function collectAIThicknessTargets() {
   return codes
     .map(code => {
       const thicknessData = extractThicknessData(code, { includeSystem: false });
-      const meta = systemLifecycleData()[code] || {};
+      const meta = findLifecycleEntry(code) || {};
       const compInfo = matchComponentFromCode(code);
       const label = meta.name || compInfo?.name || '本地录入管段';
       if(thicknessData.length >= 1) return { code, label, points: thicknessData.length, latest: thicknessData[thicknessData.length - 1] }; /* 单测点也入列：走行业先验速率预估 */
@@ -3536,7 +3550,7 @@ function resolveMaterialTheoryThickness(code, pipeType) {
   code = String(code || '').trim().toUpperCase();
   const inventory = validateCodeAgainstMatrix(code)?.row;
   const component = matchComponentFromCode(code);
-  const lifecycle = systemLifecycleData()[code];
+  const lifecycle = findLifecycleEntry(code);
   const events = userDB.events.filter(event => sameTubeMeasurement(event.code, code))
     .sort((a,b) => String(b.date).localeCompare(String(a.date)));
   const localSpec = events.find(event => event.spec)?.spec;
@@ -3597,7 +3611,7 @@ function assessPredictionQuality(history, outliers = 0) {
   return { points: history.length, span, score, reliable: history.length >= 3 && span >= 1 && score >= 55 };
 }
 function collectAICompositeSignals(code, history = []) {
-  const events = tubeEvidenceEvents(code)
+  const events = currentTubeEvents(code)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const hardnessHistory = events
     .filter(event => sameTubeMeasurement(event.code, code) && isExactInspectionDate(event.date))

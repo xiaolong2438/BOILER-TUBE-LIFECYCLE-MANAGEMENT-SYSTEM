@@ -133,17 +133,17 @@ check("headerMap（模型映射）参与清洗：未识别列被映射后可对�
 
 /* ---------------- 3. 智能编码匹配 ---------------- */
 
-check("expandMatrixCodes：矩阵展开为基础编码（机组×排×管，seq=Q001）", () => {
+check("expandMatrixCodes：矩阵展开为基础编码（机组×排×管，字母尾Q）", () => {
   const codes = Core.expandMatrixCodes([{ sys: "GGRQ", comp: "GQ", posLetters: ["L"], pMax: 2, dirs: ["U"], tMax: 2 }], ["1", "2"]);
   assert.deepEqual(codes, [
-    "1G-GGRQ-GQ-L001-U001-Q001",
-    "1G-GGRQ-GQ-L001-U002-Q001",
-    "1G-GGRQ-GQ-L002-U001-Q001",
-    "1G-GGRQ-GQ-L002-U002-Q001",
-    "2G-GGRQ-GQ-L001-U001-Q001",
-    "2G-GGRQ-GQ-L001-U002-Q001",
-    "2G-GGRQ-GQ-L002-U001-Q001",
-    "2G-GGRQ-GQ-L002-U002-Q001"
+    "1G-GGRQ-GQ-L001-U001-Q",
+    "1G-GGRQ-GQ-L001-U002-Q",
+    "1G-GGRQ-GQ-L002-U001-Q",
+    "1G-GGRQ-GQ-L002-U002-Q",
+    "2G-GGRQ-GQ-L001-U001-Q",
+    "2G-GGRQ-GQ-L001-U002-Q",
+    "2G-GGRQ-GQ-L002-U001-Q",
+    "2G-GGRQ-GQ-L002-U002-Q"
   ]);
 });
 

@@ -33,7 +33,7 @@ import openpyxl
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
-RULE_VERSION = "film-records-conservative-v2"
+RULE_VERSION = "film-records-physical-codes-v3"
 BATCH_META = {
     "2026年1号机C修": {"year": 2026, "unit": 1},
     "2022年1号机A修": {"year": 2022, "unit": 1},
@@ -49,7 +49,7 @@ IMPORT_HEADERS = [
 CODE_RE = re.compile(
     r"^(?P<unit>[12])G-(?P<sys>GGRQ|GZRQ)-GQ-"
     r"(?P<screen>[LR]\d{3})-(?P<tube>[FBUD]\d{3})-"
-    r"(?P<kind>[QW])(?P<serial>\d{1,3})$"
+    r"(?P<kind>[QW])(?P<serial>\d{1,3})?$"
 )
 SUMMARY_RE = re.compile(
     r"(?P<start>\d+)\s*-\s*(?P<end>\d+)屏的?炉(?P<direction>前|后)"
@@ -389,7 +389,8 @@ def clean_source(path: Path | str) -> CleanResult:
             if serials[record.batch] > 999:
                 raise ValueError("批次流水号超过三位容量，必须先升级编码规则")
             record.import_serial = serials[record.batch]
-            record.code = f"{record.location_key}-{record.part_kind}{record.import_serial:03d}"
+            # 位置段唯一确定物理管/弯头；编码不带流水数字，跨批次同码=同部位历史复检。
+            record.code = f"{record.location_key}-{record.part_kind}"
     result = CleanResult(str(source), digest(source_bytes), source_rules, candidates, source_rows, issues)
     errors = validate(result)
     if errors:
@@ -426,8 +427,8 @@ def validate(result: CleanResult) -> list[str]:
                 errors.append(f"{r.source_id}规格并非源行单值")
             if r.disposition == "导入":
                 match = CODE_RE.fullmatch(r.code)
-                if not match or match["unit"] != str(meta["unit"]) or int(match["serial"]) != r.import_serial:
-                    errors.append(f"{r.source_id}编码与批次流水不一致")
+                if not match or match["unit"] != str(meta["unit"]) or match["serial"] is not None:
+                    errors.append(f"{r.source_id}编码必须是字母尾物理编码")
             else:
                 prior = by_id.get(r.duplicate_of)
                 if r.code or r.import_serial is not None or not prior or prior.duplicate_key() != r.duplicate_key():
@@ -539,7 +540,9 @@ def release_notes(result: CleanResult) -> str:
         f"全量候选{len(result.candidates)}，隔离重复{len(result.isolated)}，正式导入{len(result.records)}。\n{details}\n"
         f"汇总展开{len(result.supplement)}条已经包含在全部批次及对应单批次文件，不要重复叠加。\n\n"
         "二、导入边界\n"
-        "本包重编了批次流水号。不得与旧版373条或旧91条直接叠加；已导入旧包时必须先备份，"
+        "编码为位置物理身份，不带流水数字（例 1G-GGRQ-GQ-L002-F004-W）；批次流水号只保留在溯源列。\n"
+        "同一根管不同年份的检查共用同一编码，历史按日期聚合检索；跨批次同码是正常复检，不是重复。\n"
+        "不得与旧版373条或旧91条直接叠加；已导入旧包时必须先备份，"
         "由主系统按来源逐条迁移/替换并核验，不能只依赖编码查重。\n"
         "优先选择本包导入_全部批次.xlsx一次导入；单批次文件是其分片，不是额外数据。\n"
         "增量_2026年1号机C修_汇总展开文件仅用于本规则版本同源包的分阶段导入/追溯；"
@@ -549,8 +552,8 @@ def release_notes(result: CleanResult) -> str:
         "按物理管身份关联W/Q部位与跨批次事件，不得把本批次流水号当永久管ID。\n\n"
         "三、已落实的规则\n"
         "机组：2026=1号机C修、2022=1号机A修、2021=2号机A修；A侧R、B侧L。\n"
-        "按源行及行内清单顺序展开，隔离项不占正式流水；每批次流水W001起连续且唯一。"
-        "source_order是含隔离项的候选顺序，import_serial是正式事件流水；两者均不代表物理弯头编号。\n"
+        "按源行及行内清单顺序展开，隔离项不占流水；批次流水号（溯源列）按各批次源行与行内展开顺序连续且唯一。"
+        "source_order是含隔离项的候选顺序，import_serial是正式事件流水；两者均不代表物理弯头编号，且不进入编码。\n"
         "源2026第38行枚举1–32屏F002/F003共64项；5个原异常位置为L013-F002、L005-F002、"
         "L004-F003、L010-F002、L025-F002，仅写“发现异物，割开检查为氧化皮”，不新增不合格判定。"
         "其余59项按原文其余合格；全部64项保留本行Φ54×7.5/304H，未擅改Φ51×8。\n"
@@ -579,7 +582,7 @@ def write_audit(path: Path, result: CleanResult, style: Any) -> None:
     workbook.remove(workbook.active)
     notes = [["规则版本", RULE_VERSION], ["源文件", result.source_path], ["源SHA256", result.source_sha256],
              ["发布边界", "全部批次包含汇总展开91项；本版不与旧373/91直接叠加；年精度须目标系统支持"],
-             ["物理身份", "流水号不是物理编号；F/B几何、独立物理管总数未确认；W/Q属于同管不同部位"],
+             ["物理身份", "编码=位置+Q/W字母尾，永久唯一；流水号只在溯源列；F/B几何、独立物理管总数未确认"],
              ["日期", YEAR_NOTE], ["原编号说明", result.source_rules]]
     append_table(workbook, "发布说明", ["项目", "内容"], notes, style)
     stats = result.statistics()
@@ -709,7 +712,7 @@ def publish(result: CleanResult, outdir: Path | str, style_root: Path | None = N
                     "source": {"path": result.source_path, "sha256": result.source_sha256, "read_only": True},
                     "cleaner_sha256": cleaner_hash, "style_base_sha256": style_hash,
                     "semantic_sha256": semantic_hash, "artifacts": artifacts,
-                    "import_warning": "新编号不得与旧版373/91叠加；463包含91；年精度须目标系统支持；未证明物理身份及生命周期可用",
+                    "import_warning": "字母尾物理编码；不得与旧版373/91叠加；463包含91；年精度须目标系统支持；未证明物理身份及生命周期可用",
                     **payload}
         (staging / "manifest.json").write_bytes(json_bytes(manifest))
         verify_existing_package(staging, package_id)

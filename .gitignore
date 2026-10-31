@@ -12,3 +12,6 @@ __pycache__/
 /data-cleaning/archive/
 /data-cleaning/.*.staging-*/
 ~$*.xlsx
+
+# v3 物理编码包发布到 verified；此目录是 WPS 占用期间的临时发布位
+/data-cleaning/verified-physical/
