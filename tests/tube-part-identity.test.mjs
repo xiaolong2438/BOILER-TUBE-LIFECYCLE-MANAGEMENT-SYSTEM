@@ -44,6 +44,8 @@ for (const name of [
   'assessPredictionQuality', 'collectAICompositeSignals', 'isRetiredTubeCode',
   'getBoilerFromCode', 'normalizeBoiler', 'eventBoiler', 'importLifecycleRows'
 ]) vm.runInContext(functionSource(name), ctx);
+// 12回路分段基准 + 档案页规格材质摘要（getTubeProfileData 依赖）
+vm.runInContext(app.slice(app.indexOf('const GGRQ_LOOP_BASELINE'), app.indexOf('function renderGGRQLoopBaseline')), ctx);
 
 const q = '1G-GGRQ-GQ-L002-F004-Q';
 const w = '1G-GGRQ-GQ-L002-F004-W';
@@ -75,6 +77,7 @@ ctx.userDB.events = [event(q, '2022-05-01', '测厚', { thickness: '7.2' }), eve
 const profile = ctx.getTubeProfileData(legacyW);
 assert.equal(profile.localEvents.length, 2, '历史数字尾与字母尾是同一部位');
 assert.equal(profile.data.status, 'warn', '同管异常观察应提升档案状态');
+assert.ok(profile.data.spec.startsWith('回路4 底弯段 Φ51×8 SA-213TP304H'), '档案页规格材质按12回路基准显示确定值，不再整库罗列');
 assert.equal(ctx.collectAICompositeSignals(q).inspectionEvents.length, 2);
 assert.equal(ctx.getGeneratedTubeLedgerRows('1').filter(row => ctx.tubePositionKey(row.code) === ctx.tubePositionKey(q)).length, 1);
 assert.equal(ctx.buildMaintenanceOverdueRows(2026, '1').find(row => ctx.tubePositionKey(row.code) === ctx.tubePositionKey(q)).hasRecord, true);

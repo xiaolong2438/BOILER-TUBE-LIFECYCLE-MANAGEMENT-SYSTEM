@@ -101,4 +101,20 @@ for (const m of pyLoops) {
   assert.deepEqual(jsLoop.rearSegs, segsOf(m[5]), `回路${m[1]} 后腿分段两端一致`);
 }
 
+// 档案页「规格材质」取值：tubeSpecMaterialSummary（与基线同上下文，parseTubeCode 需先注入）
+vm.runInContext(js.slice(js.indexOf("function parseTubeCode"), js.indexOf("function isValidTubeCodeStructure")), baselineCtx);
+assert.match(js, /const specSummary = tubeSpecMaterialSummary\(code, localEvents\);/, "档案页本地录入分支应接入规格材质摘要");
+const summaryOf = (code, events) => vm.runInContext(
+  `tubeSpecMaterialSummary(${JSON.stringify(code)}, ${JSON.stringify(events)})`, baselineCtx);
+const f002Summary = summaryOf('1G-GGRQ-GQ-L002-F002-W', [{ spec: 'Φ51×8', material: 'SA-213TP304H' }]);
+assert.ok(f002Summary.startsWith('回路2 底弯段 Φ51×8 SA-213TP304H'), 'W记录按回路基准显示确定值');
+assert.ok(f002Summary.includes('全回路') && f002Summary.includes('【底弯】'), '附整个回路分段链便于核对');
+assert.ok(!f002Summary.includes('检测记录'), '记录值与基准一致时不重复列出');
+const f005Summary = summaryOf('1G-GGRQ-GQ-L005-F005-W', [{ spec: 'Φ51×9', material: 'SA-213T91' }]);
+assert.ok(f005Summary.startsWith('回路5 底弯段 Φ51×8 SA-213T91；检测记录：Φ51×9 SA-213T91'), '记录与基准不一致时并列展示待核');
+assert.equal(summaryOf('1G-GGRQ-GQ-L002-F002-Q', [{ spec: 'Φ51×9', material: 'SA-213T91' }]), 'Φ51×9 SA-213T91', 'Q记录用检测记录自带值');
+assert.equal(summaryOf('1G-GGRQ-GQ-L002-F002-Q', []), '', '无记录无基准返回空串，调用方退回材料库分项兜底');
+assert.ok(summaryOf('1G-GGRQ-GQ-L001-B001-W', []).startsWith('回路1 底弯段 Φ54×7.5 SA-213TP347H'), 'B方向按确认镜像换算后取回路基准');
+assert.equal(summaryOf('1G-GZRQ-GQ-L001-F001-W', [{ spec: 'Φ60×4', material: 'SA-213TP304H' }]), 'Φ60×4 SA-213TP304H', '高再无回路基准，用检测记录值');
+
 console.log("ok - design drawings module: nav/view/upload/viewer/delete/linkage with permission gating and KV sync + 12-loop segment baseline");
