@@ -33,13 +33,16 @@ import openpyxl
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
-RULE_VERSION = "film-records-physical-codes-v6"
+RULE_VERSION = "film-records-physical-codes-v7"
 # 用户确认（2026-10-31）：12CrMoVG实为12Cr1MoVG；材质写法统一全称；检测月份见BATCH_META；
 # 源2026第32行“第24屏”实为第27屏。
-MATERIAL_NAME_MAP = {"304H": "SA-213TP304H", "TP347H": "SA-213TP347H", "12CRMOVG": "12Cr1MoVG"}
+MATERIAL_NAME_MAP = {"304H": "SA-213TP304H", "TP347H": "SA-213TP347H",
+                     "12CRMOVG": "12Cr1MoVG", "T91": "SA-213T91"}
 SOURCE_ROW_CORRECTIONS = {
     ("2026年1号机C修", 32): {"replace": ("L024", "L027"),
                              "reason": "用户确认源表第32行“第24屏”实为第27屏（原表笔误）"},
+    ("2026年1号机C修", 38): {"spec": "Φ51×8",
+                             "reason": "图纸148M211-0（高温过热器材料分界图）确认SA-213TP304H规格为Φ51×8，源表Φ54×7.5为笔误"},
 }
 # 用户确认（2026-10-31）：2022/2021的12/7弯头区带按炉前至炉后计数，对应F001–F012/F001–F007；
 # 备注中“炉后往炉前数”为方向笔误（与2026年24弯头区带在前12根逐位互证）。
@@ -389,8 +392,11 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
             notes.append("材质区带对应未确认，不按清单流水推断")
         if mirror_note:
             notes.append(mirror_note)
-        if summary and codes and spec == "Φ54×7.5" and material == "304H":
-            notes.append("规格/牌号按本源行保留；材质304H与区带映射一致，Φ54×7.5与其他行配对(304H↔Φ51×8)不一致，需材料专业确认")
+        row_correction = SOURCE_ROW_CORRECTIONS.get((batch, row_num))
+        if row_correction and "spec" in row_correction:
+            spec = row_correction["spec"]
+            spec_note = row_correction["reason"]
+            notes.append("规格按图纸148M211-0（高温过热器材料分界图）确认为Φ51×8；源表Φ54×7.5为笔误")
         records.append(Record(
             batch=batch, year=BATCH_META[batch]["year"], unit=BATCH_META[batch]["unit"],
             source_row=row_num, source_seq=seq, item_order=i, source_order=prior_count + i,
@@ -508,7 +514,7 @@ def validate(result: CleanResult) -> list[str]:
                 errors.append(f"{r.source_id}日期精度丢失")
             if r.material and r.material not in r.material_candidates:
                 errors.append(f"{r.source_id}材质不在源行候选内")
-            if r.spec and r.spec not in r.spec_candidates:
+            if r.spec and r.spec not in r.spec_candidates and not r.spec_basis_note:
                 errors.append(f"{r.source_id}规格不在源行候选内")
             if r.material and len(r.material_candidates) > 1 and not r.material_basis_note:
                 errors.append(f"{r.source_id}多值材质行赋值必须有映射依据")
@@ -642,21 +648,18 @@ def release_notes(result: CleanResult) -> str:
         "三、已落实的规则\n"
         "机组：2026=1号机C修、2022=1号机A修、2021=2号机A修；A侧R、B侧L。\n"
         "源2026第32行“第24屏”经用户确认实为第27屏，已按L027导入（第29行L024保留）。\n"
-        "材质写法统一全称（SA-213TP304H/SA-213TP347H）；12CrMoVG经用户确认实为12Cr1MoVG。\n"
+        "材质写法统一全称（SA-213TP304H/SA-213TP347H/SA-213T91）；12CrMoVG经用户确认实为12Cr1MoVG。\n"
         "按源行及行内清单顺序展开，隔离项不占流水；批次流水号（溯源列）按各批次源行与行内展开顺序连续且唯一。"
         "source_order是含隔离项的候选顺序，import_serial是正式事件流水；两者均不代表物理弯头编号，且不进入编码。\n"
         "源2026第38行枚举1–32屏F002/F003共64项；5个原异常位置为L013-F002、L005-F002、"
         "L004-F003、L010-F002、L025-F002，仅写“发现异物，割开检查为氧化皮”，不新增不合格判定。"
-        "其余59项按原文其余合格；全部64项保留本行Φ54×7.5/304H，未擅改Φ51×8。\n"
+        "其余59项按原文其余合格；64项规格经图纸148M211-0确认为Φ51×8（源表Φ54×7.5为笔误，已更正）。\n"
         "源2026第39行展开32项，结果、Φ54×7.5和TP347H均来自本行；按确认几何编码落F024（B001≙F024）。"
         "只排除同批本汇总的5异常，不因其他年度检查而删除本年度事件。\n\n"
         "四、仍需确认，未冒充事实\n"
-        "材质规格已全部按区带映射填入（2026第4/5行32条按每屏24根，2022/2021共304条按前12/前7根），"
-        "映射依据逐条记录在材质/规格依据列。\n"
-        "实际检测“日”、第38行规格疑点（Φ54×7.5与304H配对）均需原始凭据确认。\n"
-        "高过每屏24根、两组镜像（F↔B、L↔R）、前12/前7根区带方向均为用户确认口径："
-        "备注“炉后往炉前数”按方向笔误处理，材质按炉前起算区带+管位填入。\n"
-        "位置/方向未知时依规则使用000/U或隔离待核，不猜成第1根或第27屏。\n\n"
+        "材质规格已全部按区带映射填入并经图纸148M211-0核实（2026第4/5行32条按每屏24根、"
+        "第38行64项规格Φ51×8，2022/2021共304条按前12/前7根），映射依据逐条记录在材质/规格依据列。\n"
+        "仅实际检测“日”未提供（月份已确认），取得后可替换提升分析精度。\n"
         "五、追溯和验证\n"
         "manifest.json包含源文件/清洗器SHA256、规则版本、每条来源映射、问题清单、产物SHA256。"
         "审计工作簿保留全464个来源候选（当前附件），隔离表不可导入。\n"

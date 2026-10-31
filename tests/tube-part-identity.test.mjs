@@ -120,7 +120,7 @@ function resolvePackageDir() {
   for (const name of ['verified', 'verified-physical']) {
     try {
       const manifest = JSON.parse(readFileSync(new URL(`../data-cleaning/${name}/manifest.json`, import.meta.url), 'utf8'));
-      if (manifest.rule_version === 'film-records-physical-codes-v6') return `../data-cleaning/${name}`;
+      if (manifest.rule_version === 'film-records-physical-codes-v7') return `../data-cleaning/${name}`;
     } catch { /* 目录未发布，尝试下一个 */ }
   }
   throw new Error('找不到字母尾物理编码规则的数据包');
@@ -161,6 +161,9 @@ const l027 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L027-F001-W');
 assert.equal(l027.result_nature ?? '合格', '合格');
 assert.ok(l027, '用户确认的第27屏已按L027导入');
 assert.equal(ctx.userDB.events.filter(e => e.code === '1G-GGRQ-GQ-L024-F001-W').length, 1, '第29行L024保留，不重复');
+const row38 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L013-F002-W');
+assert.equal(row38.spec, 'Φ51×8', '图纸148M211-0确认304H规格为Φ51×8');
+assert.equal(row38.material, 'SA-213TP304H');
 const f004 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L002-F004-W');
 assert.equal(f004.material, 'SA-213TP304H', '区带映射：F004=炉后第21弯头→304H');
 assert.equal(f004.spec, 'Φ51×8');
