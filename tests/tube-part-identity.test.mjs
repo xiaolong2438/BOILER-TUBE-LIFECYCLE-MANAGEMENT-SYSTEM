@@ -120,7 +120,7 @@ function resolvePackageDir() {
   for (const name of ['verified', 'verified-physical']) {
     try {
       const manifest = JSON.parse(readFileSync(new URL(`../data-cleaning/${name}/manifest.json`, import.meta.url), 'utf8'));
-      if (manifest.rule_version === 'film-records-physical-codes-v4') return `../data-cleaning/${name}`;
+      if (manifest.rule_version === 'film-records-physical-codes-v5') return `../data-cleaning/${name}`;
     } catch { /* 目录未发布，尝试下一个 */ }
   }
   throw new Error('找不到字母尾物理编码规则的数据包');
@@ -159,6 +159,13 @@ assert.equal(ctx.userDB.events.filter(e => e.code.includes('-B0')).length, 0, '�
 const f004 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L002-F004-W');
 assert.equal(f004.material, 'SA-213TP304H', '区带映射：F004=炉后第21弯头→304H');
 assert.equal(f004.spec, 'Φ51×8');
+const g2022 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L001-F001-W');
+assert.equal(g2022.material, 'SA-213TP347H', '2022前12根区带：F001→TP347H');
+assert.equal(g2022.spec, 'Φ54×7.5');
+const z2021 = ctx.userDB.events.find(e => e.code === '2G-GZRQ-GQ-L001-F001-W');
+assert.equal(z2021.material, 'SA-213TP304H', '2021高再前7根区带：F001→TP304H');
+assert.equal(z2021.spec, 'Φ60×4');
+assert.equal(ctx.userDB.events.every(e => e.material), true, '确认区带后材质无留空');
 assert.equal(f004.material.split('-').pop() !== undefined && ['SA-213TP347H','SA-213TP304H','T91','12CrMoVG'].includes(f004.material), true);
 assert.ok(ctx.userDB.events.every(e => /^\d{4}$/.test(e.date)));
 assert.equal(ctx.userDB.events.filter(e => e.inspectionResult === '发现异物，割开检查为氧化皮').length, 5);

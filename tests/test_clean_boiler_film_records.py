@@ -76,7 +76,9 @@ class CleaningSemanticsTest(unittest.TestCase):
         self.assertFalse(any('L027-' in r.code for r in self.result.records))
         self.assertIn('L024-F001', self.result.isolated[0].location_key)
         reheater = [r for r in self.result.records if r.system == '高温再热器']
-        self.assertTrue(all(r.spec == 'Φ60×4' and r.material == '' for r in reheater))
+        self.assertTrue(all(r.spec == 'Φ60×4' and r.material == 'T91' for r in reheater),
+                        '前7根区带：F002→T91（用户确认炉前起算）')
+        self.assertTrue(all(r.material_basis_note for r in reheater), '区带映射必须留依据')
         self.assertTrue(all('-L001-F002-' in r.code for r in reheater))
 
     def test_summary_preserves_source_spec_and_anomaly(self):

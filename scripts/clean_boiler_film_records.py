@@ -33,7 +33,21 @@ import openpyxl
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
-RULE_VERSION = "film-records-physical-codes-v4"
+RULE_VERSION = "film-records-physical-codes-v5"
+# 用户确认（2026-10-31）：2022/2021的12/7弯头区带按炉前至炉后计数，对应F001–F012/F001–F007；
+# 备注中“炉后往炉前数”为方向笔误（与2026年24弯头区带在前12根逐位互证）。
+GGRQ_BAND_BY_FRONT = {
+    1: "TP347H", 12: "T91",
+    **{k: "304H" for k in (2, 3, 4)},
+    **{k: "T91" for k in (5, 6, 7)},
+    **{k: "12CrMoVG" for k in (8, 9, 10, 11)},
+}
+GZRQ_BAND_BY_FRONT = {
+    1: "TP304H",
+    **{k: "T91" for k in (2, 3, 4)},
+    **{k: "12CrMoVG" for k in (5, 6, 7)},
+}
+FRONT_BAND_BATCHES = ("2022年1号机A修", "2021年2号机A修")
 # 用户确认（2026-10-31）：高过每屏24根，F001–F024 ↔ B024–B001；L001–L032 ↔ R032–R001。
 GGRQ_TUBES_PER_SCREEN = 24
 # 源2026第4/5行备注“炉后往炉前数”的弯头材质区带（尾段数字是清单流水，材质只按管位算）。
@@ -320,13 +334,16 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
                 "notes": notes,
             })
     records = []
-    band_applies = (batch == "2026年1号机C修" and system == "高温过热器"
-                    and BAND_MARKER in remark and len(materials) == 4 and len(specs) >= 3)
+    rear_band_applies = (batch == "2026年1号机C修" and system == "高温过热器"
+                         and BAND_MARKER in remark and len(materials) == 4 and len(specs) >= 3)
+    front_band = None
+    if batch in FRONT_BAND_BATCHES and "炉后往炉前数" in remark:
+        front_band = GGRQ_BAND_BY_FRONT if system == "高温过热器" else GZRQ_BAND_BY_FRONT
     for i, atom in enumerate(atoms, 1):
         notes = list(atom["notes"])
         material_note = ""
         spec_note = ""
-        if band_applies and atom["kind"] == "W":
+        if rear_band_applies and atom["kind"] == "W":
             match = re.fullmatch(r".*-F(\d{3})", atom["location"])
             leg = int(match[1]) if match else 0
             shorthand = GGRQ_BAND_BY_REAR.get(GGRQ_TUBES_PER_SCREEN + 1 - leg) if leg else None
@@ -337,8 +354,20 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
                 material_note = "按用户确认每屏24根与备注弯头区带映射（炉后计数↔F管位）"
                 spec_note = "按区带材质与源行规格-材质配对"
                 notes.append(f"材质按管位区带映射：F{leg:03d}=炉后第{GGRQ_TUBES_PER_SCREEN + 1 - leg}弯头→{shorthand}")
-        if len(materials) > 1 and not band_applies:
-            notes.append("备注弯头区带与24根几何的对应仅2026高过已确认；本行材质不按清单流水推断")
+        if front_band and atom["kind"] == "W":
+            match = re.fullmatch(r".*-F(\d{3})", atom["location"])
+            leg = int(match[1]) if match else 0
+            shorthand = front_band.get(leg)
+            full = next((c for c in materials if shorthand and shorthand.upper() in c.upper()), "") if shorthand else ""
+            if full:
+                material = full
+                if len(specs) > 1:
+                    spec = specs[min(materials.index(full), len(specs) - 1)]
+                    spec_note = "按区带材质与源行规格-材质配对"
+                material_note = "按用户确认F001起为炉前至炉后第1根与备注区带映射（备注“炉后往炉前数”为方向笔误）"
+                notes.append(f"材质按管位区带映射：F{leg:03d}=第{leg}弯头→{shorthand}")
+        if len(materials) > 1 and not material_note:
+            notes.append("材质区带对应未确认，不按清单流水推断")
         if mirror_note:
             notes.append(mirror_note)
         if summary and codes and spec == "Φ54×7.5" and material == "304H":
@@ -598,15 +627,15 @@ def release_notes(result: CleanResult) -> str:
         "源2026第38行枚举1–32屏F002/F003共64项；5个原异常位置为L013-F002、L005-F002、"
         "L004-F003、L010-F002、L025-F002，仅写“发现异物，割开检查为氧化皮”，不新增不合格判定。"
         "其余59项按原文其余合格；全部64项保留本行Φ54×7.5/304H，未擅改Φ51×8。\n"
-        "源2026第39行展开32项B001，结果、Φ54×7.5和TP347H均来自本行。只排除同批本汇总的5异常，"
-        "不因其他年度检查而删除本年度事件。\n\n"
+        "源2026第39行展开32项，结果、Φ54×7.5和TP347H均来自本行；按确认几何编码落F024（B001≙F024）。"
+        "只排除同批本汇总的5异常，不因其他年度检查而删除本年度事件。\n\n"
         "四、仍需确认，未冒充事实\n"
         "2026第29/32行均写第24屏，重复候选隔离；未改27，未补造27屏合格。第27屏仅是核对建议。\n"
-        f"{stats['imported_material_unconfirmed']}条多值材质留空，{stats['imported_spec_unconfirmed']}条多值规格留空；"
-        "原候选列表和备注已保留。高再单值Φ60×4可以保留。\n"
-        "实际检测月日、2022/2021的12/7弯头区带对应、第38行规格疑点、12CrMoVG与12Cr1MoVG牌号差异均需原始凭据确认。\n"
-        "高过每屏24根及两组镜像（F↔B、L↔R）为用户确认口径：2026第4/5行32条材质规格已按区带+管位计算，"
-        "炉后第N根编码落F(25-N)；2022/2021的12弯头区带对应（前12根还是后12根、计数方向）未确认，材质仍留空。\n"
+        "材质规格已全部按区带映射填入（2026第4/5行32条按每屏24根，2022/2021共304条按前12/前7根），"
+        "映射依据逐条记录在材质/规格依据列。\n"
+        "实际检测月日、第38行规格疑点（Φ54×7.5与304H配对）、12CrMoVG与12Cr1MoVG牌号差异均需原始凭据确认。\n"
+        "高过每屏24根、两组镜像（F↔B、L↔R）、前12/前7根区带方向均为用户确认口径："
+        "备注“炉后往炉前数”按方向笔误处理，材质按炉前起算区带+管位填入。\n"
         "位置/方向未知时依规则使用000/U或隔离待核，不猜成第1根或第27屏。\n\n"
         "五、追溯和验证\n"
         "manifest.json包含源文件/清洗器SHA256、规则版本、每条来源映射、问题清单、产物SHA256。"
