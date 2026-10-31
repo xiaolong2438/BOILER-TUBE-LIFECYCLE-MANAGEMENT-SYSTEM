@@ -1739,9 +1739,10 @@ function getTubeProfileData(rawCode) {
   if(!d && localEvents.length > 0) {
     const compInfo = matchComponentFromCode(code);
     const latestEvent = localEvents[localEvents.length - 1];
+    const specSummary = tubeSpecMaterialSummary(code, localEvents);
     d = {
       name: compInfo ? compInfo.name : '动态录入管段',
-      spec: compInfo ? compInfo.spec + ' · ' + compInfo.mat : '规格材质待完善',
+      spec: specSummary || (compInfo ? compInfo.spec + ' · ' + compInfo.mat : '规格材质待完善'),
       install: localEvents[0].date,
       hours: '--',
       status: 'ok',
@@ -4311,6 +4312,32 @@ function ggrqLoopForTube(tubeNo) {
 function ggrqBottomBendAttrs(tubeNo) {
   const loop = ggrqLoopForTube(tubeNo);
   return loop ? loop.frontSegs[loop.frontSegs.length - 1] : null;
+}
+// 档案页「规格材质」取值：高过W=回路底弯件（分段基准确定值+全回路分段链）；
+// 其次用检测记录自带的规格/材质（多批次不一致时并列）；都为空时返回''，调用方退回材料库分项兜底。
+function tubeSpecMaterialSummary(code, events) {
+  const parsed = parseTubeCode(code);
+  const pairs = [];
+  (events || []).forEach(e => {
+    const s = String(e.spec || '').trim(), m = String(e.material || '').trim();
+    if (!s && !m) return;
+    const label = [s, m].filter(Boolean).join(' ');
+    if (label && pairs.indexOf(label) < 0) pairs.push(label);
+  });
+  if (parsed && parsed.sys === 'GGRQ' && parsed.partKind === 'W' && parsed.tube) {
+    const tubeNo = parsed.dir === 'B' ? 25 - parsed.tube : parsed.tube;
+    const loop = ggrqLoopForTube(tubeNo);
+    if (loop) {
+      const bend = ggrqBottomBendAttrs(tubeNo);
+      const segLabel = (seg, isBend) => seg[0] + ' ' + seg[1] + (isBend ? '【底弯】' : '');
+      const chain = loop.frontSegs.map((seg, i) => segLabel(seg, i === loop.frontSegs.length - 1))
+        .concat(loop.rearSegs.map(seg => segLabel(seg, false)));
+      let summary = '回路' + loop.loop + ' 底弯段 ' + bend[0] + ' ' + bend[1];
+      if (pairs.length && pairs.indexOf(bend[0] + ' ' + bend[1]) < 0) summary += '；检测记录：' + pairs.join('、');
+      return summary + '（全回路：' + chain.join(' → ') + '）';
+    }
+  }
+  return pairs.join('、');
 }
 function renderGGRQLoopBaseline() {
   const host = document.getElementById('ggrqLoopBaseline');
