@@ -680,7 +680,7 @@
     var normalized = normalizeCode(code);
     if (!normalized) return { valid: false, reason: '管段编码为空', code: '' };
     if (!TUBE_CODE_PATTERN.test(normalized)) {
-      return { valid: false, reason: '管段编码格式不符合规则（示例：2G-SLB-WB-F000-R025-Q16）', code: normalized };
+      return { valid: false, reason: '管段编码格式不符合规则（示例：2G-SLB-WB-F000-R025-Q）', code: normalized };
     }
     var parsed = parseTubeCodeParts(normalized);
     if (!parsed) {
@@ -1321,7 +1321,8 @@
           }
         }
 
-        var normalizedDate = /^(?:19|20|21)\d{2}$/.test(dateRaw) ? dateRaw : normalizeDateText(dateRaw);
+        /* 年月精度（如 2026-04，用户确认的检修月份）与年份精度一样按原文保留，不虚构日 */
+        var normalizedDate = /^(?:(?:19|20|21)\d{2}-(?:0[1-9]|1[0-2])|(?:19|20|21)\d{2})$/.test(dateRaw) ? dateRaw : normalizeDateText(dateRaw);
         var dateValue = normalizedDate || dateRaw;
         if (!normalizedDate) {
           invalidDateRows.push(rowNumber);
@@ -1545,7 +1546,7 @@
     }
     if (unmatchedRows.length) {
       pushCheck(checks, 'unmatched_code', 'warning', '管段编码格式不符合规则',
-        '共 ' + unmatchedRows.length + ' 行管段编码不符合新编码规则（示例：2G-SLB-WB-F000-R025-Q16），仍会导入。',
+        '共 ' + unmatchedRows.length + ' 行管段编码不符合新编码规则（示例：2G-SLB-WB-F000-R025-Q），仍会导入。',
         unmatchedRows, '建议按编码生成器重新生成管段编码。', unmatchedSamples);
     }
     if (retiredRows.length) {
@@ -2233,7 +2234,7 @@
       case 'edit':
         return info.editResult
           ? info.editResult.reply
-          : '我可以修改单条记录的单个字段。请给出管段编码、字段和新值，例如：「把 2G-SLB-WB-F000-R025-Q16 的最新测厚记录厚度改成 6.8」。';
+          : '我可以修改单条记录的单个字段。请给出管段编码、字段和新值，例如：「把 2G-SLB-WB-F000-R025-Q 的最新测厚记录厚度改成 6.8」。';
       case 'undo':
         return '准备撤销最近一次导入，执行前会二次确认。';
       default:

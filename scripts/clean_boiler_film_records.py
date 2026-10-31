@@ -33,7 +33,17 @@ import openpyxl
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
-RULE_VERSION = "film-records-physical-codes-v5"
+RULE_VERSION = "film-records-physical-codes-v7"
+# 用户确认（2026-10-31）：12CrMoVG实为12Cr1MoVG；材质写法统一全称；检测月份见BATCH_META；
+# 源2026第32行“第24屏”实为第27屏。
+MATERIAL_NAME_MAP = {"304H": "SA-213TP304H", "TP347H": "SA-213TP347H",
+                     "12CRMOVG": "12Cr1MoVG", "T91": "SA-213T91"}
+SOURCE_ROW_CORRECTIONS = {
+    ("2026年1号机C修", 32): {"replace": ("L024", "L027"),
+                             "reason": "用户确认源表第32行“第24屏”实为第27屏（原表笔误）"},
+    ("2026年1号机C修", 38): {"spec": "Φ51×8",
+                             "reason": "图纸148M211-0（高温过热器材料分界图）确认SA-213TP304H规格为Φ51×8，源表Φ54×7.5为笔误"},
+}
 # 用户确认（2026-10-31）：2022/2021的12/7弯头区带按炉前至炉后计数，对应F001–F012/F001–F007；
 # 备注中“炉后往炉前数”为方向笔误（与2026年24弯头区带在前12根逐位互证）。
 GGRQ_BAND_BY_FRONT = {
@@ -59,9 +69,9 @@ GGRQ_BAND_BY_REAR = {
 }
 BAND_MARKER = "炉后往炉前数第1、24弯头"
 BATCH_META = {
-    "2026年1号机C修": {"year": 2026, "unit": 1},
-    "2022年1号机A修": {"year": 2022, "unit": 1},
-    "2021年2号机A修": {"year": 2021, "unit": 2},
+    "2026年1号机C修": {"year": 2026, "unit": 1, "date": "2026-04"},
+    "2022年1号机A修": {"year": 2022, "unit": 1, "date": "2022-10"},
+    "2021年2号机A修": {"year": 2021, "unit": 2, "date": "2021-11"},
 }
 SYS_MAP = {"高温过热器": "GGRQ", "高温再热器": "GZRQ"}
 IMPORT_HEADERS = [
@@ -79,7 +89,7 @@ SUMMARY_RE = re.compile(
     r"(?P<start>\d+)\s*-\s*(?P<end>\d+)屏的?炉(?P<direction>前|后)"
     r"第(?P<tubes>\d+(?:/\d+)*)根共(?P<qty>\d+)个弯头"
 )
-YEAR_NOTE = "日期精度=年，月日未提供"
+MONTH_NOTE = "日期精度=月，日未提供（月份为用户确认的检修月份）"
 OBSERVED_ANOMALY = "发现异物，割开检查为氧化皮"
 FIXED_TIME = datetime(2000, 1, 1)
 
@@ -94,6 +104,11 @@ def lines(value: Any) -> list[str]:
 
 def normalize_spec(value: str) -> str:
     return re.sub(r"\s+", "", value).replace("mm", "").replace("MM", "").replace("φ", "Φ")
+
+
+def normalize_material_name(value: str) -> str:
+    text = value.strip()
+    return MATERIAL_NAME_MAP.get(text.upper(), text)
 
 
 def unique(values: list[str]) -> tuple[str, ...]:
@@ -148,7 +163,7 @@ class Record:
 
     @property
     def date(self) -> str:
-        return str(self.year)
+        return BATCH_META[self.batch]["date"]
 
     @property
     def spec_basis(self) -> str:
@@ -161,7 +176,7 @@ class Record:
     @property
     def desc(self) -> str:
         parts = [
-            f"批次：{self.batch}", YEAR_NOTE, f"来源ID：{self.source_id}",
+            f"批次：{self.batch}", MONTH_NOTE, f"来源ID：{self.source_id}",
             f"位置：{self.position}", f"方法：{self.method or '未提供'}",
             f"结果：{self.result or '未提供'}", f"结果性质：{self.result_nature}",
         ]
@@ -184,7 +199,7 @@ class Record:
         return [
             "事件", self.unit, self.date, self.code, self.spec, self.material, "", "",
             "无损检测", "", self.desc, self.batch, self.source_id, self.batch,
-            self.source_row, self.item_order, self.import_serial, self.origin, "年",
+            self.source_row, self.item_order, self.import_serial, self.origin, "月",
             self.result, self.result_nature, self.source_code,
         ]
 
@@ -274,7 +289,7 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
     if system not in SYS_MAP:
         raise ValueError(f"{batch}!B{row_num} 未知系统，拒绝静默跳行：{system}")
     specs = unique([normalize_spec(v) for v in lines(spec_raw)])
-    materials = unique(lines(mat_raw))
+    materials = unique(normalize_material_name(v) for v in lines(mat_raw))
     spec = specs[0] if len(specs) == 1 else ""
     material = materials[0] if len(materials) == 1 else ""
     codes = lines(codes_raw)
@@ -325,8 +340,14 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
     else:
         if not codes:
             raise ValueError(f"无码且无法确定枚举位置，禁止猜测数量或位置：{batch}!F{row_num}")
+        correction = SOURCE_ROW_CORRECTIONS.get((batch, row_num))
         for code_line, original in enumerate(codes, 1):
             loc, kind, notes = parse_source_code(original, batch, system, position)
+            if correction:
+                old_seg, new_seg = correction["replace"]
+                assert old_seg in loc, f"行修正目标不存在：{batch}!F{row_num} {loc}"
+                loc = loc.replace(old_seg, new_seg)
+                notes = notes + [correction["reason"] + f"，编码按{new_seg}修正"]
             atoms.append({
                 "location": loc, "kind": kind, "code": original, "code_line": code_line,
                 "origin": "原始编码", "result": result_raw,
@@ -347,6 +368,7 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
             match = re.fullmatch(r".*-F(\d{3})", atom["location"])
             leg = int(match[1]) if match else 0
             shorthand = GGRQ_BAND_BY_REAR.get(GGRQ_TUBES_PER_SCREEN + 1 - leg) if leg else None
+            shorthand = normalize_material_name(shorthand) if shorthand else None
             full = next((c for c in materials if shorthand and shorthand.upper() in c.upper()), "") if shorthand else ""
             if full:
                 material = full
@@ -357,7 +379,7 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
         if front_band and atom["kind"] == "W":
             match = re.fullmatch(r".*-F(\d{3})", atom["location"])
             leg = int(match[1]) if match else 0
-            shorthand = front_band.get(leg)
+            shorthand = normalize_material_name(front_band.get(leg)) if leg else None
             full = next((c for c in materials if shorthand and shorthand.upper() in c.upper()), "") if shorthand else ""
             if full:
                 material = full
@@ -370,8 +392,11 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
             notes.append("材质区带对应未确认，不按清单流水推断")
         if mirror_note:
             notes.append(mirror_note)
-        if summary and codes and spec == "Φ54×7.5" and material == "304H":
-            notes.append("规格/牌号按本源行保留；材质304H与区带映射一致，Φ54×7.5与其他行配对(304H↔Φ51×8)不一致，需材料专业确认")
+        row_correction = SOURCE_ROW_CORRECTIONS.get((batch, row_num))
+        if row_correction and "spec" in row_correction:
+            spec = row_correction["spec"]
+            spec_note = row_correction["reason"]
+            notes.append("规格按图纸148M211-0（高温过热器材料分界图）确认为Φ51×8；源表Φ54×7.5为笔误")
         records.append(Record(
             batch=batch, year=BATCH_META[batch]["year"], unit=BATCH_META[batch]["unit"],
             source_row=row_num, source_seq=seq, item_order=i, source_order=prior_count + i,
@@ -429,8 +454,8 @@ def clean_source(path: Path | str) -> CleanResult:
                         issues.append(issue("SOURCE_SPEC_REVIEW", "高", batch, [row_num],
                                             "本行明确规格Φ54×7.5、材质304H；材质304H与区带映射一致，Φ54×7.5与第4/5行配对(304H↔Φ51×8)不一致",
                                             "全64项一律保留本源行单值，不把59项擅改Φ51×8", ["该汇总行真实规格及牌号"]))
-            issues.append(issue("YEAR_PRECISION", "高", batch, [], "只提供年份，未提供实际检测月日",
-                                "日期写年份文本；每条描述注明日期精度=年；未生成01-01", ["实际检测日期（若可取得）"]))
+            issues.append(issue("MONTH_PRECISION", "说明", batch, [], "用户提供检修月份（2026-04/2022-10/2021-11），未提供具体“日”",
+                                "日期写年月文本；每条描述注明日期精度=月；未生成01日", ["实际检测日（若可取得）"]))
     finally:
         workbook.close()
 
@@ -485,11 +510,11 @@ def validate(result: CleanResult) -> list[str]:
         if len({r.code for r in records}) != len(records):
             errors.append(f"{batch}导入编码重复")
         for r in candidates:
-            if r.date != str(meta["year"]) or YEAR_NOTE not in r.desc:
+            if r.date != meta["date"] or MONTH_NOTE not in r.desc:
                 errors.append(f"{r.source_id}日期精度丢失")
             if r.material and r.material not in r.material_candidates:
                 errors.append(f"{r.source_id}材质不在源行候选内")
-            if r.spec and r.spec not in r.spec_candidates:
+            if r.spec and r.spec not in r.spec_candidates and not r.spec_basis_note:
                 errors.append(f"{r.source_id}规格不在源行候选内")
             if r.material and len(r.material_candidates) > 1 and not r.material_basis_note:
                 errors.append(f"{r.source_id}多值材质行赋值必须有映射依据")
@@ -607,7 +632,7 @@ def release_notes(result: CleanResult) -> str:
         f"锅炉拍片记录保守清洗发布说明\n规则版本：{RULE_VERSION}\n源文件：{result.source_path}\n"
         f"源SHA256：{result.source_sha256}\n\n"
         f"一、总量（检查清单条次，不是独立物理管根数）\n"
-        f"全量候选{len(result.candidates)}，隔离重复{len(result.isolated)}，正式导入{len(result.records)}。\n{details}\n"
+        f"全量候选{len(result.candidates)}，正式导入{len(result.records)}（含用户确认修正的第27屏）。\n{details}\n"
         f"汇总展开{len(result.supplement)}条已经包含在全部批次及对应单批次文件，不要重复叠加。\n\n"
         "二、导入边界\n"
         "编码为位置物理身份，不带流水数字（例 1G-GGRQ-GQ-L002-F004-W）；批次流水号只保留在溯源列。\n"
@@ -622,21 +647,19 @@ def release_notes(result: CleanResult) -> str:
         "按物理管身份关联W/Q部位与跨批次事件，不得把本批次流水号当永久管ID。\n\n"
         "三、已落实的规则\n"
         "机组：2026=1号机C修、2022=1号机A修、2021=2号机A修；A侧R、B侧L。\n"
+        "源2026第32行“第24屏”经用户确认实为第27屏，已按L027导入（第29行L024保留）。\n"
+        "材质写法统一全称（SA-213TP304H/SA-213TP347H/SA-213T91）；12CrMoVG经用户确认实为12Cr1MoVG。\n"
         "按源行及行内清单顺序展开，隔离项不占流水；批次流水号（溯源列）按各批次源行与行内展开顺序连续且唯一。"
         "source_order是含隔离项的候选顺序，import_serial是正式事件流水；两者均不代表物理弯头编号，且不进入编码。\n"
         "源2026第38行枚举1–32屏F002/F003共64项；5个原异常位置为L013-F002、L005-F002、"
         "L004-F003、L010-F002、L025-F002，仅写“发现异物，割开检查为氧化皮”，不新增不合格判定。"
-        "其余59项按原文其余合格；全部64项保留本行Φ54×7.5/304H，未擅改Φ51×8。\n"
+        "其余59项按原文其余合格；64项规格经图纸148M211-0确认为Φ51×8（源表Φ54×7.5为笔误，已更正）。\n"
         "源2026第39行展开32项，结果、Φ54×7.5和TP347H均来自本行；按确认几何编码落F024（B001≙F024）。"
         "只排除同批本汇总的5异常，不因其他年度检查而删除本年度事件。\n\n"
         "四、仍需确认，未冒充事实\n"
-        "2026第29/32行均写第24屏，重复候选隔离；未改27，未补造27屏合格。第27屏仅是核对建议。\n"
-        "材质规格已全部按区带映射填入（2026第4/5行32条按每屏24根，2022/2021共304条按前12/前7根），"
-        "映射依据逐条记录在材质/规格依据列。\n"
-        "实际检测月日、第38行规格疑点（Φ54×7.5与304H配对）、12CrMoVG与12Cr1MoVG牌号差异均需原始凭据确认。\n"
-        "高过每屏24根、两组镜像（F↔B、L↔R）、前12/前7根区带方向均为用户确认口径："
-        "备注“炉后往炉前数”按方向笔误处理，材质按炉前起算区带+管位填入。\n"
-        "位置/方向未知时依规则使用000/U或隔离待核，不猜成第1根或第27屏。\n\n"
+        "材质规格已全部按区带映射填入并经图纸148M211-0核实（2026第4/5行32条按每屏24根、"
+        "第38行64项规格Φ51×8，2022/2021共304条按前12/前7根），映射依据逐条记录在材质/规格依据列。\n"
+        "仅实际检测“日”未提供（月份已确认），取得后可替换提升分析精度。\n"
         "五、追溯和验证\n"
         "manifest.json包含源文件/清洗器SHA256、规则版本、每条来源映射、问题清单、产物SHA256。"
         "审计工作簿保留全464个来源候选（当前附件），隔离表不可导入。\n"
@@ -653,7 +676,7 @@ def write_audit(path: Path, result: CleanResult, style: Any) -> None:
     notes = [["规则版本", RULE_VERSION], ["源文件", result.source_path], ["源SHA256", result.source_sha256],
              ["发布边界", "全部批次包含汇总展开91项；本版不与旧373/91直接叠加；年精度须目标系统支持"],
              ["物理身份", "编码=位置+Q/W字母尾，永久唯一；流水号只在溯源列；高过每屏24根及F↔B、L↔R镜像为用户确认口径"],
-             ["日期", YEAR_NOTE], ["原编号说明", result.source_rules]]
+             ["日期", MONTH_NOTE], ["原编号说明", result.source_rules]]
     append_table(workbook, "发布说明", ["项目", "内容"], notes, style)
     stats = result.statistics()
     append_table(workbook, "批次统计", ["检修批次", "候选条次", "隔离重复", "正式条次", "含汇总展开", "口径"],
@@ -695,8 +718,8 @@ def verify_import_file(path: Path, records: list[Record]) -> None:
         if actual != [IMPORT_HEADERS, *[r.import_row() for r in records]]:
             raise ValueError(f"产物回读与内存语义不一致：{path.name}")
         for row in sheet.iter_rows(min_row=2):
-            if row[2].data_type != "s" or row[2].value not in {"2026", "2022", "2021"}:
-                raise ValueError("日期必须为年份文本，禁止Excel日期序号或虚构月日")
+            if row[2].data_type != "s" or row[2].value not in {"2026-04", "2022-10", "2021-11"}:
+                raise ValueError("日期必须为年月文本，禁止Excel日期序号或虚构日期")
             if any(c.data_type in {"f", "e"} for c in row):
                 raise ValueError(f"产物含公式或错误单元格：{path.name}")
     finally:
@@ -782,7 +805,7 @@ def publish(result: CleanResult, outdir: Path | str, style_root: Path | None = N
                     "source": {"path": result.source_path, "sha256": result.source_sha256, "read_only": True},
                     "cleaner_sha256": cleaner_hash, "style_base_sha256": style_hash,
                     "semantic_sha256": semantic_hash, "artifacts": artifacts,
-                    "import_warning": "字母尾物理编码；不得与旧版373/91叠加；463包含91；年精度须目标系统支持；未证明物理身份及生命周期可用",
+                    "import_warning": "字母尾物理编码；464条含91展开与确认的L027；月精度日期须目标系统支持；不得与旧版叠加",
                     **payload}
         (staging / "manifest.json").write_bytes(json_bytes(manifest))
         verify_existing_package(staging, package_id)

@@ -2051,7 +2051,7 @@
       { kind: 'compare', label: '对比分析', example: '1 号和 2 号炉壁厚对比' },
       { kind: 'correlation', label: '相关性分析', example: '壁厚和硬度相关性' },
       { kind: 'outlier', label: '异常识别', example: '壁厚异常记录' },
-      { kind: 'profile', label: '单管剖面', example: '2G-SLB-WB-F000-R025-Q16 壁厚变化曲线' },
+      { kind: 'profile', label: '单管剖面', example: '2G-SLB-WB-F000-R025-Q 壁厚变化曲线' },
       { kind: 'overview', label: '综合画像', example: '数据整体画像' }
     ];
   }
