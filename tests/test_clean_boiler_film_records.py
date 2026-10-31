@@ -96,6 +96,24 @@ class CleaningSemanticsTest(unittest.TestCase):
                         '炉后第1根按确认几何镜像为F024')
         self.assertTrue(all(r.date in ('2026-04', '2022-10', '2021-11') and clean.MONTH_NOTE in r.desc for r in self.result.records))
 
+    def test_every_record_pairing_matches_drawing_or_library(self):
+        # 图纸148M211-0确认的高过四组配对 + 系统高再材料库Φ60×4档配对。
+        confirmed = {
+            ('Φ54×7.5', 'SA-213TP347H'),
+            ('Φ51×8', 'SA-213TP304H'),
+            ('Φ51×9', 'SA-213T91'),
+            ('Φ51×9', '12Cr1MoVG'),
+            ('Φ60×4', 'SA-213TP304H'),
+            ('Φ60×4', 'SA-213T91'),
+            ('Φ60×4', '12Cr1MoVG'),
+        }
+        for r in self.result.records:
+            # 区带映射的记录必须落在确认配对内；源行单值（含Φ54×7.5+304H疑点行）按源保留。
+            if '区带映射' not in r.material_basis_note:
+                continue
+            self.assertIn((r.spec, r.material), confirmed,
+                          f'{r.source_id} 的规格/材质配对无出处')
+
     def test_reproducible_package_integrity_and_no_partial_overwrite(self):
         a, b = self.root / 'package-a', self.root / 'package-b'
         manifest = clean.publish(self.result, a)
