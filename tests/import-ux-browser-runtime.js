@@ -174,7 +174,7 @@ window.runImportUxTests = async function () {
     const imported = await until(() => userDB.events.length === before + 1);
     assert(imported, '记录未入库');
     const record = userDB.events[before];
-    assert(String(record.code || record['管段编码'] || '').toUpperCase() === '1G-SLB-WB-F000-R003-Q001', '编码错位：' + JSON.stringify(record));
+    assert(String(record.code || record['管段编码'] || '').toUpperCase() === '1G-SLB-WB-F000-R003-Q', '编码应归一为字母尾物理编码：' + JSON.stringify(record));
     assert(String(record.date || record['日期'] || '').slice(0, 10) === '2024-03-05', '日期未归一：' + JSON.stringify(record));
     const thickness = String(record.thickness ?? record['厚度(mm)'] ?? record['厚度'] ?? '');
     assert(thickness.indexOf('6.8') === 0, '厚度错位：' + JSON.stringify(record));
@@ -192,7 +192,7 @@ window.runImportUxTests = async function () {
     ], { batchFilter: 'all' });
     assert(stats && stats.normalizedCount === 1, '页面导入应归一并计数，实际 ' + (stats && stats.normalizedCount));
     const record = userDB.events[before];
-    assert(record && record.code === '2G-SLB-WB-F000-R168-Q001', '落库编码必须为规范方向：' + (record && record.code));
+    assert(record && record.code === '2G-SLB-WB-F000-R168-Q', '落库编码必须为规范方向字母尾：' + (record && record.code));
     assert(stats.normalizationSamples.length === 1 && stats.normalizationSamples[0].indexOf('≙') >= 0, '归一明细必须留痕');
   });
 

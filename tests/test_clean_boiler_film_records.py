@@ -61,7 +61,9 @@ class CleaningSemanticsTest(unittest.TestCase):
         for batch in clean.BATCH_META:
             records = [r for r in self.result.records if r.batch == batch]
             self.assertEqual([r.import_serial for r in records], list(range(1, len(records) + 1)))
-            self.assertEqual(len({r.code.rsplit('-', 1)[1] for r in records}), len(records))
+            self.assertEqual([r.import_serial for r in records], list(range(1, len(records) + 1)))
+            self.assertTrue(all(r.code == f"{r.location_key}-{r.part_kind}" for r in records),
+                            "编码必须是字母尾物理编码，不含流水数字")
             self.assertTrue(all(r.code.startswith(f"{clean.BATCH_META[batch]['unit']}G-") for r in records))
         self.assertEqual(hashlib.sha256(self.source.read_bytes()).hexdigest(), self.before)
 
@@ -74,7 +76,9 @@ class CleaningSemanticsTest(unittest.TestCase):
         self.assertFalse(any('L027-' in r.code for r in self.result.records))
         self.assertIn('L024-F001', self.result.isolated[0].location_key)
         reheater = [r for r in self.result.records if r.system == '高温再热器']
-        self.assertTrue(all(r.spec == 'Φ60×4' and r.material == '' for r in reheater))
+        self.assertTrue(all(r.spec == 'Φ60×4' and r.material == 'T91' for r in reheater),
+                        '前7根区带：F002→T91（用户确认炉前起算）')
+        self.assertTrue(all(r.material_basis_note for r in reheater), '区带映射必须留依据')
         self.assertTrue(all('-L001-F002-' in r.code for r in reheater))
 
     def test_summary_preserves_source_spec_and_anomaly(self):
@@ -86,7 +90,8 @@ class CleaningSemanticsTest(unittest.TestCase):
         self.assertIn('L002-F002', anomalies[0].code)
         self.assertEqual(anomalies[0].result, clean.OBSERVED_ANOMALY)
         self.assertFalse(any(r.origin == '汇总展开' and r.location_key == anomalies[0].location_key for r in summary))
-        self.assertTrue(all('-B001-' in r.code for r in self.result.records if r.source_row == 8))
+        self.assertTrue(all('-F024-' in r.code for r in self.result.records if r.source_row == 8),
+                        '炉后第1根按确认几何镜像为F024')
         self.assertTrue(all(r.date in ('2026', '2022', '2021') and clean.YEAR_NOTE in r.desc for r in self.result.records))
 
     def test_reproducible_package_integrity_and_no_partial_overwrite(self):
