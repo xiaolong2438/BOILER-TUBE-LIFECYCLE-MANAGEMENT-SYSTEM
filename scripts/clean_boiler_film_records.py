@@ -33,7 +33,40 @@ import openpyxl
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
-RULE_VERSION = "film-records-physical-codes-v7"
+RULE_VERSION = "film-records-physical-codes-v8"
+# 用户确认（2026-10-31，图纸148M211-0）：高过12回路材质分段基准。
+# 每回路 = 前腿F00k（顶部入口联箱向下）+ 底部弯头 + 后腿F(25-k)（向上至顶部出口），
+# 材质沿整个回路连续变化；W记录对应底弯件=前腿末段（回路8-11为12Cr1MoVGΦ51×9直接过弯）。
+# front_segs沿蒸汽流程（顶→底），rear_segs沿蒸汽流程（底→顶），元素为(规格,材质)。
+_LOOP2_4 = [("Φ51×9", "12Cr1MoVG"), ("Φ51×9", "SA-213T91"), ("Φ51×8", "SA-213TP304H")]
+_LOOP5_7 = [("Φ51×9", "12Cr1MoVG"), ("Φ51×9", "SA-213T91"), ("Φ51×8", "SA-213T91")]
+_LOOP8_11_FRONT = [("Φ51×9", "12Cr1MoVG")]
+_LOOP8_11_REAR = [("Φ51×9", "SA-213T91"), ("Φ51×8", "SA-213T91"),
+                  ("Φ51×11", "SA-213T91"), ("Φ51×11", "SA-213T22")]
+_REAR_STD = [("Φ51×11", "SA-213T91"), ("Φ51×11", "SA-213T22")]
+GGRQ_LOOP_SEGMENTS = [
+    {"loop": 1, "front": (1,), "rear": (24,),
+     "front_segs": [("Φ54×9", "12Cr1MoVG"), ("Φ54×9", "SA-213T91"), ("Φ54×7.5", "SA-213TP347H")],
+     "rear_segs": [("Φ54×11", "SA-213T91"), ("Φ54×11", "SA-213T22")]},
+    {"loop": 2, "front": (2,), "rear": (23,), "front_segs": _LOOP2_4, "rear_segs": _REAR_STD},
+    {"loop": 3, "front": (3,), "rear": (22,), "front_segs": _LOOP2_4, "rear_segs": _REAR_STD},
+    {"loop": 4, "front": (4,), "rear": (21,), "front_segs": _LOOP2_4, "rear_segs": _REAR_STD},
+    {"loop": 5, "front": (5,), "rear": (20,), "front_segs": _LOOP5_7, "rear_segs": _REAR_STD},
+    {"loop": 6, "front": (6,), "rear": (19,), "front_segs": _LOOP5_7, "rear_segs": _REAR_STD},
+    {"loop": 7, "front": (7,), "rear": (18,), "front_segs": _LOOP5_7, "rear_segs": _REAR_STD},
+    {"loop": 8, "front": (8,), "rear": (17,), "front_segs": _LOOP8_11_FRONT, "rear_segs": _LOOP8_11_REAR},
+    {"loop": 9, "front": (9,), "rear": (16,), "front_segs": _LOOP8_11_FRONT, "rear_segs": _LOOP8_11_REAR},
+    {"loop": 10, "front": (10,), "rear": (15,), "front_segs": _LOOP8_11_FRONT, "rear_segs": _LOOP8_11_REAR},
+    {"loop": 11, "front": (11,), "rear": (14,), "front_segs": _LOOP8_11_FRONT, "rear_segs": _LOOP8_11_REAR},
+    {"loop": 12, "front": (12,), "rear": (13,), "front_segs": _LOOP5_7, "rear_segs": _REAR_STD},
+]
+
+
+def ggrq_bottom_bend_attrs(tube_no: int) -> tuple[str, str]:
+    """高过W记录（底部弯头件）的(规格,材质)：回路k=前腿F00k+后腿F(25-k)，底弯件=前腿末段。"""
+    loop_no = tube_no if tube_no <= 12 else GGRQ_TUBES_PER_SCREEN + 1 - tube_no
+    loop = next(l for l in GGRQ_LOOP_SEGMENTS if l["loop"] == loop_no)
+    return loop["front_segs"][-1]
 # 用户确认（2026-10-31）：12CrMoVG实为12Cr1MoVG；材质写法统一全称；检测月份见BATCH_META；
 # 源2026第32行“第24屏”实为第27屏。
 MATERIAL_NAME_MAP = {"304H": "SA-213TP304H", "TP347H": "SA-213TP347H",
@@ -44,14 +77,8 @@ SOURCE_ROW_CORRECTIONS = {
     ("2026年1号机C修", 38): {"spec": "Φ51×8",
                              "reason": "图纸148M211-0（高温过热器材料分界图）确认SA-213TP304H规格为Φ51×8，源表Φ54×7.5为笔误"},
 }
-# 用户确认（2026-10-31）：2022/2021的12/7弯头区带按炉前至炉后计数，对应F001–F012/F001–F007；
-# 备注中“炉后往炉前数”为方向笔误（与2026年24弯头区带在前12根逐位互证）。
-GGRQ_BAND_BY_FRONT = {
-    1: "TP347H", 12: "T91",
-    **{k: "304H" for k in (2, 3, 4)},
-    **{k: "T91" for k in (5, 6, 7)},
-    **{k: "12CrMoVG" for k in (8, 9, 10, 11)},
-}
+# 用户确认（2026-10-31）：2022/2021高再7弯头区带按炉前至炉后计数，对应F001–F007；
+# 备注中“炉后往炉前数”为方向笔误。高过弯头材质不再用区带表，直接按12回路分段基准推导。
 GZRQ_BAND_BY_FRONT = {
     1: "TP304H",
     **{k: "T91" for k in (2, 3, 4)},
@@ -60,14 +87,6 @@ GZRQ_BAND_BY_FRONT = {
 FRONT_BAND_BATCHES = ("2022年1号机A修", "2021年2号机A修")
 # 用户确认（2026-10-31）：高过每屏24根，F001–F024 ↔ B024–B001；L001–L032 ↔ R032–R001。
 GGRQ_TUBES_PER_SCREEN = 24
-# 源2026第4/5行备注“炉后往炉前数”的弯头材质区带（尾段数字是清单流水，材质只按管位算）。
-GGRQ_BAND_BY_REAR = {
-    1: "TP347H", 24: "TP347H",
-    **{k: "304H" for k in (2, 3, 4, 21, 22, 23)},
-    **{k: "T91" for k in (5, 6, 7, 12, 13, 18, 19, 20)},
-    **{k: "12CrMoVG" for k in (8, 9, 10, 11, 14, 15, 16, 17)},
-}
-BAND_MARKER = "炉后往炉前数第1、24弯头"
 BATCH_META = {
     "2026年1号机C修": {"year": 2026, "unit": 1, "date": "2026-04"},
     "2022年1号机A修": {"year": 2022, "unit": 1, "date": "2022-10"},
@@ -355,27 +374,31 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
                 "notes": notes,
             })
     records = []
-    rear_band_applies = (batch == "2026年1号机C修" and system == "高温过热器"
-                         and BAND_MARKER in remark and len(materials) == 4 and len(specs) >= 3)
     front_band = None
-    if batch in FRONT_BAND_BATCHES and "炉后往炉前数" in remark:
-        front_band = GGRQ_BAND_BY_FRONT if system == "高温过热器" else GZRQ_BAND_BY_FRONT
+    if batch in FRONT_BAND_BATCHES and "炉后往炉前数" in remark and system == "高温再热器":
+        front_band = GZRQ_BAND_BY_FRONT
     for i, atom in enumerate(atoms, 1):
         notes = list(atom["notes"])
         material_note = ""
         spec_note = ""
-        if rear_band_applies and atom["kind"] == "W":
+        if system == "高温过热器" and atom["kind"] == "W" and len(materials) > 1:
             match = re.fullmatch(r".*-F(\d{3})", atom["location"])
             leg = int(match[1]) if match else 0
-            shorthand = GGRQ_BAND_BY_REAR.get(GGRQ_TUBES_PER_SCREEN + 1 - leg) if leg else None
-            shorthand = normalize_material_name(shorthand) if shorthand else None
-            full = next((c for c in materials if shorthand and shorthand.upper() in c.upper()), "") if shorthand else ""
-            if full:
-                material = full
-                spec = specs[min(materials.index(full), len(specs) - 1)]
-                material_note = "按用户确认每屏24根与备注弯头区带映射（炉后计数↔F管位）"
-                spec_note = "按区带材质与源行规格-材质配对"
-                notes.append(f"材质按管位区带映射：F{leg:03d}=炉后第{GGRQ_TUBES_PER_SCREEN + 1 - leg}弯头→{shorthand}")
+            if leg:
+                bend_spec, bend_mat = ggrq_bottom_bend_attrs(leg)
+                full = next((c for c in materials if bend_mat.upper() in c.upper()), "")
+                if full:
+                    material = full
+                    material_note = "按高过12回路分段基准映射（图纸148M211-0，用户确认）"
+                    if bend_spec in specs:
+                        spec = bend_spec
+                        spec_note = "按回路底弯段规格（图纸148M211-0）"
+                    else:
+                        notes.append(f"回路底弯段规格{bend_spec}不在源行候选内，规格留待核")
+                    loop_no = leg if leg <= 12 else GGRQ_TUBES_PER_SCREEN + 1 - leg
+                    notes.append(f"材质按回路分段基准映射：F{leg:03d}=回路{loop_no}底弯段→{bend_spec} {bend_mat}")
+                else:
+                    notes.append(f"回路分段基准材质{bend_mat}不在源行候选内，保留源行材质")
         if front_band and atom["kind"] == "W":
             match = re.fullmatch(r".*-F(\d{3})", atom["location"])
             leg = int(match[1]) if match else 0
@@ -649,16 +672,22 @@ def release_notes(result: CleanResult) -> str:
         "机组：2026=1号机C修、2022=1号机A修、2021=2号机A修；A侧R、B侧L。\n"
         "源2026第32行“第24屏”经用户确认实为第27屏，已按L027导入（第29行L024保留）。\n"
         "材质写法统一全称（SA-213TP304H/SA-213TP347H/SA-213T91）；12CrMoVG经用户确认实为12Cr1MoVG。\n"
+        "高过弯头材质/规格按用户确认的12回路分段基准（图纸148M211-0）推导：回路=前腿F00k(向下)+"
+        "后腿F(25-k)(向上)，底弯件=前腿末段——回路1=Φ54×7.5 TP347H、回路2-4=Φ51×8 TP304H、"
+        "回路5-7及12=Φ51×8 T91、回路8-11=Φ51×9 12Cr1MoVG；据此T91底弯规格由配对的Φ51×9修正为Φ51×8。\n"
         "按源行及行内清单顺序展开，隔离项不占流水；批次流水号（溯源列）按各批次源行与行内展开顺序连续且唯一。"
         "source_order是含隔离项的候选顺序，import_serial是正式事件流水；两者均不代表物理弯头编号，且不进入编码。\n"
         "源2026第38行枚举1–32屏F002/F003共64项；5个原异常位置为L013-F002、L005-F002、"
         "L004-F003、L010-F002、L025-F002，仅写“发现异物，割开检查为氧化皮”，不新增不合格判定。"
-        "其余59项按原文其余合格；64项规格经图纸148M211-0确认为Φ51×8（源表Φ54×7.5为笔误，已更正）。\n"
-        "源2026第39行展开32项，结果、Φ54×7.5和TP347H均来自本行；按确认几何编码落F024（B001≙F024）。"
+        "其余59项按原文其余合格；64项规格经图纸148M211-0确认为Φ51×8（源表Φ54×7.5为笔误，已更正），"
+        "与回路2-4底弯段Φ51×8 TP304H一致。\n"
+        "源2026第39行展开32项，结果、Φ54×7.5和TP347H均来自本行；按确认几何编码落F024（B001≙F024），"
+        "与回路1底弯段Φ54×7.5 TP347H一致。"
         "只排除同批本汇总的5异常，不因其他年度检查而删除本年度事件。\n\n"
         "四、仍需确认，未冒充事实\n"
-        "材质规格已全部按区带映射填入并经图纸148M211-0核实（2026第4/5行32条按每屏24根、"
-        "第38行64项规格Φ51×8，2022/2021共304条按前12/前7根），映射依据逐条记录在材质/规格依据列。\n"
+        "高过弯头材质/规格已按12回路分段基准填入（2026第4/5行32条、2022/2021高过152条），"
+        "高再仍按前7根区带映射（Φ60×4），依据逐条记录在材质/规格依据列。\n"
+        "高再（7根）回路分段表待高再材料分界图提供后照此办理。"
         "仅实际检测“日”未提供（月份已确认），取得后可替换提升分析精度。\n"
         "五、追溯和验证\n"
         "manifest.json包含源文件/清洗器SHA256、规则版本、每条来源映射、问题清单、产物SHA256。"

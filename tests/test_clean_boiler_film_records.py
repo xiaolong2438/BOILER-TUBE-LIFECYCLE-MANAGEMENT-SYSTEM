@@ -67,10 +67,11 @@ class CleaningSemanticsTest(unittest.TestCase):
             self.assertTrue(all(r.code.startswith(f"{clean.BATCH_META[batch]['unit']}G-") for r in records))
         self.assertEqual(hashlib.sha256(self.source.read_bytes()).hexdigest(), self.before)
 
-    def test_unknown_material_and_physical_location_are_not_guessed(self):
+    def test_ggrq_w_records_follow_loop_baseline(self):
         first = self.result.records[0]
-        self.assertEqual(first.spec, '')
-        self.assertEqual(first.material, '')
+        self.assertEqual((first.spec, first.material), ('Φ51×8', 'SA-213TP304H'),
+                         'F004=回路4底弯段，按12回路分段基准得Φ51×8 TP304H')
+        self.assertIn('回路', first.material_basis_note)
         self.assertEqual(first.material_candidates, ('SA-213TP347H', 'SA-213TP304H'),
                         '材质候选统一全称（含用户确认的12Cr1MoVG归一）')
         self.assertIn('L002-F004', first.code)
@@ -81,6 +82,30 @@ class CleaningSemanticsTest(unittest.TestCase):
                         '前7根区带：F002→SA-213T91（用户确认炉前起算，材质统一全称）')
         self.assertTrue(all(r.material_basis_note for r in reheater), '区带映射必须留依据')
         self.assertTrue(all('-L001-F002-' in r.code for r in reheater))
+
+    def test_ggrq_bottom_bend_band_matches_user_confirmed_palindrome(self):
+        # 2026源表备注的24弯头材质区带（对称）必须与12回路分段基准逐管互证。
+        band_by_tube = {1: 'SA-213TP347H', 24: 'SA-213TP347H',
+                        **{k: 'SA-213TP304H' for k in (2, 3, 4, 21, 22, 23)},
+                        **{k: 'SA-213T91' for k in (5, 6, 7, 12, 13, 18, 19, 20)},
+                        **{k: '12Cr1MoVG' for k in (8, 9, 10, 11, 14, 15, 16, 17)}}
+        for tube in range(1, 25):
+            self.assertEqual(clean.ggrq_bottom_bend_attrs(tube)[1], band_by_tube[tube], f'F{tube:03d}')
+
+    def test_ggrq_loop_baseline_spec_corrections(self):
+        def row(leg):
+            return (1, '高温过热器', f'B侧第1排炉前至炉后第{leg}根', 'Φ54×7.5\nΦ51×8\nΦ51×9\nΦ60×4',
+                    'SA-213TP347H\nSA-213TP304H\nT91\n12CrMoVG', f'1G-GGRQ-GQ-L001-F{leg:03d}-W01',
+                    '射线', '合格', '炉后往炉前数第1、24弯头为TP347H')
+        cases = {
+            5: ('Φ51×8', 'SA-213T91'), 12: ('Φ51×8', 'SA-213T91'),
+            8: ('Φ51×9', '12Cr1MoVG'), 17: ('Φ51×9', '12Cr1MoVG'),
+            2: ('Φ51×8', 'SA-213TP304H'), 24: ('Φ54×7.5', 'SA-213TP347H'),
+        }
+        for leg, expected in cases.items():
+            rec = clean.expand_source_row('2022年1号机A修', 4, row(leg), 0)[0]
+            self.assertEqual((rec.spec, rec.material), expected, f'F{leg:03d} 回路底弯段')
+            self.assertIn('回路', rec.material_basis_note)
 
     def test_summary_preserves_source_spec_and_anomaly(self):
         summary = [r for r in self.result.records if r.source_row == 7 and r.batch.startswith('2026')]
@@ -97,19 +122,19 @@ class CleaningSemanticsTest(unittest.TestCase):
         self.assertTrue(all(r.date in ('2026-04', '2022-10', '2021-11') and clean.MONTH_NOTE in r.desc for r in self.result.records))
 
     def test_every_record_pairing_matches_drawing_or_library(self):
-        # 图纸148M211-0确认的高过四组配对 + 系统高再材料库Φ60×4档配对。
+        # 12回路分段基准确认的高过底弯配对（图纸148M211-0）+ 系统高再材料库Φ60×4档配对。
         confirmed = {
             ('Φ54×7.5', 'SA-213TP347H'),
             ('Φ51×8', 'SA-213TP304H'),
-            ('Φ51×9', 'SA-213T91'),
+            ('Φ51×8', 'SA-213T91'),
             ('Φ51×9', '12Cr1MoVG'),
             ('Φ60×4', 'SA-213TP304H'),
             ('Φ60×4', 'SA-213T91'),
             ('Φ60×4', '12Cr1MoVG'),
         }
         for r in self.result.records:
-            # 区带映射的记录必须落在确认配对内；源行单值（含Φ54×7.5+304H疑点行）按源保留。
-            if '区带映射' not in r.material_basis_note:
+            # 分段基准/区带映射的记录必须落在确认配对内；源行单值（含Φ54×7.5+304H疑点行）按源保留。
+            if '映射' not in r.material_basis_note:
                 continue
             self.assertIn((r.spec, r.material), confirmed,
                           f'{r.source_id} 的规格/材质配对无出处')

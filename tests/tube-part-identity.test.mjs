@@ -114,13 +114,13 @@ assert.equal(clean.report.summary.errorCount, 0);
 assert.equal(clean.cleanRows[1][2], '2026', '年份日期按原样保留，不虚构月日');
 assert.equal(clean.cleanRows[1][3], w);
 
-// 真实发布包端到端：463 条全量导入、重复导入全跳过、编码全部字母尾且带来源ID。
+// 真实发布包端到端：464 条全量导入、重复导入全跳过、编码全部字母尾且带来源ID。
 // WPS 可能短暂占用 verified/，这里按规则版本解析包目录，两个位置内容一致。
 function resolvePackageDir() {
   for (const name of ['verified', 'verified-physical']) {
     try {
       const manifest = JSON.parse(readFileSync(new URL(`../data-cleaning/${name}/manifest.json`, import.meta.url), 'utf8'));
-      if (manifest.rule_version === 'film-records-physical-codes-v7') return `../data-cleaning/${name}`;
+      if (manifest.rule_version === 'film-records-physical-codes-v8') return `../data-cleaning/${name}`;
     } catch { /* 目录未发布，尝试下一个 */ }
   }
   throw new Error('找不到字母尾物理编码规则的数据包');
@@ -187,4 +187,4 @@ assert.equal(actualClean.report.summary.cleanRows, 464);
 assert.match(app, /id="f-part-kind"/);
 assert.match(app, /val\('f-part-kind'\) === 'W'/);
 assert.doesNotMatch(app, /id="f-seq"/, '生成器不再输出流水号输入');
-console.log('ok - letter-only physical codes, part-aware evidence, replacement boundaries, legacy normalization, 463-record package');
+console.log('ok - letter-only physical codes, part-aware evidence, replacement boundaries, legacy normalization, 464-record package');
