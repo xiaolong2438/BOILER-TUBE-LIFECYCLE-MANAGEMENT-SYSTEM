@@ -33,7 +33,7 @@ import openpyxl
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
-RULE_VERSION = "film-records-physical-codes-v8"
+RULE_VERSION = "film-records-physical-codes-v9"
 # 用户确认（2026-10-31，图纸148M211-0）：高过12回路材质分段基准。
 # 每回路 = 前腿F00k（顶部入口联箱向下）+ 底部弯头 + 后腿F(25-k)（向上至顶部出口），
 # 材质沿整个回路连续变化；W记录对应底弯件=前腿末段（回路8-11为12Cr1MoVGΦ51×9直接过弯）。
@@ -194,22 +194,13 @@ class Record:
 
     @property
     def desc(self) -> str:
-        parts = [
-            f"批次：{self.batch}", MONTH_NOTE, f"来源ID：{self.source_id}",
-            f"位置：{self.position}", f"方法：{self.method or '未提供'}",
-            f"结果：{self.result or '未提供'}", f"结果性质：{self.result_nature}",
-        ]
+        """导入用「详细描述/结论」：只描述检测内容本身（方法/结果/待确认提示）。
+        批次、来源ID、位置、依据注记、原备注等溯源信息一律走专属列与审计工作簿，不进描述。"""
+        parts = [f"方法：{self.method or '未提供'}", f"结果：{self.result or '未提供'}"]
         if not self.material:
             parts.append("材质待确认；源候选：" + (" / ".join(self.material_candidates) or "未提供"))
         if not self.spec:
             parts.append("规格待确认；源候选：" + (" / ".join(self.spec_candidates) or "未提供"))
-        if self.remark:
-            parts.append("原备注：" + self.remark)
-        if self.origin == "汇总展开":
-            parts.append("由源汇总行展开，非新增检测；已包含在本版全部批次文件")
-        if self.result_nature == "异常观察":
-            parts.append("仅转录异常观察，未新增质量合格/不合格判定或处置闭环")
-        parts.extend(self.notes)
         return "；".join(parts)
 
     def import_row(self) -> list[Any]:
@@ -463,7 +454,7 @@ def clean_source(path: Path | str) -> CleanResult:
                 if not records[0].material or not records[0].spec:
                     issues.append(issue("UNCONFIRMED_ATTRIBUTES", "高", batch, [row_num],
                                         "多值材质/规格的逐管对应（12/7弯头区带与每屏24根的关系及计数方向）未确认",
-                                        "材质规格留空；候选列表和原备注保留在描述及审计",
+                                        "材质规格留空；候选列表、原备注与依据注记保留在审计工作簿，导入描述只含方法/结果",
                                         ["2022/2021的12/7弯头区带对应前12根还是后12根、按哪个方向计数"]))
                 if SUMMARY_RE.fullmatch(raw[2]):
                     issues.append(issue("SUMMARY_EXPANSION", "说明", batch, [row_num],
@@ -533,7 +524,7 @@ def validate(result: CleanResult) -> list[str]:
         if len({r.code for r in records}) != len(records):
             errors.append(f"{batch}导入编码重复")
         for r in candidates:
-            if r.date != meta["date"] or MONTH_NOTE not in r.desc:
+            if r.date != meta["date"]:
                 errors.append(f"{r.source_id}日期精度丢失")
             if r.material and r.material not in r.material_candidates:
                 errors.append(f"{r.source_id}材质不在源行候选内")
@@ -670,6 +661,9 @@ def release_notes(result: CleanResult) -> str:
         "按物理管身份关联W/Q部位与跨批次事件，不得把本批次流水号当永久管ID。\n\n"
         "三、已落实的规则\n"
         "机组：2026=1号机C修、2022=1号机A修、2021=2号机A修；A侧R、B侧L。\n"
+        "自v9起导入「详细描述/结论」只含检测内容（方法/结果与待确认提示）；批次、来源ID、位置、"
+        "依据注记、原备注等溯源信息全部在导入表专属列与审计工作簿，不再堆进描述。\n"
+        "目标系统按来源ID识别同源记录：重导本包将更新既有记录的描述，不会产生重复。\n"
         "源2026第32行“第24屏”经用户确认实为第27屏，已按L027导入（第29行L024保留）。\n"
         "材质写法统一全称（SA-213TP304H/SA-213TP347H/SA-213T91）；12CrMoVG经用户确认实为12Cr1MoVG。\n"
         "高过弯头材质/规格按用户确认的12回路分段基准（图纸148M211-0）推导：回路=前腿F00k(向下)+"
@@ -718,7 +712,7 @@ def write_audit(path: Path, result: CleanResult, style: Any) -> None:
         return [r.source_id, r.batch, r.source_row, r.source_seq, r.item_order, r.source_order, r.import_serial,
                 r.disposition, r.duplicate_of, r.source_code, r.code, r.position, r.spec, r.material,
                 " / ".join(r.spec_candidates), " / ".join(r.material_candidates), r.spec_basis, r.material_basis,
-                r.date, "年", r.method, r.result, r.result_nature, r.source_result, r.remark, "；".join(r.notes)]
+                r.date, "月", r.method, r.result, r.result_nature, r.source_result, r.remark, "；".join(r.notes)]
     append_table(workbook, "全量候选", headers, [audit_row(r) for r in result.candidates], style)
     append_table(workbook, "隔离重复不可导入", headers, [audit_row(r) for r in result.isolated], style)
     append_table(workbook, "汇总展开追溯", headers, [audit_row(r) for r in result.supplement], style)

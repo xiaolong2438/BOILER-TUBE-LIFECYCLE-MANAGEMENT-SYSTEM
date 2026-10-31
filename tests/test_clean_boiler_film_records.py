@@ -119,7 +119,11 @@ class CleaningSemanticsTest(unittest.TestCase):
         self.assertFalse(any(r.origin == '汇总展开' and r.location_key == anomalies[0].location_key for r in summary))
         self.assertTrue(all('-F024-' in r.code for r in self.result.records if r.source_row == 8),
                         '炉后第1根按确认几何镜像为F024')
-        self.assertTrue(all(r.date in ('2026-04', '2022-10', '2021-11') and clean.MONTH_NOTE in r.desc for r in self.result.records))
+        self.assertTrue(all(r.date in ('2026-04', '2022-10', '2021-11') for r in self.result.records))
+        self.assertTrue(all(r.desc.startswith('方法：') and '结果：' in r.desc for r in self.result.records),
+                        'v9：描述列只含方法/结果简明结论')
+        self.assertFalse(any('来源ID' in r.desc or '批次：' in r.desc or '依据' in r.desc for r in self.result.records),
+                        '溯源与依据注记走专属列/审计表，不进描述')
 
     def test_every_record_pairing_matches_drawing_or_library(self):
         # 12回路分段基准确认的高过底弯配对（图纸148M211-0）+ 系统高再材料库Φ60×4档配对。

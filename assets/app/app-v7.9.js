@@ -632,7 +632,7 @@ function exportCSV() {
 // ========== 核心修复：防重复导入逻辑 ==========
 function importLifecycleRows(rawRows, options = {}) {
   const rows = Array.isArray(rawRows) ? rawRows : [];
-  const stats = { importedEvents: 0, importedReplacements: 0, skippedDuplicates: 0, skippedMismatch: 0, normalizedCount: 0, normalizationSamples: [], addedEventTs: [], addedReplacementTs: [], errors: [] };
+  const stats = { importedEvents: 0, importedReplacements: 0, updatedEvents: 0, skippedDuplicates: 0, skippedMismatch: 0, normalizedCount: 0, normalizationSamples: [], addedEventTs: [], addedReplacementTs: [], errors: [] };
   if(rows.length < 2) { stats.errors.push('CSV 文件为空'); return stats; }
   const headers = (rows[0] || []).map(item => String(item ?? '').replace(/^\uFEFF/, '').trim());
   const hasNewColumns = headers.includes('炉号') && headers.includes('厚度(mm)');
@@ -700,6 +700,18 @@ function importLifecycleRows(rawRows, options = {}) {
       const eventRecord = { boiler: rowBoiler, code, spec, material, thickness, hardness, type: typeOrReason, date, desc, ts };
       const sourceId = sourceValue(cols, '来源ID');
       if(sourceId) Object.assign(eventRecord, { sourceId, batch: sourceValue(cols, '检修批次'), datePrecision: sourceValue(cols, '日期精度'), inspectionResult: sourceValue(cols, '检测结果') });
+      /* 同来源ID=同一条源记录：内容一致按幂等跳过，描述等文本有变化就原位更新（换包迁移不产生重复） */
+      if (sourceId) {
+        const sameSourceIdx = userDB.events.findIndex(e => e.sourceId === sourceId);
+        if (sameSourceIdx >= 0) {
+          const existing = userDB.events[sameSourceIdx];
+          const sameContent = ['boiler', 'code', 'spec', 'material', 'thickness', 'hardness', 'type', 'date', 'desc', 'batch', 'datePrecision', 'inspectionResult']
+            .every(key => String(existing[key] || '') === String(eventRecord[key] || ''));
+          if (sameContent) { skipDuplicates++; }
+          else { userDB.events[sameSourceIdx] = { ...eventRecord, ts: existing.ts }; stats.updatedEvents++; importEvents++; }
+          continue;
+        }
+      }
       if (!isEventExist(eventRecord)) {
           userDB.events.push(eventRecord);
           stats.addedEventTs.push(eventRecord.ts);
@@ -751,7 +763,7 @@ function importCSV(event) {
       if (lines.length < 2) { showToast('CSV 文件为空', 'warn'); return; }
       const rawRows = lines.map(parseCSVLine);
       const result = importLifecycleRows(rawRows, { batchFilter: getBatchBoilerFilter(), fileName: file.name });
-      showToast(`导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}${result.normalizedCount ? `、方向归一 ${result.normalizedCount} 条` : ''}`, 'ok', 6000);
+      showToast(`导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条${result.updatedEvents ? `、更新同源记录 ${result.updatedEvents} 条` : ''}，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}${result.normalizedCount ? `、方向归一 ${result.normalizedCount} 条` : ''}`, 'ok', 6000);
     } catch (err) {
       console.error(err);
       showToast('CSV 解析失败，请检查文件格式是否正确。', 'error');
@@ -787,7 +799,7 @@ function importXLSX(event) {
         return;
       }
       const result = importLifecycleRows(grid, { batchFilter: getBatchBoilerFilter(), fileName: file.name });
-      showToast(`Excel 导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}${result.normalizedCount ? `、方向归一 ${result.normalizedCount} 条` : ''}`, 'ok', 6000);
+      showToast(`Excel 导入完成：新增事件 ${result.importedEvents} 条、更换 ${result.importedReplacements} 条${result.updatedEvents ? `、更新同源记录 ${result.updatedEvents} 条` : ''}，跳过重复 ${result.skippedDuplicates} 条${result.skippedMismatch ? `、机组不匹配 ${result.skippedMismatch} 条` : ''}${result.normalizedCount ? `、方向归一 ${result.normalizedCount} 条` : ''}`, 'ok', 6000);
     } catch (err) {
       console.error(err);
       showToast('Excel 解析失败，请确认使用的是系统提供的模板文件。', 'error');
@@ -1897,6 +1909,20 @@ function getCodeBoiler(code) {
   const match = String(code || '').trim().toUpperCase().match(/^([12])G-/);
   return match ? match[1] : '';
 }
+/* 检修记录表「记录/结论」列：只显示 方法+结果 简明结论（如 方法：射线；结果：合格）；
+   提取不到结构信息时（更换登记/系统样例）保留原文，完整溯源文本经悬停提示查看 */
+function recordConclusionLabel(record) {
+  const desc = String(record.desc || '');
+  const methodMatch = desc.match(/方法[：:]\s*([^；;,，]+)/);
+  const resultMatch = desc.match(/结果[：:]\s*([^；;]+)/);
+  const method = methodMatch ? methodMatch[1] : '';
+  const result = String(record.result || (resultMatch ? resultMatch[1] : '')).trim();
+  if (!method && !result) return desc;
+  const parts = [];
+  if (method) parts.push('方法：' + method.trim());
+  if (result) parts.push('结果：' + result);
+  return parts.join('；');
+}
 function openComponentLifecycle(sys, label) {
   document.querySelector('[data-view="tube-analysis"]').click();
   document.getElementById('searchResult').innerHTML = `<div class="alert alert-info"><div>ℹ</div><div>当前显示 ${escapeHTML(label || getSysLabel(sys))} 汇总；本模块的寿命档案输入框和下方全受热面管段查询仍支持全部受热面，不限于当前部件。</div></div>`;
@@ -1912,7 +1938,7 @@ function loadComponentLifecycle(sys, label, boilerFilter = 'all', surfaceFilter 
     .map(([code, item]) => ({ code, boiler: getCodeBoiler(code), date: item.install, type: '系统样例', desc: item.risk, source: item.name }));
   const localEvents = userDB.events
     .filter(e => selectedSys === 'all' || getCodeSystem(e.code) === selectedSys)
-    .map(e => ({ code: e.code, boiler: getCodeBoiler(e.code), date: e.date, type: e.type, desc: e.desc, source: '本地录入' }));
+    .map(e => ({ code: e.code, boiler: getCodeBoiler(e.code), date: e.date, type: e.type, desc: e.desc, result: e.inspectionResult || '', source: '本地录入' }));
   const replacementEvents = userDB.replacements
     .filter(r => selectedSys === 'all' || getCodeSystem(r.oldCode) === selectedSys || getCodeSystem(r.newCode) === selectedSys)
     .map(r => ({ code: r.oldCode, boiler: getCodeBoiler(r.oldCode) || getCodeBoiler(r.newCode), date: r.date, type: '管段更换', desc: `${r.oldCode} → ${r.newCode}；${r.reason}`, source: '更换登记' }));
@@ -1929,7 +1955,7 @@ function loadComponentLifecycle(sys, label, boilerFilter = 'all', surfaceFilter 
       <td>${escapeHTML(r.boiler ? r.boiler + '号炉' : '-')}</td>
       <td style="color:var(--accent); font-family:'Consolas',monospace;">${escapeHTML(r.code || '-')}</td>
       <td><span class="badge badge-sh">${escapeHTML(r.type || '-')}</span></td>
-      <td style="font-family:inherit; white-space:normal; min-width:260px;">${escapeHTML(r.desc || '')}</td>
+      <td style="font-family:inherit; white-space:normal; min-width:260px;" title="${escapeHTML(r.desc || '')}">${escapeHTML(recordConclusionLabel(r))}</td>
       <td>${escapeHTML(r.source || '')}</td>
       <td>${r.code ? `<button class="btn btn-outline" style="padding:2px 8px; font-size:11px;" onclick="jumpLifecycle('${escapeHTML(r.code)}')">时间线</button>` : ''}</td>
     </tr>`).join('');
