@@ -120,7 +120,7 @@ function resolvePackageDir() {
   for (const name of ['verified', 'verified-physical']) {
     try {
       const manifest = JSON.parse(readFileSync(new URL(`../data-cleaning/${name}/manifest.json`, import.meta.url), 'utf8'));
-      if (manifest.rule_version === 'film-records-physical-codes-v5') return `../data-cleaning/${name}`;
+      if (manifest.rule_version === 'film-records-physical-codes-v6') return `../data-cleaning/${name}`;
     } catch { /* 目录未发布，尝试下一个 */ }
   }
   throw new Error('找不到字母尾物理编码规则的数据包');
@@ -144,18 +144,23 @@ function csvGrid(text) {
 }
 const actual = csvGrid(csvText);
 assert.equal(actual.length - 1, packageManifest.statistics.import_count);
+assert.equal(actual.length - 1, 464, '第27屏确认修正后全量464条');
 assert.ok(actual.slice(1).every(r => /-[QW]$/.test(r[3])), '发布包编码必须全部为字母尾');
 ctx.userDB = { events: [], replacements: [] };
 const imported = ctx.importLifecycleRows(actual);
-assert.equal(imported.importedEvents, 463);
+assert.equal(imported.importedEvents, 464);
 assert.equal(imported.normalizedCount, 152, 'A侧R屏号按确认的L↔R镜像归一为规范方向（F管位保持现场计数不变）');
 const normalizedSample = ctx.userDB.events.find(e => e.sourceId === '2022年1号机A修!R4#001');
 assert.ok(normalizedSample && normalizedSample.code === '1G-GGRQ-GQ-L001-F001-W', 'A侧R001按确认镜像落L032前的规范屏号；实际：' + (normalizedSample && normalizedSample.code));
-assert.equal(ctx.importLifecycleRows(actual).skippedDuplicates, 463);
-assert.equal(new Set(ctx.userDB.events.map(e => e.ts)).size, 463);
-assert.equal(new Set(ctx.userDB.events.map(e => e.sourceId)).size, 463);
+assert.equal(ctx.importLifecycleRows(actual).skippedDuplicates, 464);
+assert.equal(new Set(ctx.userDB.events.map(e => e.ts)).size, 464);
+assert.equal(new Set(ctx.userDB.events.map(e => e.sourceId)).size, 464);
 assert.equal(ctx.userDB.events.filter(e => e.code.endsWith('-F024-W')).length, 32, '炉后第1根按确认几何落F024');
 assert.equal(ctx.userDB.events.filter(e => e.code.includes('-B0')).length, 0, '镜像后不保留B编码');
+const l027 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L027-F001-W');
+assert.equal(l027.result_nature ?? '合格', '合格');
+assert.ok(l027, '用户确认的第27屏已按L027导入');
+assert.equal(ctx.userDB.events.filter(e => e.code === '1G-GGRQ-GQ-L024-F001-W').length, 1, '第29行L024保留，不重复');
 const f004 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L002-F004-W');
 assert.equal(f004.material, 'SA-213TP304H', '区带映射：F004=炉后第21弯头→304H');
 assert.equal(f004.spec, 'Φ51×8');
@@ -167,7 +172,7 @@ assert.equal(z2021.material, 'SA-213TP304H', '2021高再前7根区带：F001→T
 assert.equal(z2021.spec, 'Φ60×4');
 assert.equal(ctx.userDB.events.every(e => e.material), true, '确认区带后材质无留空');
 assert.equal(f004.material.split('-').pop() !== undefined && ['SA-213TP347H','SA-213TP304H','T91','12CrMoVG'].includes(f004.material), true);
-assert.ok(ctx.userDB.events.every(e => /^\d{4}$/.test(e.date)));
+assert.ok(ctx.userDB.events.every(e => /^\d{4}-\d{2}$/.test(e.date)), '日期为年月精度');
 assert.equal(ctx.userDB.events.filter(e => e.inspectionResult === '发现异物，割开检查为氧化皮').length, 5);
 for(const e of ctx.userDB.events.filter(e => e.inspectionResult === '发现异物，割开检查为氧化皮')) {
   assert.equal(ctx.getTubeProfileData(e.code.replace(/-W$/, '-Q')).data.status, 'warn');
@@ -175,7 +180,7 @@ for(const e of ctx.userDB.events.filter(e => e.inspectionResult === '发现异�
 assert.equal(ctx.getGeneratedTubeLedgerRows('1').filter(row => row.code === '1G-GGRQ-GQ-L002-F004-W').length, 1, '台账按字母尾物理编码展开');
 const actualClean = Core.cleanRows({ rows: actual, matrixRows: matrix, datasetType: 'events' });
 assert.equal(actualClean.report.summary.errorCount, 0);
-assert.equal(actualClean.report.summary.cleanRows, 463);
+assert.equal(actualClean.report.summary.cleanRows, 464);
 assert.match(app, /id="f-part-kind"/);
 assert.match(app, /val\('f-part-kind'\) === 'W'/);
 assert.doesNotMatch(app, /id="f-seq"/, '生成器不再输出流水号输入');

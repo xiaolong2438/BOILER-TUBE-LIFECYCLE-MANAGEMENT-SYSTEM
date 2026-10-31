@@ -1321,7 +1321,8 @@
           }
         }
 
-        var normalizedDate = /^(?:19|20|21)\d{2}$/.test(dateRaw) ? dateRaw : normalizeDateText(dateRaw);
+        /* 年月精度（如 2026-04，用户确认的检修月份）与年份精度一样按原文保留，不虚构日 */
+        var normalizedDate = /^(?:(?:19|20|21)\d{2}-(?:0[1-9]|1[0-2])|(?:19|20|21)\d{2})$/.test(dateRaw) ? dateRaw : normalizeDateText(dateRaw);
         var dateValue = normalizedDate || dateRaw;
         if (!normalizedDate) {
           invalidDateRows.push(rowNumber);
