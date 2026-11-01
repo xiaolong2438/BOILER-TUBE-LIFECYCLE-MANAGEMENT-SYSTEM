@@ -57,7 +57,11 @@ assert.match(html, /id="dm-rep-table-body"/);
 
 // 弹窗容器与筛选联动：机组筛选同时刷新事件表与更换表。
 assert.match(html, /id="dataEditModal"/);
-assert.match(html, /onchange="renderDataManagerTables\(\)"/);
+assert.match(html, /class="unit-switch" id="dm-batch-boiler"/, "批量范围用主页同款分段按钮组");
+assert.match(html, /onclick="setDmBoilerFilter\('all'\)"/);
+assert.match(js, /function setDmBoilerFilter\(value\)/);
+assert.match(js, /localStorage\.setItem\('boiler_dm_boiler_filter', value \|\| 'all'\)/, "批量范围选择记忆在本地");
+assert.match(js, /boilerHost\.querySelectorAll\('button'\)\.forEach\(btn => btn\.classList\.toggle\('active', btn\.dataset\.boiler === savedBoiler\)\)/);
 assert.match(js, /function renderDataManagerTables\(\) \{[\s\S]*?renderDMTable\(\); renderReplacementTable\(\);\s*\}/);
 assert.match(js, /renderDataManagerTables\(\);\s*\r?\n\s*updateLifecycleDropdown\(\);/);
 assert.match(js, /function closeDataEditModal\(\)/);

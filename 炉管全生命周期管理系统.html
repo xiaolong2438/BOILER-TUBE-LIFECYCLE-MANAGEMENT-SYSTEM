@@ -525,13 +525,13 @@
         <div><strong>操作指南：</strong>下载 Excel 或 CSV 模板填写后导入，Excel 日期单元格会自动转换为标准格式。<strong style="color:var(--ok);">系统已开启防重复校验</strong>，多次导入同一文件自动跳过已存在的数据，确保台账干净无冗余。</div>
       </div>
       <div style="display:flex; gap:15px; flex-wrap:wrap;">
-        <div class="form-group" style="max-width:260px; margin-bottom:0;">
+        <div class="form-group" style="margin-bottom:0;">
           <label>批量范围</label>
-          <select id="dm-batch-boiler" onchange="renderDataManagerTables()">
-            <option value="all">全部机组</option>
-            <option value="1">1号机组</option>
-            <option value="2">2号机组</option>
-          </select>
+          <div class="unit-switch" id="dm-batch-boiler" role="group" aria-label="批量范围机组筛选">
+            <button type="button" class="active" data-boiler="all" onclick="setDmBoilerFilter('all')">全厂</button>
+            <button type="button" data-boiler="1" onclick="setDmBoilerFilter('1')">1#机组</button>
+            <button type="button" data-boiler="2" onclick="setDmBoilerFilter('2')">2#机组</button>
+          </div>
         </div>
         <div class="form-group" style="max-width:260px; margin-bottom:0;">
           <label>受热面筛选</label>

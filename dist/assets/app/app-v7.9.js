@@ -316,7 +316,19 @@ function normalizeBoiler(value) {
   return match ? match[0] : '';
 }
 function getBatchBoilerFilter() {
-  return document.getElementById('dm-batch-boiler')?.value || 'all';
+  const host = document.getElementById('dm-batch-boiler');
+  if (host && host.classList.contains('unit-switch')) {
+    const active = host.querySelector('button.active') || host.querySelector('button');
+    return active?.dataset.boiler || 'all';
+  }
+  return host?.value || 'all';
+}
+/* 批量范围分段按钮（与主页机组切换同款）：点击切换、记忆在本地 */
+function setDmBoilerFilter(value) {
+  const host = document.getElementById('dm-batch-boiler');
+  if (host) host.querySelectorAll('button').forEach(btn => btn.classList.toggle('active', btn.dataset.boiler === value));
+  localStorage.setItem('boiler_dm_boiler_filter', value || 'all');
+  renderDataManagerTables();
 }
 /* 批量数据管理：受热面筛选（按编码系统码），与批量范围叠加作用于记录表与导出 */
 function getDmSysFilter() {
@@ -431,6 +443,12 @@ function canManageTubeData() {
   try { return getAssistantRole() !== 'viewer'; } catch (err) { return true; }
 }
 function renderDataManagerTables() {
+  const boilerHost = document.getElementById('dm-batch-boiler');
+  if (boilerHost && boilerHost.classList.contains('unit-switch') && !boilerHost.dataset.init) {
+    boilerHost.dataset.init = '1';
+    const savedBoiler = localStorage.getItem('boiler_dm_boiler_filter');
+    if (savedBoiler) boilerHost.querySelectorAll('button').forEach(btn => btn.classList.toggle('active', btn.dataset.boiler === savedBoiler));
+  }
   const sysSelect = document.getElementById('dm-sys-filter');
   if (sysSelect && !sysSelect.options.length) {
     sysSelect.innerHTML = '<option value="">全部受热面</option>' + CODE_SYSTEMS.map(item => '<option value="' + escapeHTML(item.sys) + '">' + escapeHTML(item.sys) + ' · ' + escapeHTML(item.label) + '</option>').join('');
