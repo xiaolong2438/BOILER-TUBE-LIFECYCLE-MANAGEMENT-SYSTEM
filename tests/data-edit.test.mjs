@@ -14,6 +14,13 @@ assert.match(js, /function saveEventEdit\(ts\)/);
 assert.match(js, /onclick="openEditEvent\(\$\{Number\(r\.ts\)\}\)"/);
 assert.match(js, /mlog\('update', \{ record: target, field: key, before, after: next, source: 'manual' \}\);/);
 
+// 管段编码可点击直达管段档案（管段分析）：事件表与更换登记表统一走 dmCodeCell。
+assert.match(js, /function dmCodeCell\(code, tone\)/);
+assert.match(js, /onclick="openTubeProfile\('\$\{value\}'\)/, "编码按钮调用 openTubeProfile 打开管段档案");
+assert.match(js, /title="打开管段档案 \$\{value\}"/, "悬停提示打开管段档案");
+assert.match(js, /\$\{dmCodeCell\(r\.code\)\}/, "事件表编码列用 dmCodeCell");
+assert.match(js, /\$\{dmCodeCell\(r\.oldCode\)\}\$\{dmCodeCell\(r\.newCode, 'var\(--ok\)'\)\}/, "更换登记表旧/新编码都用 dmCodeCell");
+
 // 编辑校验与新增口径一致：机组/编码/日期/结论必填，编码与机组前缀联动校验。
 assert.match(js, /if\(!boiler \|\| !code \|\| !date \|\| !desc\) \{ showToast\('机组、管段编码、日期和详细数据\/结论不能为空', 'warn'\); return; \}/);
 assert.match(js, /if\(getBoilerFromCode\(code\) && getBoilerFromCode\(code\) !== boiler\) \{ showToast\('所选机组与管段编码开头不一致，请核对。', 'warn'\); return; \}/);

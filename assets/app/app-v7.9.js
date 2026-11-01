@@ -418,6 +418,12 @@ function canManageTubeData() {
   try { return getAssistantRole() !== 'viewer'; } catch (err) { return true; }
 }
 function renderDataManagerTables() { renderDMTable(); renderReplacementTable(); }
+/* 数据录入记录表里的管段编码 → 点击打开管段档案（管段分析），与操作列的编辑/删除并存 */
+function dmCodeCell(code, tone) {
+  if (!code) return '<td>-</td>';
+  const value = escapeHTML(code);
+  return `<td><button type="button" style="color:${tone || 'var(--accent)'}; font-family:'Consolas',monospace; background:none; border:none; padding:0; cursor:pointer; text-align:left; text-decoration:underline dotted; text-underline-offset:3px;" onclick="openTubeProfile('${value}')" title="打开管段档案 ${value}">${value}</button></td>`;
+}
 function renderDMTable() {
   const tbody = document.getElementById('dm-table-body'); if(!tbody) return;
   const filter = getBatchBoilerFilter();
@@ -428,7 +434,7 @@ function renderDMTable() {
       ? `<button class="btn btn-outline" style="padding:2px 8px; font-size:11px;" onclick="openEditEvent(${Number(r.ts)})">编辑</button>
          <button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteEvent(${Number(r.ts)})">删除</button>`
       : '<span style="font-size:11px; color:var(--text-dim);">只读</span>';
-    return `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(eventBoiler(r) || '-')}号</td><td style="color:var(--accent)">${escapeHTML(r.code)}</td><td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td style="white-space:nowrap;">${action}</td></tr>`;
+    return `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(eventBoiler(r) || '-')}号</td>${dmCodeCell(r.code)}<td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td style="white-space:nowrap;">${action}</td></tr>`;
   }).join('') || '<tr><td colspan="10" style="text-align:center; padding:20px;">暂无数据</td></tr>';
 }
 function deleteEvent(ts) { if(confirm('确定删除？')) { const removed = userDB.events.find(e => Number(e.ts) === Number(ts)) || null; userDB.events = userDB.events.filter(e => Number(e.ts) !== Number(ts)); saveDB(); mlog('delete', { record: removed, source: 'manual' }); } }
@@ -531,7 +537,7 @@ function renderReplacementTable() {
       ? `<button class="btn btn-outline" style="padding:2px 8px; font-size:11px;" onclick="openEditReplacement(${Number(r.ts)})">编辑</button>
          <button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteReplacement(${Number(r.ts)})">删除</button>`
       : '<span style="font-size:11px; color:var(--text-dim);">只读</span>';
-    return `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(replacementBoiler(r) || '-')}号</td><td style="color:var(--accent)">${escapeHTML(r.oldCode)}</td><td style="color:var(--ok)">${escapeHTML(r.newCode)}</td><td style="font-family:inherit; max-width:260px; white-space:normal;">${escapeHTML(r.reason || '-')}</td><td style="white-space:nowrap;">${action}</td></tr>`;
+    return `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(replacementBoiler(r) || '-')}号</td>${dmCodeCell(r.oldCode)}${dmCodeCell(r.newCode, 'var(--ok)')}<td style="font-family:inherit; max-width:260px; white-space:normal;">${escapeHTML(r.reason || '-')}</td><td style="white-space:nowrap;">${action}</td></tr>`;
   }).join('') || '<tr><td colspan="6" style="text-align:center; padding:20px;">暂无更换记录。可在上方“管段更换登记”表单或批量导入中登记。</td></tr>';
 }
 function isReplacementAutoEvent(event, replacement) {
