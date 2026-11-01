@@ -968,12 +968,12 @@ const matrix = [
   { name:'冷灰斗-前坡', sys:'SLB', comp:'LHD', pos:'F000', dirs:['L','R'], tMax:96, spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'冷灰斗-后坡', sys:'SLB', comp:'LHD', pos:'B000', dirs:['L','R'], tMax:96, spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'燃烧器区域', sys:'SLB', comp:'RSQ', special:'rsq', corners:[1,4], layers:['A','B','C','D','E','F'], nozzles:[1,8], spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
-  /* 大屏：编号数回路（148M216-0，2026-11-01确认）——每片4小屏×14回路，前腿F00k/后腿B00k/底弯W记前腿位 */
+  /* 大屏：编号数回路（148M216-0，2026-11-01确认）——每片4小屏×14回路，入口段F00k/出口段B00k/底弯W记入口段位 */
   { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['L','R'], p2Max:4, dirs:['F','B'], tMax:14, loopPairing: true, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
   /* 后屏：编号数腿，回路k=F00k+F(27−k)，13回路/26管位（图纸148M215-0，2026-11-01确认） */
-  /* 后屏：编号数回路（148M215-0，2026-11-01确认），前腿F00k/后腿B00k/底弯W记前腿位，13回路 */
+  /* 后屏：编号数回路（148M215-0，2026-11-01确认），入口段F00k/出口段B00k/底弯W记入口段位，13回路 */
   { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing: true, spec:'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat:'按材料库分项', badge:'badge-sh' },
-  /* 高过：统一回路编号（2026-11-01）——前腿F00k、后腿B00k、底弯W记前腿位，12回路；历史腿号F013–F024由归一自动迁移 */
+  /* 高过：统一回路编号（2026-11-01）——入口段F00k、出口段B00k、底弯W记入口段位，12回路；历史腿号F013–F024由归一自动迁移 */
   { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:12, loopPairing: true, spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
   /* 高再每屏管数未确认：台账只展开 F1~7，B 与 F8+ 码走 fieldDirs 宽松校验、不镜像（保留原方向待核） */
   { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['F'], tMax:7, fieldDirs:['F','B'], spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh' },
@@ -1906,12 +1906,12 @@ function buildTubeProfileHTML(rawCode, options = {}) {
       aiTrendEntry = `<div class="alert alert-info" style="margin-top:15px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><strong>已具备AI趋势分析条件</strong><br><span style="font-size:12px;color:var(--text-dim);">本地测厚记录 ${thicknessData.length} 条，最新 ${escapeHTML(latestThickness.dateStr)} / ${latestThickness.val.toFixed(2)}mm</span></div><button class="btn btn-ai" onclick="analyzeTubeDetails('${escapeHTML(code)}')">查看预测曲线与模型判定</button></div>`;
   }
   const theoryHTML = `<div class="info-grid" style="margin-top:12px"><div class="info-item"><div class="k">名义壁厚</div><div class="v">${thresholdInfo.nominalWall ?? '--'} mm</div></div><div class="info-item"><div class="k">直管理论厚度</div><div class="v">${thresholdInfo.straight ?? '--'} mm</div></div><div class="info-item"><div class="k">弯管外侧理论厚度</div><div class="v">${thresholdInfo.bend ?? '--'} mm</div></div><div class="info-item"><div class="k">最终采用阈值</div><div class="v" style="color:${replacementWarning.level === 'normal' ? 'var(--ok)' : 'var(--danger)'}">${thresholdInfo.matched ? (thresholdInfo.pipeType === 'bend' ? '弯管外侧' : '直管') + ' ' + thresholdInfo.threshold + ' mm' : '未匹配材料库'}</div></div></div><div class="alert ${replacementWarning.level === 'normal' ? 'alert-info' : 'alert-warn'}" style="margin-top:12px"><strong>${replacementWarning.label}</strong>${replacementWarning.margin !== null ? `：当前 ${latestThickness}mm，距理论阈值 ${replacementWarning.margin.toFixed(2)}mm` : '：禁止输出寿命数字或误导性曲线'}</div>`;
-  /* 高过回路绑定：前腿/底弯/后腿三段互跳，当前管高亮「本管」 */
+  /* 高过回路绑定：入口段/底弯/出口段三段互跳，当前管高亮「本管」 */
   const loopBind = platenLoopBinding(code);
-  const loopBindHTML = loopBind ? `<div class="alert alert-info" style="margin-top:12px;"><strong>回路${loopBind.loop} 绑定</strong> <span style="color:var(--text-dim); font-size:12px;">前腿↓ + 底弯 + 后腿↑ 为同一检查回路</span><div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">${[
-    { label: '前腿 ' + loopBind.frontCode.split('-').slice(-2).join('-'), part: loopBind.frontCode, on: loopBind.current.front },
+  const loopBindHTML = loopBind ? `<div class="alert alert-info" style="margin-top:12px;"><strong>回路${loopBind.loop} 绑定</strong> <span style="color:var(--text-dim); font-size:12px;">入口段↓ + 底弯 + 出口段↑ 为同一检查回路</span><div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">${[
+    { label: '入口段 ' + loopBind.frontCode.split('-').slice(-2).join('-'), part: loopBind.frontCode, on: loopBind.current.front },
     { label: '底弯 ' + loopBind.bendCode.split('-').slice(-2).join('-'), part: loopBind.bendCode, on: loopBind.current.bend },
-    { label: '后腿 ' + loopBind.rearCode.split('-').slice(-2).join('-'), part: loopBind.rearCode, on: loopBind.current.rear }
+    { label: '出口段 ' + loopBind.rearCode.split('-').slice(-2).join('-'), part: loopBind.rearCode, on: loopBind.current.rear }
   ].map(item => item.on
     ? `<span style="display:inline-block; background:var(--accent, #2563eb); color:#fff; border-radius:4px; padding:3px 10px; font-size:11px; font-weight:700;">${escapeHTML(item.label)} · 本管</span>`
     : `<button type="button" class="btn btn-outline" style="padding:3px 10px; font-size:11px;" onclick="openTubeProfile('${escapeHTML(item.part)}')" title="打开 ${escapeHTML(item.part)} 档案">${escapeHTML(item.label)}</button>`).join('')}</div></div>` : '';
@@ -2676,7 +2676,7 @@ function matrixExpandCodes(m, unit) {
   const posList = m.pos ? [m.pos] : Array.from({length: m.pMax}, (_, i) => `${m.posLetters[0]}${pad(i + 1, 3)}`);
   const pos2List = m.pos2Letters ? Array.from({length: m.p2Max}, (_, i) => `${m.pos2Letters[0]}${pad(i + 1, 3)}`) : [null];
   const spaceList = m.spaces ? Array.from({length: m.spaces[1] - m.spaces[0] + 1}, (_, i) => `${m.spaces[0] + i}KJ`) : [null];
-  /* 悬挂屏回路行（loopPairing）：F=前腿、B=后腿是两个不同物理管，双向都进台账；
+  /* 悬挂屏回路行（loopPairing）：F=入口段、B=出口段是两个不同物理管，双向都进台账；
      其余行只展开规范方向（dirs 首位），反方向靠镜像归一。 */
   const dirList = m.loopPairing ? m.dirs : [m.dirs[0]];
   for(const dir of dirList) {
@@ -2701,7 +2701,7 @@ function matrixExpandCodes(m, unit) {
 }
 function matrixRowCount(m) {
   if(m.special === 'rsq') return (m.corners[1] - m.corners[0] + 1) * m.layers.length * (m.nozzles[1] - m.nozzles[0] + 1);
-  /* 悬挂屏回路行双向展开（F 前腿 + B 后腿），其余行只计规范方向 */
+  /* 悬挂屏回路行双向展开（F 入口段 + B 出口段），其余行只计规范方向 */
   const dirFactor = m.loopPairing ? m.dirs.length : 1;
   let count = (m.pos ? 1 : m.pMax * (m.pos2Letters ? m.p2Max : 1)) * m.tMax * dirFactor;
   if(m.spaces) count *= (m.spaces[1] - m.spaces[0] + 1);
@@ -4423,7 +4423,7 @@ function getAssistantRole() {
 const DESIGN_DRAWINGS_KEY = 'boiler_design_drawings';
 const DRAWING_MAX_BYTES = 4 * 1024 * 1024;
 // 高温过热器12回路材质分段基准（图纸148M211-0 + 用户确认2026-10-31）。
-// 每回路=前腿F00k(向下)+底部弯头+后腿F(25-k)(向上)；frontSegs沿流程(顶→底)、rearSegs沿流程(底→顶)。
+// 每回路=入口段F00k(向下)+底部弯头+出口段F(25-k)(向上)；frontSegs沿流程(顶→底)、rearSegs沿流程(底→顶)。
 // W记录对应底弯件=frontSegs末段；与 scripts/clean_boiler_film_records.py 的 GGRQ_LOOP_SEGMENTS 保持一致。
 const GGRQ_LOOP_BASELINE = [
   { loop: 1, frontSegs: [['Φ54×9', '12Cr1MoVG'], ['Φ54×9', 'SA-213T91'], ['Φ54×7.5', 'SA-213TP347H']], rearSegs: [['Φ54×11', 'SA-213T91'], ['Φ54×11', 'SA-213T22']] },
@@ -4440,7 +4440,7 @@ const GGRQ_LOOP_BASELINE = [
   { loop: 12, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] }
 ];
 // 屏式过热器（后屏）13回路材质分段基准（图纸148M215-0 + 用户确认2026-11-01）。
-// 统一回路编号：回路k = 前腿F00k↓ + 底弯W(F00k-W) + 后腿B00k↑，每回路即一根U形管。
+// 统一回路编号：回路k = 入口段F00k↓ + 底弯W(F00k-W) + 出口段B00k↑，每回路即一根U形管。
 // 回路1外圈Φ60；回路2-3底弯TP347H；回路4-6底弯T91；回路7-12整根12Cr1MoVG（含底弯）；回路13包扎管底弯Φ54×9 TP347H。
 const HPGRQ_LOOP_BASELINE = [
   { loop: 1, frontSegs: [['Φ60×8', '12Cr1MoVG'], ['Φ60×8', 'SA-213T91'], ['Φ60×9', 'SA-213TP347H']], rearSegs: [['Φ60×8', 'SA-213T91'], ['Φ60×9', '12Cr1MoVG']] },
@@ -4476,7 +4476,7 @@ const DPGRQ_LOOP_BASELINE = [
   { loop: 13, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
   { loop: 14, frontSegs: [['Φ51×7', '12Cr1MoVG'], ['Φ51×7', 'SA-213T91'], ['Φ51×7', 'SA-213T91']], rearSegs: [['Φ51×7', 'SA-213T91'], ['Φ51×7', '12Cr1MoVG']] }
 ];
-// 悬挂屏回路系统配置：统一回路编号——回路k = 前腿F00k + 底弯W(F00k-W) + 后腿B00k；历史腿号由归一自动迁移。
+// 悬挂屏回路系统配置：统一回路编号——回路k = 入口段F00k + 底弯W(F00k-W) + 出口段B00k；历史腿号由归一自动迁移。
 const PLATEN_LOOP_SYSTEMS = {
   GGRQ: { loops: 12, baseline: GGRQ_LOOP_BASELINE },
   HPGRQ: { loops: 13, baseline: HPGRQ_LOOP_BASELINE },
@@ -4494,7 +4494,7 @@ function ggrqBottomBendAttrs(loopNo) {
   const loop = ggrqLoopForTube(loopNo);
   return loop ? loop.frontSegs[loop.frontSegs.length - 1] : null;
 }
-// 悬挂屏回路绑定：回路k = 前腿F00k-Q + 底弯W(F00k-W) + 后腿B00k-Q 三段共用一个回路身份。
+// 悬挂屏回路绑定：回路k = 入口段F00k-Q + 底弯W(F00k-W) + 出口段B00k-Q 三段共用一个回路身份。
 // 返回 { loop, frontCode, bendCode, rearCode, current:{front,bend,rear} }；非悬挂屏系统/管号越界返回 null。
 // 只在真实页面与完整测试沙箱调用（依赖 parseTubeCode/normalizedTubeCode，隔离切片仅定义不调用）。
 function platenLoopBinding(code) {
@@ -4521,7 +4521,7 @@ function ggrqLoopBinding(code) {
   return platenLoopBinding(code);
 }
 // 档案页「规格材质」取值：高过W=回路底弯件（分段基准确定值+全回路分段链）；
-// 高过Q=所在腿沿流程分段链（前腿顶入口→底弯、后腿底弯→顶出口，邻底弯段打标，多种规格按顺序全部列出）；
+// 高过Q=所在腿沿流程分段链（入口段顶入口→底弯、出口段底弯→顶出口，邻底弯段打标，多种规格按顺序全部列出）；
 // 其次用检测记录自带的规格/材质（多批次不一致时并列；与基准链都不一致时附在链后，Q 链只比对同部位记录）；都为空时返回''，调用方退回材料库分项兜底。
 function tubeSpecMaterialSummary(code, events) {
   const parsed = parseTubeCode(code);
@@ -4548,7 +4548,7 @@ function tubeSpecMaterialSummary(code, events) {
       if (loop && parsed.partKind === 'Q') {
         const padNo = String(parsed.tube).padStart(3, '0');
         const isFront = parsed.dir === 'F';
-        /* 前腿直管段 = frontSegs 去掉末段底弯；整腿与底弯同材质时无独立直管段（高过回路8-11、后屏回路7-12） */
+        /* 入口段直管段 = frontSegs 去掉末段底弯；整腿与底弯同材质时无独立直管段（高过回路8-11、后屏回路7-12） */
         const straightSegs = loop.frontSegs.slice(0, -1);
         const legSegs = isFront ? (straightSegs.length ? straightSegs : [loop.frontSegs[0]]) : loop.rearSegs;
         const soleWithBend = isFront && !straightSegs.length;
@@ -4557,7 +4557,7 @@ function tubeSpecMaterialSummary(code, events) {
             : !isFront && i === 0 ? '【底弯后】' : ''))
           .join(' → ');
         const legLetter = isFront ? 'F' : 'B';
-        let summary = '回路' + loop.loop + (isFront ? ' 前腿 ' + legLetter + padNo + '（顶入口→底弯）：' : ' 后腿 ' + legLetter + padNo + '（底弯→顶出口）：') + chain;
+        let summary = '回路' + loop.loop + (isFront ? ' 入口段 ' + legLetter + padNo + '（顶入口→底弯）：' : ' 出口段 ' + legLetter + padNo + '（底弯→顶出口）：') + chain;
         /* 只有同部位（Q）记录的规格才与直管分段链比对；弯头(W)记录的规格属于底弯件，不混入直管链。
            部位字母直接取编码尾 [QW]，不依赖 parseTubeCode/normalizedTubeCode（本函数会被隔离切片加载） */
         const qPairs = [];
