@@ -66,23 +66,23 @@ assert.match(html, /id="ggrqLoopBaseline"/, "分段基准表容器应存在");
 assert.match(html, /高温过热器材质分段基准（12回路）/, "分段基准卡片标题应存在");
 assert.match(js, /const GGRQ_LOOP_BASELINE = \[/);
 assert.match(js, /const HPGRQ_LOOP_BASELINE = \[/, "屏式过热器13回路分段基准应存在");
-assert.match(js, /function ggrqLoopForTube\(tubeNo\)/);
-assert.match(js, /function ggrqBottomBendAttrs\(tubeNo\)/);
+assert.match(js, /function ggrqLoopForTube\(/);
+assert.match(js, /function ggrqBottomBendAttrs\(/);
 assert.match(js, /function renderGGRQLoopBaseline\(\)/);
+assert.match(js, /const DPGRQ_LOOP_BASELINE = \[/, "全大屏14回路分段基准应存在");
 
-// 行为验证：回路配对（k ↔ 25−k）与底弯件取值（JSON 序列化取出，避免跨 realm 原型差异）
+// 行为验证：回路号即前腿F00k/后腿B00k编号（JSON 序列化取出，避免跨 realm 原型差异）
 const baselineCtx = vm.createContext({});
 vm.runInContext(js.slice(js.indexOf("const GGRQ_LOOP_BASELINE"), js.indexOf("function renderGGRQLoopBaseline")), baselineCtx);
 const baseline = JSON.parse(vm.runInContext("JSON.stringify(GGRQ_LOOP_BASELINE)", baselineCtx));
 assert.equal(baseline.length, 12, "应包含全部12个回路");
 for (const l of baseline) {
-  assert.equal(l.front, l.loop, "前腿管号=回路号");
-  assert.equal(l.rear, 25 - l.loop, "后腿管号=25−回路号");
+  assert.equal(l.loop, baseline.indexOf(l) + 1, "回路号连续1..12");
   assert.ok(l.frontSegs.length >= 1 && l.rearSegs.length >= 2, "每条腿至少1段，后腿至少2段");
 }
 assert.deepEqual(
-  JSON.parse(vm.runInContext("JSON.stringify([ggrqBottomBendAttrs(5), ggrqBottomBendAttrs(8), ggrqBottomBendAttrs(12), ggrqBottomBendAttrs(24), ggrqBottomBendAttrs(17)])", baselineCtx)),
-  [["Φ51×8", "SA-213T91"], ["Φ51×9", "12Cr1MoVG"], ["Φ51×8", "SA-213T91"], ["Φ54×7.5", "SA-213TP347H"], ["Φ51×9", "12Cr1MoVG"]],
+  JSON.parse(vm.runInContext("JSON.stringify([ggrqBottomBendAttrs(5), ggrqBottomBendAttrs(8), ggrqBottomBendAttrs(12), ggrqBottomBendAttrs(1)])", baselineCtx)),
+  [["Φ51×8", "SA-213T91"], ["Φ51×9", "12Cr1MoVG"], ["Φ51×8", "SA-213T91"], ["Φ54×7.5", "SA-213TP347H"]],
   "底弯件=前腿末段：回路5-7/12=Φ51×8 T91、8-11=Φ51×9 12Cr1MoVG、回路1=Φ54×7.5 TP347H"
 );
 
@@ -117,10 +117,11 @@ const qFrontSummary = summaryOf('1G-GGRQ-GQ-L002-F002-Q', [{ spec: 'Φ51×9', ma
 assert.ok(qFrontSummary.startsWith('回路2 前腿 F002（顶入口→底弯）：Φ51×9 12Cr1MoVG → Φ51×9 SA-213T91【底弯前】'), 'Q记录按回路基准显示所在腿沿流程分段链（底弯前邻段=T91）');
 assert.ok(!qFrontSummary.includes('检测记录'), '记录值命中分段链时不重复列出');
 assert.ok(summaryOf('1G-GGRQ-GQ-L002-F002-Q', []).startsWith('回路2 前腿 F002'), 'Q记录无检测值也返回基准链，调用方无需退回材料库');
-const qRearSummary = summaryOf('1G-GGRQ-GQ-L025-F023-Q', []);
-assert.ok(qRearSummary.startsWith('回路2 后腿 F023（底弯→顶出口）：Φ51×11 SA-213T91【底弯后】 → Φ51×11 SA-213T22'), '后腿Q列出底弯后多种规格（按顺序全部列出）');
+const qRearSummary = summaryOf('1G-GGRQ-GQ-L025-B002-Q', []);
+assert.ok(qRearSummary.startsWith('回路2 后腿 B002（底弯→顶出口）：Φ51×11 SA-213T91【底弯后】 → Φ51×11 SA-213T22'), '后腿Q（B向规范地址）列出底弯后多种规格（按顺序全部列出）');
 assert.ok(summaryOf('1G-GGRQ-GQ-L002-F002-Q', [{ spec: 'Φ51×11', material: 'SA-213T22' }]).includes('；检测记录：Φ51×11 SA-213T22'), '记录值不在前腿直管链时附检测记录待核');
-assert.ok(summaryOf('1G-GGRQ-GQ-L001-B001-W', []).startsWith('回路1 底弯段 Φ54×7.5 SA-213TP347H'), 'B方向按确认镜像换算后取回路基准');
+assert.ok(summaryOf('1G-GGRQ-GQ-L001-B001-W', []).startsWith('回路1 底弯段 Φ54×7.5 SA-213TP347H'), '弯头B写法归一前腿位后取回路基准');
+assert.ok(summaryOf('1G-DPGRQ-GQ-L001-L002-F001-Q', []).startsWith('回路1 前腿 F001（顶入口→底弯）：Φ51×7 12Cr1MoVG → Φ51×7 SA-213T91【底弯前】'), '大屏外圈前腿链（12Cr1MoVG→T91，绑定在小屏内）');
 assert.equal(summaryOf('1G-GZRQ-GQ-L001-F001-W', [{ spec: 'Φ60×4', material: 'SA-213TP304H' }]), 'Φ60×4 SA-213TP304H', '高再无回路基准，用检测记录值');
 
 console.log("ok - design drawings module: nav/view/upload/viewer/delete/linkage with permission gating and KV sync + 12-loop segment baseline");
