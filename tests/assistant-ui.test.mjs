@@ -111,6 +111,7 @@ check("面板骨架包含契约要求的全部节点且默认隐藏", () => {
   assert.match(markup, /aria-live="polite"/);
   assert.match(markup, /type="file"/);
   assert.match(markup, /accept="\.csv,\.xlsx,\.xls,\.docx,\.doc,\.png,\.jpg,\.jpeg,\.webp,\.pdf"/);
+  assert.match(markup, /Ctrl\+V/, "输入框占位符需提示可粘贴上传");
   assert.match(markup, /data-assistant="export-chat"/, "缺少导出对话按钮");
 });
 
@@ -243,6 +244,111 @@ check("mount 在最小 DOM 桩下可开关、Esc 关闭、重复挂载不叠加"
 
 check("mount 缺少 document 时给出明确错误", () => {
   assert.throws(() => UI.mount({ root: createElement(null) }), /document/);
+});
+
+/* ---------------- 剪贴板粘贴 ---------------- */
+
+function firePaste(doc, event) {
+  let prevented = false;
+  const wrapped = Object.assign({ preventDefault() { prevented = true; }, stopPropagation() {} }, event);
+  (doc._handlers.paste || []).forEach((fn) => fn(wrapped));
+  return prevented;
+}
+
+check("打开面板后 Ctrl+V 粘贴文件走与上传同一条链路", () => {
+  const doc = createDocument();
+  const dispatchLog = [];
+  UI.mount({
+    root: createElement(doc),
+    document: doc,
+    state: () => ({ messages: [], busy: false, quickPrompts: [], conversations: [], configured: false, role: "editor" }),
+    dispatch: (event) => dispatchLog.push(event)
+  });
+  // 面板未打开：不劫持
+  const file = { name: "截图.png", size: 1024 };
+  let prevented = firePaste(doc, { clipboardData: { files: { length: 1, 0: file } }, target: null });
+  assert.equal(dispatchLog.length, 0, "面板关闭时粘贴不应上传");
+  assert.equal(prevented, false, "面板关闭时不应拦截默认粘贴");
+
+  // 打开面板后再粘贴
+  const controller = UI.mount({
+    root: createElement(doc),
+    document: doc,
+    state: () => ({ messages: [], busy: false, quickPrompts: [], conversations: [], configured: false, role: "editor" }),
+    dispatch: (event) => dispatchLog.push(event)
+  });
+  controller.open();
+  dispatchLog.length = 0;
+  prevented = firePaste(doc, { clipboardData: { files: { length: 1, 0: file } }, target: null });
+  assert.equal(dispatchLog.length, 1, "粘贴文件应派发上传事件");
+  assert.equal(dispatchLog[0].kind, "file");
+  assert.equal(dispatchLog[0].file, file);
+  assert.equal(prevented, true, "文件粘贴应被拦截以避免插入文本");
+});
+
+check("纯文本粘贴不劫持、保持输入框默认行为", () => {
+  const doc = createDocument();
+  const dispatchLog = [];
+  const controller = UI.mount({
+    root: createElement(doc),
+    document: doc,
+    state: () => ({ messages: [], busy: false, quickPrompts: [], conversations: [], configured: false, role: "editor" }),
+    dispatch: (event) => dispatchLog.push(event)
+  });
+  controller.open();
+  const prevented = firePaste(doc, { clipboardData: { files: { length: 0 } }, target: null });
+  assert.equal(dispatchLog.length, 0, "纯文本粘贴不应派发上传事件");
+  assert.equal(prevented, false, "纯文本粘贴不应被拦截");
+});
+
+check("焦点在面板外的输入框时粘贴文件不被劫持", () => {
+  const doc = createDocument();
+  const dispatchLog = [];
+  const controller = UI.mount({
+    root: createElement(doc),
+    document: doc,
+    state: () => ({ messages: [], busy: false, quickPrompts: [], conversations: [], configured: false, role: "editor" }),
+    dispatch: (event) => dispatchLog.push(event)
+  });
+  controller.open();
+  const outsideInput = { tagName: "INPUT", parentNode: null };
+  const prevented = firePaste(doc, { clipboardData: { files: { length: 1, 0: { name: "a.png" } } }, target: outsideInput });
+  assert.equal(dispatchLog.length, 0, "面板外输入框的粘贴必须保持原行为");
+  assert.equal(prevented, false);
+});
+
+check("clipboardData.files 为空时从 items 兜底取文件", () => {
+  const doc = createDocument();
+  const dispatchLog = [];
+  const controller = UI.mount({
+    root: createElement(doc),
+    document: doc,
+    state: () => ({ messages: [], busy: false, quickPrompts: [], conversations: [], configured: false, role: "editor" }),
+    dispatch: (event) => dispatchLog.push(event)
+  });
+  controller.open();
+  const clipped = { name: "剪贴板.png" };
+  firePaste(doc, {
+    clipboardData: { files: { length: 0 }, items: [{ kind: "file", getAsFile: () => clipped }] },
+    target: null
+  });
+  assert.equal(dispatchLog.length, 1, "items 兜底应取到文件");
+  assert.equal(dispatchLog[0].kind, "file");
+  assert.equal(dispatchLog[0].file, clipped);
+});
+
+check("粘贴上传尊重 busy 状态", () => {
+  const doc = createDocument();
+  const dispatchLog = [];
+  const controller = UI.mount({
+    root: createElement(doc),
+    document: doc,
+    state: () => ({ messages: [], busy: true, quickPrompts: [], conversations: [], configured: false, role: "editor" }),
+    dispatch: (event) => dispatchLog.push(event)
+  });
+  controller.open();
+  firePaste(doc, { clipboardData: { files: { length: 1, 0: { name: "a.png" } } }, target: null });
+  assert.equal(dispatchLog.length, 0, "busy 时粘贴不应派发上传事件");
 });
 
 for (const [name, fn] of checks) {

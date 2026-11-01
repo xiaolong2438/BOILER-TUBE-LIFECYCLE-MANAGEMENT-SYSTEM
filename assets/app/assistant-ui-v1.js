@@ -188,9 +188,9 @@
       '    <span class="assistant-typing-dot" aria-hidden="true"></span>',
       '  </div>',
       '  <div class="assistant-composer">',
-      '    <label class="assistant-attach" id="assistantAttach" data-assistant="attach" for="assistantFile" role="button" tabindex="0" aria-label="上传表格 / Word / 图片 / PDF 文件" title="上传 CSV / Excel / Word / 图片 / PDF">上传</label>',
-      '    <input class="assistant-file" id="assistantFile" type="file" multiple accept=".csv,.xlsx,.xls,.docx,.doc,.png,.jpg,.jpeg,.webp,.pdf" tabindex="-1" aria-hidden="true" />',
-      '    <textarea class="assistant-input" id="assistantInput" rows="1" maxlength="2000" placeholder="用一句话说明需求；表格/Word/图片/PDF 可直接拖入本窗口" aria-label="向 AI 数据助手提问"></textarea>',
+    '    <label class="assistant-attach" id="assistantAttach" data-assistant="attach" for="assistantFile" role="button" tabindex="0" aria-label="上传表格 / Word / 图片 / PDF 文件" title="上传 CSV / Excel / Word / 图片 / PDF（也可拖入窗口或 Ctrl+V 粘贴）">上传</label>',
+    '    <input class="assistant-file" id="assistantFile" type="file" multiple accept=".csv,.xlsx,.xls,.docx,.doc,.png,.jpg,.jpeg,.webp,.pdf" tabindex="-1" aria-hidden="true" />',
+    '    <textarea class="assistant-input" id="assistantInput" rows="1" maxlength="2000" placeholder="用一句话说明需求；表格/图片/PDF 可拖入本窗口或 Ctrl+V 粘贴" aria-label="向 AI 数据助手提问"></textarea>',
       '    <button type="button" class="assistant-send" id="assistantSend" data-assistant="send" aria-label="发送">↑</button>',
       '  </div>',
       '  <footer class="assistant-foot">',
@@ -1115,6 +1115,54 @@
       emitFiles(collectFiles(event.dataTransfer && event.dataTransfer.files));
     }
 
+    /* 粘贴：Ctrl+V 直接粘贴截图或复制的文件，与拖拽 / 点「上传」同一条链路。
+       只在面板打开且剪贴板里有文件时拦截；纯文本 / 富文本粘贴不碰，保持默认行为。 */
+    function isEditableTarget(target) {
+      if (!target) return false;
+      var tag = toText(target.tagName).toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
+      return target.isContentEditable === true;
+    }
+
+    function isInsidePanel(target) {
+      var node = target;
+      var depth = 0;
+      while (node && depth < 20) {
+        if (node === els.panel) return true;
+        node = node.parentNode;
+        depth += 1;
+      }
+      return false;
+    }
+
+    function collectClipboardFiles(data) {
+      var files = collectFiles(data && data.files);
+      if (files.length) return files;
+      /* 兜底：个别浏览器截图后 files 为空，改从 items 里逐项取文件对象 */
+      var items = data && data.items;
+      if (!items || typeof items.length !== 'number') return files;
+      for (var i = 0; i < items.length; i += 1) {
+        var item = items[i];
+        if (!item || item.kind !== 'file' || typeof item.getAsFile !== 'function') continue;
+        var file = null;
+        try { file = item.getAsFile(); } catch (err) { file = null; }
+        if (file) files.push(file);
+      }
+      return files;
+    }
+
+    function onDocPaste(event) {
+      if (!event || !event.clipboardData) return;
+      if (!isOpen()) return;
+      /* 焦点在助手面板之外的输入框里：尊重原有粘贴行为，不劫持 */
+      if (isEditableTarget(event.target) && !isInsidePanel(event.target)) return;
+      var files = collectClipboardFiles(event.clipboardData);
+      if (!files.length) return;
+      if (event.preventDefault) event.preventDefault();
+      if (event.stopPropagation) event.stopPropagation();
+      emitFiles(files);
+    }
+
     function onDocKeyDown(event) {
       if (!event) return;
       if (event.key !== 'Escape' && event.key !== 'Esc') return;
@@ -1155,6 +1203,7 @@
     }
     if (typeof doc.addEventListener === 'function') {
       doc.addEventListener('keydown', onDocKeyDown);
+      doc.addEventListener('paste', onDocPaste);
     }
 
     var controller = {
