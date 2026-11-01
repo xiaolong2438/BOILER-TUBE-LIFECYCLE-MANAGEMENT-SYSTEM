@@ -134,28 +134,28 @@ check("headerMap（模型映射）参与清洗：未识别列被映射后可对�
 /* ---------------- 3. 智能编码匹配 ---------------- */
 
 check("expandMatrixCodes：矩阵展开为基础编码（机组×排×管，字母尾Q）", () => {
-  const codes = Core.expandMatrixCodes([{ sys: "GGRQ", comp: "GQ", posLetters: ["L"], pMax: 2, dirs: ["U"], tMax: 2 }], ["1", "2"]);
+  const codes = Core.expandMatrixCodes([{ sys: "GGRQ", comp: "GQ", posLetters: ["L"], pMax: 2, dirs: ["F"], tMax: 2 }], ["1", "2"]);
   assert.deepEqual(codes, [
-    "1G-GGRQ-GQ-L001-U001-Q",
-    "1G-GGRQ-GQ-L001-U002-Q",
-    "1G-GGRQ-GQ-L002-U001-Q",
-    "1G-GGRQ-GQ-L002-U002-Q",
-    "2G-GGRQ-GQ-L001-U001-Q",
-    "2G-GGRQ-GQ-L001-U002-Q",
-    "2G-GGRQ-GQ-L002-U001-Q",
-    "2G-GGRQ-GQ-L002-U002-Q"
+    "1G-GGRQ-GQ-L001-F001-Q",
+    "1G-GGRQ-GQ-L001-F002-Q",
+    "1G-GGRQ-GQ-L002-F001-Q",
+    "1G-GGRQ-GQ-L002-F002-Q",
+    "2G-GGRQ-GQ-L001-F001-Q",
+    "2G-GGRQ-GQ-L001-F002-Q",
+    "2G-GGRQ-GQ-L002-F001-Q",
+    "2G-GGRQ-GQ-L002-F002-Q"
   ]);
 });
 
 check("suggestSimilarCode：同机组同系统内找最近编码，跨系统候选被过滤", () => {
-  const ledger = ["1G-SLB-WB-F000-R003-Q001", "2G-GGRQ-GQ-L012-U005-Q001"];
+  const ledger = ["1G-SLB-WB-F000-R003-Q001", "2G-GGRQ-GQ-L012-F005-Q001"];
   const hit = Core.suggestSimilarCode("1G-SLB-WB-F000-R030-Q001", ledger);
   assert.equal(hit.code, "1G-SLB-WB-F000-R003-Q001");
   assert.ok(hit.similarity >= 0.82, "屏号笔误的相似度必须达到阈值");
   /* 目标编码本身在候选里 → 相似码没有意义，返回 null（调用方按存在处理） */
   assert.equal(Core.suggestSimilarCode("1G-SLB-WB-F000-R003-Q001", ledger), null);
   /* 相似度太低（不是笔误，可能是合法新码）不给出建议 */
-  assert.equal(Core.suggestSimilarCode("1G-DZRQ-GQ-1KJ-L001-U001-Q001", ledger), null);
+  assert.equal(Core.suggestSimilarCode("1G-DZRQ-GQ-1KJ-L001-F001-Q001", ledger), null);
 });
 
 check("台账里不存在但高度相似的编码：报 unknown_code 警告并给出建议", () => {
@@ -205,14 +205,14 @@ check("矩阵内合法编码不触发 unknown_code（新管首个事件不算笔
 check("矩阵外的编码若与真实编码高度相似，out_of_range 样例里附带相似码建议", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
-    ["事件", "1", "2024-03-05", "1G-GGRQ-GQ-L040-U001-Q001", "测厚"]
+    ["事件", "1", "2024-03-05", "1G-GGRQ-GQ-L040-F001-Q001", "测厚"]
   ];
   const report = Core.cleanRows({ rows, knownCodes: [], matrixRows: MATRIX, units: ["1", "2"] }).report;
   const outOfRange = checkById(report, "out_of_range");
   assert.ok(outOfRange, "矩阵外编码必须报 out_of_range");
   assert.ok(outOfRange.sample[0].includes("（近似："), "样例应给出近似编码建议");
   assert.ok(outOfRange.sample[0].includes("相似度"), "近似建议必须带相似度");
-  assert.ok(outOfRange.sample[0].startsWith("1G-GGRQ-GQ-L040-U001-Q001"), "样例以原始编码开头");
+  assert.ok(outOfRange.sample[0].startsWith("1G-GGRQ-GQ-L040-F001-Q001"), "样例以原始编码开头");
 });
 
 /* ---------------- 输出 ---------------- */

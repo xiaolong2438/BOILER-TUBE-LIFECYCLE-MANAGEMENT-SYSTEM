@@ -23,7 +23,7 @@ const EVENT_HEADER = ["数据分类", "炉号", "日期", "管段编码", "规�
 const MATERIAL_HEADER = ["部件名称", "系统代码", "分段/位置", "结构形式", "规格型号", "管径", "壁厚", "材质", "库存根数", "库存总长度(m)", "预留位置", "备注"];
 const MATRIX = [
   { sys: "SLB", comp: "WB", pos: "F000", dirs: ["R", "L"], tMax: 192 },
-  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["U", "D"], tMax: 12 }
+  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["F", "B"], tMax: 24 }
 ];
 const eventRow = (over) => ["事件", "1", "2024-01-05", "1G-SLB-WB-F000-R003-Q001", "Φ63.5×7.5", "SA-210C", "7.10", "185", "测厚", "", "前墙第3根测厚"].map((cell, index) => (over && over[index] !== undefined ? over[index] : cell));
 const cleanOf = (input) => Core.cleanRows(input);
@@ -162,7 +162,7 @@ const checks = [
     assert.equal(ok.parts.seq, 1);
     assert.equal(ok.matched, null, "未提供矩阵时不判 matched");
     assert.equal(Core.validateTubeCode("1G-DZRQ-GQ-4KJ-L065-Q001").valid, true, "低再检修空间/省略管号写法合法");
-    assert.equal(Core.validateTubeCode("1G-DPGRQ-GQ-L001-L002-U007-Q001").valid, true, "全大屏片/屏/管三段合法");
+    assert.equal(Core.validateTubeCode("1G-DPGRQ-GQ-L001-L002-F007-Q001").valid, true, "全大屏片/屏/管三段合法");
     assert.equal(Core.validateTubeCode("2G-SLB-RSQ-J1-A03-Q001").valid, true, "燃烧器区域角/层/喷口合法");
     assert.equal(Core.validateTubeCode("1-HSH-E-012-0005-W02").valid, false, "旧格式不再合法");
     assert.equal(Core.validateTubeCode("bad-code").valid, false);
@@ -291,7 +291,7 @@ const checks = [
 
   ["cleanRows: happy path is importable with 1-based row indexes", () => {
     const result = cleanOf({
-      rows: [EVENT_HEADER, eventRow(), eventRow({ 1: "2", 3: "2G-GGRQ-GQ-L012-U005-Q001", 9: "2G-GGRQ-GQ-L012-U005-Q002", 8: "更换", 10: "爆管更换" })],
+      rows: [EVENT_HEADER, eventRow(), eventRow({ 1: "2", 3: "2G-GGRQ-GQ-L012-F005-Q001", 9: "2G-GGRQ-GQ-L012-F005-Q002", 8: "更换", 10: "爆管更换" })],
       fileName: "寿命数据_录入模板.csv"
     });
     assert.equal(result.report.datasetType, "events");
@@ -552,7 +552,7 @@ const checks = [
     assert.equal(parsed.field, "thickness");
     assert.equal(parsed.value, "6.8");
     assert.match(parsed.reply, /确认/);
-    const hardness = Core.parseEdit("2G-GGRQ-GQ-L012-U005-Q001 的硬度改为 190");
+    const hardness = Core.parseEdit("2G-GGRQ-GQ-L012-F005-Q001 的硬度改为 190");
     assert.equal(hardness.field, "hardness");
     assert.equal(hardness.value, "190");
     const date = Core.parseEdit("把 1G-SLB-WB-F000-R003-Q001 的日期改成 2024/3/5");

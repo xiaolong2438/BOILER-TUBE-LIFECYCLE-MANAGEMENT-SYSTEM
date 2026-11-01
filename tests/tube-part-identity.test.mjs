@@ -54,19 +54,21 @@ const fieldBack = '1G-GGRQ-GQ-L001-B001-W';
 
 // 解析与校验：字母尾即身份；历史数字尾兼容但归一到字母。
 assert.equal(Core.validateTubeCode(w, matrix).valid, true);
-assert.equal(Core.validateTubeCode(w, matrix).fieldPosition, true);
-assert.equal(Core.validateTubeCode(w, matrix).matched, null);
+const wCheck = Core.validateTubeCode(w, matrix);
+assert.equal(wCheck.matched?.sys, 'GGRQ', 'F/B 管序即台账主口径，F004 直接命中矩阵行');
+assert.notEqual(wCheck.fieldPosition, true, 'fieldPosition 仅保留给管数待核的受热面（高再）');
 assert.equal(Core.validateTubeCode(legacyW, matrix).valid, true, '历史流水数字尾仍可解析');
 assert.deepEqual(Core.canonicalTubeCode(fieldBack, matrix), { code: '1G-GGRQ-GQ-L001-F024-W', changed: true }, '用户确认每屏24根：B001≙F024');
 assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-R007-F012-W', matrix).code, '1G-GGRQ-GQ-L026-F012-W', '用户确认32屏：R007≙L026');
 assert.equal(Core.canonicalTubeCode('1G-GZRQ-GQ-L001-B001-W', matrix), null, '高再每屏根数未确认，不镜像');
-assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-D003-Q', matrix).code, '1G-GGRQ-GQ-L012-U010-Q');
-assert.equal(Core.canonicalTubeCode('1G-GZRQ-GQ-L012-D003-Q', matrix).code, '1G-GZRQ-GQ-L012-U005-Q');
-assert.equal(matrix.reduce((sum, row) => sum + ctx.matrixRowCount(row), 0), 8519);
+assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-D003-Q', matrix), null, 'U/D 管序已废止：D 码不再换算');
+assert.equal(Core.canonicalTubeCode('1G-GZRQ-GQ-L012-D003-Q', matrix), null, 'U/D 管序已废止：D 码不再换算');
+assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-B003-Q', matrix).code, '1G-GGRQ-GQ-L012-F022-Q', '每屏24根：B003≙F022');
+assert.equal(matrix.reduce((sum, row) => sum + ctx.matrixRowCount(row), 0), 8903);
 assert.equal(ctx.parseTubeCode(w).partKind, 'W');
 assert.equal(ctx.parseTubeCode(w).seq, null);
 assert.equal(ctx.parseTubeCode(legacyW).seq, 1);
-assert.equal(Core.validateTubeCode('1G-DPGRQ-GQ-L001-L001-F001-Q', matrix).valid, false);
+assert.equal(Core.validateTubeCode('1G-DPGRQ-GQ-L001-L001-F001-Q', matrix).valid, true, '大屏管序 F/B 为合法主口径');
 assert.equal(Core.suggestSimilarCode('1G-GGRQ-GQ-L033-F004-W', [q]), null, 'W 不得建议成 Q');
 const suggestion = Core.suggestSimilarCode('1G-GGRQ-GQ-L033-F004-W', [w]);
 assert.ok(suggestion && suggestion.code.endsWith('-W'), '同部位建议保持 W 尾');
@@ -193,7 +195,10 @@ assert.equal(ctx.userDB.events.filter(e => e.inspectionResult === '发现异物�
 for(const e of ctx.userDB.events.filter(e => e.inspectionResult === '发现异物，割开检查为氧化皮')) {
   assert.equal(ctx.getTubeProfileData(e.code.replace(/-W$/, '-Q')).data.status, 'warn');
 }
-assert.equal(ctx.getGeneratedTubeLedgerRows('1').filter(row => row.code === '1G-GGRQ-GQ-L002-F004-W').length, 1, '台账按字母尾物理编码展开');
+const ledgerRowForW = ctx.getGeneratedTubeLedgerRows('1').filter(row => ctx.tubePositionKey(row.code) === ctx.tubePositionKey(w));
+assert.equal(ledgerRowForW.length, 1, '台账按管位聚合：Q 生成行与 W 事件同管一行（Q/W 同管合并）');
+assert.equal(ledgerRowForW[0].code, '1G-GGRQ-GQ-L002-F004-Q', 'F/B 管序为台账展开口径');
+assert.ok(ctx.getTubeProfileData(w).localEvents.some(e => e.code === w), 'W 弯头事件挂档案不丢失');
 const actualClean = Core.cleanRows({ rows: actual, matrixRows: matrix, datasetType: 'events' });
 assert.equal(actualClean.report.summary.errorCount, 0);
 assert.equal(actualClean.report.summary.cleanRows, 464);

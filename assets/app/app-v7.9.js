@@ -611,7 +611,7 @@ function downloadCSVTemplate() {
   const rows = [
     EVENT_CSV_COLUMNS.join(','),
     ['事件','1','2022-04-15','1G-SLB-WB-F000-R015-Q001','Φ63.5×7.5','SA-210C','7.10','185','测厚','','标高18m处壁厚7.10mm'].map(csvEscape).join(','),
-    ['事件','2','2024-05-20','2G-GGRQ-GQ-L012-U005-Q002','Φ51×8','SA-213T91','6.90','210','测厚','','高过炉左往右第12排上往下第5根测厚6.90mm'].map(csvEscape).join(','),
+    ['事件','2','2024-05-20','2G-GGRQ-GQ-L012-F005-Q002','Φ51×8','SA-213T91','6.90','210','测厚','','高过炉左往右第12排炉前往后第5根测厚6.90mm'].map(csvEscape).join(','),
     ['更换','1','2026-05-22','1G-DZRQ-GQ-4KJ-L065-Q001','','','','','爆管更换','1G-DZRQ-GQ-4KJ-L065-Q002','运行中发生泄漏，紧急割管更换'].map(csvEscape).join(',')
   ].join('\n');
   downloadBlob('锅炉寿命数据_录入模板.csv', '\uFEFF' + rows, 'text/csv;charset=utf-8;');
@@ -812,7 +812,7 @@ function downloadXLSXTemplate() {
   const headers = EVENT_CSV_COLUMNS;
   const rows = [
     { '数据分类': '事件', '炉号': '1', '日期': '2022-04-15', '管段编码': '1G-SLB-WB-F000-R015-Q001', '规格': 'Φ63.5×7.5', '材质': 'SA-210C', '厚度(mm)': '7.10', '硬度(HB)': '185', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '标高18m处壁厚7.10mm' },
-    { '数据分类': '事件', '炉号': '2', '日期': '2024-05-20', '管段编码': '2G-GGRQ-GQ-L012-U005-Q002', '规格': 'Φ51×8', '材质': 'SA-213T91', '厚度(mm)': '6.90', '硬度(HB)': '210', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '高过炉左往右第12排上往下第5根测厚6.90mm' },
+    { '数据分类': '事件', '炉号': '2', '日期': '2024-05-20', '管段编码': '2G-GGRQ-GQ-L012-F005-Q002', '规格': 'Φ51×8', '材质': 'SA-213T91', '厚度(mm)': '6.90', '硬度(HB)': '210', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '高过炉左往右第12排炉前往后第5根测厚6.90mm' },
     { '数据分类': '更换', '炉号': '1', '日期': '2026-05-22', '管段编码': '1G-DZRQ-GQ-4KJ-L065-Q001', '规格': '', '材质': '', '厚度(mm)': '', '硬度(HB)': '', '事件类型/更换原因': '爆管更换', '关联新管码': '1G-DZRQ-GQ-4KJ-L065-Q002', '详细描述/结论': '运行中发生泄漏，紧急割管更换' }
   ];
   const sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
@@ -944,11 +944,11 @@ function nudgeDemoToggleOnce() {
 
 const LIFECYCLE_DATA = {
   '2G-SLB-WB-F000-R025-Q001': { name: '2号炉水冷壁前墙炉右往左第25根', spec: 'Φ63.5×7.5 · SA-210C', install: '2016-03-10', hours: 72540, status: 'ok', risk: '状态良好', timeline: [{date:'2016-03-10',t:'安装',d:'壁厚7.5'},{date:'2025-11-11',t:'测厚',d:'壁厚6.8'}] },
-  '1G-GGRQ-GQ-L012-U005-Q001': { name: '1号炉高温过热器炉左往右第12排上往下第5根', spec: 'Φ51×8 · SA-213T91', install: '2018-06-15', hours: 58720, status: 'warn', risk: '蠕变损伤68%', timeline: [{date:'2018-06-15',t:'安装',d:'合格'},{date:'2025-12-15',t:'评估',d:'剩余寿命8.2万h'}] },
-  '2G-GZRQ-GQ-L032-U004-Q001': { name: '2号炉高温再热器炉左往右第32排上往下第4根', spec: 'Φ60×4 · SA-213TP304H', install: '2017-11-05', hours: 65830, status: 'danger', risk: '壁厚减薄至3.3mm', timeline: [{date:'2017-11-05',t:'安装',d:'壁厚4.0'},{date:'2025-09-15',t:'测厚',d:'壁厚3.3'}] },
-  '1G-DPGRQ-GQ-L001-L002-U007-Q001': { name: '1号炉全大屏过热器第1片第2小屏上往下第7根', spec: 'Φ51×7 · 12Cr1MoVG', install: '2017-05-20', hours: 68900, status: 'warn', risk: '屏底结渣区需关注', timeline: [{date:'2017-05-20',t:'安装',d:'合格'},{date:'2026-01-10',t:'测厚',d:'壁厚6.2'}] },
-  '2G-HPGRQ-GQ-L015-U009-Q001': { name: '2号炉后屏过热器炉左往右第15屏上往下第9根', spec: 'Φ54×9 · SA-213TP347H', install: '2018-03-18', hours: 60110, status: 'warn', risk: '高温腐蚀区金相复查', timeline: [{date:'2018-03-18',t:'安装',d:'合格'},{date:'2025-10-20',t:'金相',d:'组织轻度球化'}] },
-  '1G-DGRQ-GQ-2KJ-L045-U003-Q001': { name: '1号炉低温过热器第2检修空间第45排上往下第3根', spec: 'Φ57×6 · 15CrMoG', install: '2016-08-02', hours: 71230, status: 'ok', risk: '状态良好', timeline: [{date:'2016-08-02',t:'安装',d:'壁厚6.0'},{date:'2025-06-18',t:'测厚',d:'壁厚5.4'}] },
+  '1G-GGRQ-GQ-L012-F005-Q001': { name: '1号炉高温过热器炉左往右第12排炉前往后第5根', spec: 'Φ51×8 · SA-213T91', install: '2018-06-15', hours: 58720, status: 'warn', risk: '蠕变损伤68%', timeline: [{date:'2018-06-15',t:'安装',d:'合格'},{date:'2025-12-15',t:'评估',d:'剩余寿命8.2万h'}] },
+  '2G-GZRQ-GQ-L032-F004-Q001': { name: '2号炉高温再热器炉左往右第32排炉前往后第4根', spec: 'Φ60×4 · SA-213TP304H', install: '2017-11-05', hours: 65830, status: 'danger', risk: '壁厚减薄至3.3mm', timeline: [{date:'2017-11-05',t:'安装',d:'壁厚4.0'},{date:'2025-09-15',t:'测厚',d:'壁厚3.3'}] },
+  '1G-DPGRQ-GQ-L001-L002-F007-Q001': { name: '1号炉全大屏过热器第1片第2小屏炉前往后第7根', spec: 'Φ51×7 · 12Cr1MoVG', install: '2017-05-20', hours: 68900, status: 'warn', risk: '屏底结渣区需关注', timeline: [{date:'2017-05-20',t:'安装',d:'合格'},{date:'2026-01-10',t:'测厚',d:'壁厚6.2'}] },
+  '2G-HPGRQ-GQ-L015-F009-Q001': { name: '2号炉后屏过热器炉左往右第15屏炉前往后第9根', spec: 'Φ54×9 · SA-213TP347H', install: '2018-03-18', hours: 60110, status: 'warn', risk: '高温腐蚀区金相复查', timeline: [{date:'2018-03-18',t:'安装',d:'合格'},{date:'2025-10-20',t:'金相',d:'组织轻度球化'}] },
+  '1G-DGRQ-GQ-2KJ-L045-F003-Q001': { name: '1号炉低温过热器第2检修空间第45排炉前往后第3根', spec: 'Φ57×6 · 15CrMoG', install: '2016-08-02', hours: 71230, status: 'ok', risk: '状态良好', timeline: [{date:'2016-08-02',t:'安装',d:'壁厚6.0'},{date:'2025-06-18',t:'测厚',d:'壁厚5.4'}] },
   '1G-DZRQ-GQ-4KJ-L065-Q001': { name: '1号炉低温再热器第4检修空间炉左往右第65排', spec: 'Φ63.5×4 · SA-210C', install: '2015-12-11', hours: 76850, status: 'ok', risk: '状态良好', timeline: [{date:'2015-12-11',t:'安装',d:'壁厚4.0'},{date:'2025-04-05',t:'测厚',d:'壁厚3.7'}] },
   '2G-SMQ-EXIN-L012-U001-Q001': { name: '2号炉省煤器进口集箱炉左往右第12排', spec: 'Φ159×18 · 20G', install: '2016-03-10', hours: 72540, status: 'ok', risk: '状态良好', timeline: [{date:'2016-03-10',t:'安装',d:'合格'},{date:'2025-11-11',t:'测厚',d:'壁厚17.2'}] },
   '2G-SLB-LHD-F000-L016-Q001': { name: '2号炉冷灰斗前坡炉左往右第16根', spec: 'Φ63.5×7.5 · SA-210C', install: '2016-03-10', hours: 72540, status: 'warn', risk: '灰斗冲刷区磨损', timeline: [{date:'2016-03-10',t:'安装',d:'壁厚7.5'},{date:'2025-08-22',t:'测厚',d:'壁厚5.9'}] },
@@ -962,12 +962,14 @@ const matrix = [
   { name:'冷灰斗-前坡', sys:'SLB', comp:'LHD', pos:'F000', dirs:['L','R'], tMax:96, spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'冷灰斗-后坡', sys:'SLB', comp:'LHD', pos:'B000', dirs:['L','R'], tMax:96, spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'燃烧器区域', sys:'SLB', comp:'RSQ', special:'rsq', corners:[1,4], layers:['A','B','C','D','E','F'], nozzles:[1,8], spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
-  { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['L','R'], p2Max:4, dirs:['U','D'], tMax:14, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
-  { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['U','D'], tMax:13, spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
-  { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['U','D'], tMax:12, fieldDirs:['F','B'], fieldTMax:24, fieldDefault:'F', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
-  { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['U','D'], tMax:7, fieldDirs:['F','B'], spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh' },
-  { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,4], posLetters:['L','R'], pMax:112, dirs:['U','D'], tMax:5, spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
-  { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['U','D'], tMax:6, tubeOptional:true, spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-rh' },
+  { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['L','R'], p2Max:4, dirs:['F','B'], tMax:14, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
+  { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, spec:'Φ54×9 SA-213TP347H、Φ54×8.5 SA-213T91、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213TP347H、Φ60×8 SA-213T91、Φ60×9 SA-213TP347H、Φ60×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
+  /* 高过每屏24根（F001–F024↔B024–B001，2026-10-31 图纸确认）：F/B 即主口径，B↔F 镜像走主分支 */
+  { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:24, spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
+  /* 高再每屏管数未确认：台账只展开 F1~7，B 与 F8+ 码走 fieldDirs 宽松校验、不镜像（保留原方向待核） */
+  { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['F'], tMax:7, fieldDirs:['F','B'], spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh' },
+  { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,4], posLetters:['L','R'], pMax:112, dirs:['F','B'], tMax:5, spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
+  { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['F','B'], tMax:6, tubeOptional:true, spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-rh' },
   { name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1, spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', mat:'按材料库分项', badge:'badge-eco' },
   { name:'省煤器进口集箱', sys:'SMQ', comp:'EXIN', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1, spec:'Φ159×18 20G', mat:'按材料库分项', badge:'badge-eco' },
   { name:'省煤器出口集箱', sys:'SMQ', comp:'EXOUT', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1, spec:'Φ159×18 20G', mat:'按材料库分项', badge:'badge-eco' }
@@ -1150,8 +1152,8 @@ function renderGeneratorFields() {
       <div class="form-group"><label>喷口序号</label><input type="number" id="f-nozzle" min="${row.nozzles[0]}" max="${row.nozzles[1]}" value="1" /></div>`;
   } else if(row && row.pos) {
     html = `<div class="form-group"><label>方位（墙/坡）</label><select id="f-pos">${(GENERATOR_WALL_OPTIONS[comp] || []).map(([v, label]) => `<option value="${v}">${label}</option>`).join('')}</select></div>
-      <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...row.fieldDirs, ...row.dirs] : row.dirs)}</select></div>
-      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? (row.fieldTMax ? '现场F/B 1~' + row.fieldTMax + '；U/D管圈参考1~' : '现场F/B总数待核；U/D参考1~') : '1~'}${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? (row.fieldTMax || 999) : row.tMax}" value="1" /></div>`;
+      <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...new Set([...row.fieldDirs, ...row.dirs])] : row.dirs)}</select></div>
+      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? (row.fieldTMax ? '现场F/B 1~' + row.fieldTMax : '台账F 1~' + row.tMax + ' · B/超出待核') : '1~'}${row.fieldDirs && row.fieldTMax ? '；U/D管圈参考1~' + row.tMax : ''})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? (row.fieldTMax || 999) : row.tMax}" value="1" /></div>`;
   } else if(row) {
     const posNums = max => Array.from({length: max}, (_, i) => `<option value="${i + 1}">${m0pad(i + 1, 3)}</option>`).join('');
     html = `${row.spaces ? `<div class="form-group"><label>检修空间（低过/低再）</label><select id="f-space"><option value="">省略 · 默认第1空间</option>${Array.from({length: row.spaces[1] - row.spaces[0] + 1}, (_, i) => { const n = row.spaces[0] + i; return n === 1 ? '' : `<option value="${n}KJ">${n}KJ · 第${n}检修空间</option>`; }).join('')}</select></div>` : ''}
@@ -1159,8 +1161,8 @@ function renderGeneratorFields() {
       <div class="form-group"><label>${row.pos2Letters ? '片号 (3位, 1~' + row.pMax + ')' : '排/屏号 (3位, 1~' + row.pMax + ')'}</label><select id="f-pos-num">${posNums(row.pMax)}</select></div>
       ${row.pos2Letters ? `<div class="form-group"><label>小屏号方位</label><select id="f-pos2-letter">${dirOptions(row.pos2Letters)}</select></div>
       <div class="form-group"><label>小屏号 (3位, 1~${row.p2Max})</label><select id="f-pos2-num">${posNums(row.p2Max)}</select></div>` : ''}
-      <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...row.fieldDirs, ...row.dirs] : row.dirs)}</select></div>
-      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? (row.fieldTMax ? '现场F/B 1~' + row.fieldTMax + '；U/D管圈参考1~' : '现场F/B总数待核；U/D参考1~') : '1~'}${row.tMax})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? (row.fieldTMax || 999) : row.tMax}" value="1" /></div>`;
+      <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...new Set([...row.fieldDirs, ...row.dirs])] : row.dirs)}</select></div>
+      <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? (row.fieldTMax ? '现场F/B 1~' + row.fieldTMax : '台账F 1~' + row.tMax + ' · B/超出待核') : '1~'}${row.fieldDirs && row.fieldTMax ? '；U/D管圈参考1~' + row.tMax : ''})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? (row.fieldTMax || 999) : row.tMax}" value="1" /></div>`;
   }
   html += `<div class="form-group"><label for="f-part-kind">检测部位</label><select id="f-part-kind"><option value="Q">Q · 管子</option><option value="W">W · 弯头</option></select></div>`;
   box.innerHTML = html;
@@ -1214,14 +1216,14 @@ function genCode() {
   const matched = validateCodeAgainstMatrix(code);
   const desc = document.getElementById('codeDesc');
   const fieldPosition = window.BTAssistantCore?.validateTubeCode(code, matrix)?.fieldPosition;
-  if(desc) desc.textContent = matched ? `${matched.row.name} · ${matched.row.spec}` : fieldPosition ? '现场管位编码有效（按每屏管数校验），保持现场计数方向。' : '当前编号超出台账矩阵范围，请核对排/屏与管号编号。';
+  if(desc) desc.textContent = matched ? `${matched.row.name} · ${matched.row.spec}` : fieldPosition ? '现场管位编码有效（每屏管数待核），保持现场计数方向。' : '当前编号超出台账矩阵范围，请核对排/屏与管号编号。';
   window._curCode = code;
 }
 /* ========== 新编码规则 ==========
  * 模板：{机组}G-SYS-COMP-{方位}{三位排/片号}-{方位}{三位排/屏号}-{方向}{三位管号}-Q{序号}
  * 机组：1G/2G；系统：SLB/GZRQ/GGRQ/HPGRQ/DPGRQ/DGRQ/DZRQ/SMQ；部件：GQ/WB/SG/EXIN/EXOUT/LHD/RSQ
- * 方位/方向：A侧→R、B侧→L、炉左往右→L、炉右往左→R、炉前往后→F、炉后往前→B、下往上→D、上往下→U
- * 无明确排/屏号用 000 占位；无明确方向默认 U；低过/低再默认第 1 检修空间可省略 */
+ * 方位/方向：A侧→R、B侧→L、炉左往右→L、炉右往左→R、炉前往后→F、炉后往前→B；受热面管序用 F/B（高再管数待核），省煤器管号方向沿用 U/D
+ * 无明确排/屏号用 000 占位；方向不明不得臆造字母，保持原样进「待确认」人工核实；低过/低再默认第 1 检修空间可省略 */
 function parseTubeCode(code) {
   const raw = String(code || '').trim().toUpperCase();
   const head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|EXIN|EXOUT|LHD|RSQ)(?:-(.*))?$/);
@@ -1234,7 +1236,9 @@ function parseTubeCode(code) {
   parsed.seq = tail.length > 1 ? Number(tail.slice(1)) : null;
   parsed.partKind = tail[0];
   const POS_RE = /^([FBLR])(\d{3})$/;
-  const TUBE_RE = /^(?:GGRQ|GZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UD])(\d{3})$/;
+  /* 管序 F/B：高过/高再/大屏/后屏/低过/低再（[UD] 继续放行解析，历史 U/D 码由矩阵行判合法性后进待确认）；
+     省煤器仍为 U/D 口径 */
+  const TUBE_RE = /^(?:GGRQ|GZRQ|DPGRQ|HPGRQ|DGRQ|DZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UD])(\d{3})$/;
   const WALL_RE = /^([FBLR])000$/;
   if(parsed.sys === 'SLB' && (parsed.comp === 'WB' || parsed.comp === 'LHD')) {
     if(parts.length !== 2) return null;

@@ -168,7 +168,7 @@ check("runAnalysis 趋势：按管分线并指出减薄最快与越线管段", (
   /* 3 根管、同一规格（名义 7.5），水冷壁慢减薄、高过快减薄、第三根已穿预警线 */
   const tubes = [
     { code: "1G-SLB-WB-F000-R042-Q001", base: 7.4, decay: 0.1 },
-    { code: "1G-GGRQ-GQ-L005-U003-Q001", base: 7.3, decay: 0.45 },
+    { code: "1G-GGRQ-GQ-L005-F003-Q001", base: 7.3, decay: 0.45 },
     { code: "1G-SLB-WB-B000-R088-Q001", base: 7.2, decay: 0.2 }
   ];
   tubes.forEach((tube) => {
@@ -187,10 +187,10 @@ check("runAnalysis 趋势：按管分线并指出减薄最快与越线管段", (
   const result = A.runAnalysis(spec, { events: events, replacements: [] });
   assert.ok(result.ok);
   assert.equal(result.chart.series.length, 3, "3 根管应按管分线");
-  assert.equal(result.chart.series[0].name, "L005-U003", "管段系列按编码排序，用「屏号-管号」短码命名");
+  assert.equal(result.chart.series[0].name, "L005-F003", "管段系列按编码排序，用「屏号-管号」短码命名");
   assert.ok(result.chart.threshold.value === 6, "统一名义壁厚画 80% 预警线");
   const insightText = result.insights.join(" ");
-  assert.match(insightText, /减薄最快的管段：L005-U003/, "应指出减薄最快的管段（高过 7.3→5.5）");
+  assert.match(insightText, /减薄最快的管段：L005-F003/, "应指出减薄最快的管段（高过 7.3→5.5）");
   assert.match(insightText, /已低于预警线/, "最新值穿线的管段应点名");
   assert.ok(result.metrics.some((m) => m.label === "管段"));
 });
@@ -248,7 +248,7 @@ check("runAnalysis 相关性：完全线性关系得到 r≈±1", () => {
     const thickness = 6 + i * 0.1;
     events.push(event({
       ts: i + 1,
-      code: "1G-GGRQ-GQ-L012-U005-Q001",
+      code: "1G-GGRQ-GQ-L012-F005-Q001",
       date: "2024-" + String((i % 12) + 1).padStart(2, "0") + "-10",
       thickness: thickness,
       hardness: 260 - thickness * 10
