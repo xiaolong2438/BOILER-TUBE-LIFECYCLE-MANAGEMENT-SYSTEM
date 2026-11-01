@@ -549,7 +549,8 @@
         <label class="btn btn-outline" style="cursor:pointer;">📤 导入 CSV 数据 <input type="file" id="importFile" accept=".csv" style="display:none;" onchange="importCSV(event)"></label>
         <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="clearLocalData()">🗑 备份并清空本地数据</button>
       </div>
-      <div class="table-wrap"><table><thead><tr><th>日期</th><th>机组</th><th>管段编码</th><th>规格</th><th>材质</th><th>厚度(mm)</th><th>硬度(HB)</th><th>类型</th><th>详情</th><th>操作</th></tr></thead><tbody id="dm-table-body"></tbody></table></div>
+      <div id="dm-batch-bar" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;"></div>
+      <div class="table-wrap"><table><thead><tr><th id="dm-select-all-th" style="width:36px;"><input type="checkbox" id="dm-select-all" aria-label="全选" onchange="dmToggleAll(this.checked)"></th><th>日期</th><th>机组</th><th>管段编码</th><th>规格</th><th>材质</th><th>厚度(mm)</th><th>硬度(HB)</th><th>类型</th><th>详情</th><th>操作</th></tr></thead><tbody id="dm-table-body"></tbody></table></div>
     </div>
     <div class="card">
       <div class="card-title">管段更换登记记录</div>

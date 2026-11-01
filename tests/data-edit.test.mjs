@@ -12,7 +12,7 @@ const xlsxExport = readFileSync(resolve(here, "../assets/app/xlsx-export-v1.js")
 // 事件记录：数据录入表格每行必须提供“编辑”入口，保存走统一校验并留痕。
 assert.match(js, /function openEditEvent\(ts\)/);
 assert.match(js, /function saveEventEdit\(ts\)/);
-assert.match(js, /onclick="openEditEvent\(\$\{Number\(r\.ts\)\}\)"/);
+assert.match(js, /onclick="openEditEvent\(\$\{ts\}\)"/);
 assert.match(js, /mlog\('update', \{ record: target, field: key, before, after: next, source: 'manual' \}\);/);
 
 // 管段编码可点击直达管段档案（管段分析）：事件表与更换登记表统一走 dmCodeCell。
@@ -38,6 +38,20 @@ assert.match(xlsxExport, /dmRowInScope\(eventBoiler\(item\), \[item\.code\], fil
 assert.match(xlsxExport, /\(filter === 'all' \? '全厂' : `\$\{filter\}号机组`\) \+ \(sys \? `_\$\{sys\}` : ''\)/, "XLSX文件名带受热面范围");
 assert.match(html, /导出筛选范围数据 \(CSV\)/, "导出按钮文案与筛选语义一致");
 assert.match(html, /导出筛选范围 Excel/);
+
+// 批量选择：表头全选框 + 行复选框 + 全选/反选/批量删除（viewer 只读不可见）。
+assert.match(html, /id="dm-select-all" aria-label="全选" onchange="dmToggleAll\(this\.checked\)"/);
+assert.match(html, /id="dm-batch-bar"/);
+assert.match(js, /function dmSetSelected\(ts, checked\)/);
+assert.match(js, /function dmToggleAll\(checked\)/);
+assert.match(js, /function dmInvertSelection\(\)/);
+assert.match(js, /function dmClearSelection\(\)/);
+assert.match(js, /function dmDeleteSelected\(\)/);
+assert.match(js, /dmDeleteSelected/, "工具条挂批量删除按钮");
+assert.match(js, /确定删除所选 \$\{dmSelectedTs\.size\} 条检测记录/, "批量删除需确认");
+assert.match(js, /removed\.forEach\(e => mlog\('delete', \{ record: e, source: 'manual' \}\)\);/, "批量删除逐条留痕");
+assert.match(js, /class="dm-row-check" data-ts="\$\{ts\}"/, "行复选框带ts标识");
+assert.match(js, /allBox\.indeterminate = selectedCount > 0 && selectedCount < all\.length/, "全选框支持半选态");
 
 // 编辑校验与新增口径一致：机组/编码/日期/结论必填，编码与机组前缀联动校验。
 assert.match(js, /if\(!boiler \|\| !code \|\| !date \|\| !desc\) \{ showToast\('机组、管段编码、日期和详细数据\/结论不能为空', 'warn'\); return; \}/);

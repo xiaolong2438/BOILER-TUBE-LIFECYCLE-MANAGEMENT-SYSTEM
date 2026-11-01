@@ -462,19 +462,84 @@ function dmCodeCell(code, tone) {
   const value = escapeHTML(code);
   return `<td><button type="button" style="color:${tone || 'var(--accent)'}; font-family:'Consolas',monospace; background:none; border:none; padding:0; cursor:pointer; text-align:left; text-decoration:underline dotted; text-underline-offset:3px;" onclick="openTubeProfile('${value}')" title="打开管段档案 ${value}">${value}</button></td>`;
 }
+/* 批量选择：勾选行→全选/反选→批量删除（viewer 只读不可见） */
+let dmSelectedTs = new Set();
 function renderDMTable() {
   const tbody = document.getElementById('dm-table-body'); if(!tbody) return;
   const filter = getBatchBoilerFilter();
   const sys = getDmSysFilter();
   const all = [...userDB.events].filter(r => dmRowInScope(eventBoiler(r), [r.code], filter, sys)).sort((a,b) => b.ts - a.ts);
   const manage = canManageTubeData();
+  const visibleTs = new Set(all.map(r => Number(r.ts)));
+  [...dmSelectedTs].forEach(ts => { if (!visibleTs.has(ts)) dmSelectedTs.delete(ts); });
+  const selectTh = document.getElementById('dm-select-all-th');
+  if (selectTh) selectTh.style.display = manage ? '' : 'none';
+  const allBox = document.getElementById('dm-select-all');
+  if (allBox) {
+    const selectedCount = all.filter(r => dmSelectedTs.has(Number(r.ts))).length;
+    allBox.checked = all.length > 0 && selectedCount === all.length;
+    allBox.indeterminate = selectedCount > 0 && selectedCount < all.length;
+    allBox.style.display = manage ? '' : 'none';
+  }
+  const bar = document.getElementById('dm-batch-bar');
+  if (bar) {
+    if (!manage) { bar.innerHTML = ''; }
+    else {
+      const n = dmSelectedTs.size;
+      bar.innerHTML =
+        '<button class="btn btn-outline" style="padding:3px 12px; font-size:11px;" onclick="dmToggleAll(true)">全选</button>' +
+        '<button class="btn btn-outline" style="padding:3px 12px; font-size:11px;" onclick="dmInvertSelection()">反选</button>' +
+        '<button class="btn btn-outline" style="padding:3px 12px; font-size:11px;" onclick="dmClearSelection()">清除选择</button>' +
+        (n
+          ? `<button class="btn" style="padding:3px 12px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="dmDeleteSelected()">🗑 删除所选（${n}）</button>`
+          : '<span style="font-size:11px; color:var(--text-dim);">勾选行后可全选/反选并批量删除</span>');
+    }
+  }
   tbody.innerHTML = all.map(r => {
+    const ts = Number(r.ts);
+    const checked = dmSelectedTs.has(ts) ? ' checked' : '';
     const action = manage
-      ? `<button class="btn btn-outline" style="padding:2px 8px; font-size:11px;" onclick="openEditEvent(${Number(r.ts)})">编辑</button>
-         <button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteEvent(${Number(r.ts)})">删除</button>`
+      ? `<button class="btn btn-outline" style="padding:2px 8px; font-size:11px;" onclick="openEditEvent(${ts})">编辑</button>
+         <button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteEvent(${ts})">删除</button>`
       : '<span style="font-size:11px; color:var(--text-dim);">只读</span>';
-    return `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(eventBoiler(r) || '-')}号</td>${dmCodeCell(r.code)}<td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td style="white-space:nowrap;">${action}</td></tr>`;
-  }).join('') || '<tr><td colspan="10" style="text-align:center; padding:20px;">暂无数据</td></tr>';
+    const selectCell = manage ? `<td><input type="checkbox" class="dm-row-check" data-ts="${ts}"${checked} aria-label="选择该行" onchange="dmSetSelected(${ts}, this.checked)"></td>` : '';
+    return `<tr${checked ? ' style="background:var(--bg);"' : ''}>${selectCell}<td>${escapeHTML(r.date)}</td><td>${escapeHTML(eventBoiler(r) || '-')}号</td>${dmCodeCell(r.code)}<td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td style="white-space:nowrap;">${action}</td></tr>`;
+  }).join('') || `<tr><td colspan="${manage ? 11 : 10}" style="text-align:center; padding:20px;">暂无数据</td></tr>`;
+}
+function dmSetSelected(ts, checked) {
+  if (checked) dmSelectedTs.add(ts); else dmSelectedTs.delete(ts);
+  renderDMTable();
+}
+function dmToggleAll(checked) {
+  document.querySelectorAll('#dm-table-body input.dm-row-check').forEach(box => {
+    const ts = Number(box.dataset.ts);
+    if (checked) dmSelectedTs.add(ts); else dmSelectedTs.delete(ts);
+  });
+  renderDMTable();
+}
+function dmInvertSelection() {
+  document.querySelectorAll('#dm-table-body input.dm-row-check').forEach(box => {
+    const ts = Number(box.dataset.ts);
+    if (dmSelectedTs.has(ts)) dmSelectedTs.delete(ts); else dmSelectedTs.add(ts);
+  });
+  renderDMTable();
+}
+function dmClearSelection() { dmSelectedTs.clear(); renderDMTable(); }
+function dmDeleteSelected() {
+  if (!dmSelectedTs.size) return;
+  if (!canManageTubeData()) { showToast('当前权限为只读，不能删除数据。', 'warn'); return; }
+  if (!confirm(`确定删除所选 ${dmSelectedTs.size} 条检测记录？删除后不可恢复（维护记录留痕）。`)) return;
+  const removed = [];
+  userDB.events = userDB.events.filter(e => {
+    const hit = dmSelectedTs.has(Number(e.ts));
+    if (hit) removed.push(e);
+    return !hit;
+  });
+  removed.forEach(e => mlog('delete', { record: e, source: 'manual' }));
+  saveDB();
+  dmSelectedTs.clear();
+  renderDataManagerTables();
+  showToast(`已删除所选 ${removed.length} 条记录`, 'ok');
 }
 function deleteEvent(ts) { if(confirm('确定删除？')) { const removed = userDB.events.find(e => Number(e.ts) === Number(ts)) || null; userDB.events = userDB.events.filter(e => Number(e.ts) !== Number(ts)); saveDB(); mlog('delete', { record: removed, source: 'manual' }); } }
 
