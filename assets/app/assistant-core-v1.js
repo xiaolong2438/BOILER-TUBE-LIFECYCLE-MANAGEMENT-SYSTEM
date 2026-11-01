@@ -600,8 +600,32 @@
     for (var i = 0; i < rows.length; i += 1) {
       if (matrixRowMatch(rows[i], parsed)) { row = rows[i]; break; }
     }
+    /* 旧腿号迁移（悬挂屏回路行，2026-11-01 统一回路编号前的历史码）：
+       旧编号数腿，管号 n > 回路数 N 时按 2N+1−n 归到回路号——
+       Q 换到对侧腿字母（旧炉前计数 F→新后腿 B；旧炉后计数 B→新前腿 F），W 一律落前腿位 F00k-W。 */
+    if (!row && parsed.dir && parsed.tube) {
+      for (var li = 0; li < rows.length; li += 1) {
+        var lrow = rows[li];
+        if (!lrow || !lrow.loopPairing || lrow.special === 'rsq') continue;
+        if (String(lrow.sys || '').toUpperCase() !== parsed.sys || String(lrow.comp || '').toUpperCase() !== parsed.comp) continue;
+        var loopNo = 2 * lrow.tMax + 1 - parsed.tube;
+        if (loopNo < 1 || loopNo > lrow.tMax) continue;
+        var legacySegs = normalized.split('-');
+        var legacyBody = legacySegs.slice(3, legacySegs.length - 1);
+        if (!legacyBody.length) continue;
+        legacyBody[legacyBody.length - 1] = (parsed.partKind === 'W' ? 'F' : (parsed.dir === 'F' ? 'B' : 'F')) + pad3(loopNo);
+        var legacyCandidate = [legacySegs[0], legacySegs[1], legacySegs[2]].concat(legacyBody, [legacySegs[legacySegs.length - 1]]).join('-');
+        var legacyReparsed = parseTubeCodeParts(legacyCandidate);
+        if (!legacyReparsed) continue;
+        var legacyMatched = false;
+        for (var lk = 0; lk < rows.length; lk += 1) {
+          if (matrixRowMatch(rows[lk], legacyReparsed)) { legacyMatched = true; break; }
+        }
+        if (legacyMatched) return { code: legacyCandidate, changed: true };
+      }
+    }
     if (!row || row.special === 'rsq') {
-      /* 现场F/B管位（如高过每屏24根，用户已确认）：不进U/D管圈台账，
+      /* 现场F/B管位（如高再每屏管数待核）：不进台账，
          但屏号R↔L与管位B↔F按已确认总数做镜像归一，同一物理位置只留规范身份。 */
       if (!row) {
         for (var fi = 0; fi < rows.length; fi += 1) {
@@ -629,6 +653,49 @@
         }
       }
       return null;
+    }
+    /* 悬挂屏回路行：编号数回路——前腿F00k、后腿B00k 是两条不同物理管，Q 的 F/B 互不镜像；
+       底弯W整回路一件，B00k-W 与 F00k-W 同一弯头，归一到前腿位；屏号 R↔L 镜像照常。 */
+    if (row.loopPairing) {
+      var posCanonicalP = row.posLetters && row.posLetters.length ? String(row.posLetters[0]).toUpperCase() : '';
+      var pos2CanonicalP = row.pos2Letters && row.pos2Letters.length ? String(row.pos2Letters[0]).toUpperCase() : '';
+      var changedP = false;
+      var posSegP = parsed.pos;
+      if (posCanonicalP && parsed.pos && parsed.pos.charAt(0) !== posCanonicalP &&
+          DIR_COMPLEMENT[posCanonicalP] === parsed.pos.charAt(0)) {
+        posSegP = posCanonicalP + pad3(row.pMax + 1 - parsed.posNum);
+        changedP = true;
+      }
+      var pos2SegP = parsed.pos2;
+      if (pos2CanonicalP && parsed.pos2 && parsed.pos2.charAt(0) !== pos2CanonicalP &&
+          DIR_COMPLEMENT[pos2CanonicalP] === parsed.pos2.charAt(0)) {
+        pos2SegP = pos2CanonicalP + pad3(row.p2Max + 1 - parsed.pos2Num);
+        changedP = true;
+      }
+      var dirSegP = parsed.dir + pad3(parsed.tube);
+      if (parsed.partKind === 'W' && parsed.dir === 'B') {
+        dirSegP = 'F' + pad3(parsed.tube);
+        changedP = true;
+      }
+      if (!changedP) return null;
+      var bodyP = [];
+      if (row.pos) {
+        bodyP.push(posSegP, dirSegP);
+      } else {
+        if (parsed.space !== null) bodyP.push(parsed.space + 'KJ');
+        bodyP.push(posSegP);
+        if (pos2SegP) bodyP.push(pos2SegP);
+        bodyP.push(dirSegP);
+      }
+      var segsP = normalized.split('-');
+      var canonicalP = [segsP[0], segsP[1], segsP[2]].concat(bodyP, [segsP[segsP.length - 1]]).join('-');
+      var reparsedP = parseTubeCodeParts(canonicalP);
+      if (!reparsedP) return null;
+      var stillMatchedP = false;
+      for (var pj = 0; pj < rows.length; pj += 1) {
+        if (matrixRowMatch(rows[pj], reparsedP)) { stillMatchedP = true; break; }
+      }
+      return stillMatchedP ? { code: canonicalP, changed: true } : null;
     }
     var dirCanonical = row.dirs && row.dirs.length ? String(row.dirs[0]).toUpperCase() : '';
     var posCanonical = row.posLetters && row.posLetters.length ? String(row.posLetters[0]).toUpperCase() : '';
@@ -745,7 +812,12 @@
         var spaceList = row.spaces
           ? Array.from({ length: row.spaces[1] - row.spaces[0] + 1 }, function (_, i) { return String(row.spaces[0] + i) + 'KJ'; })
           : [null];
-        var dir = row.dirs ? row.dirs[0] : 'U';
+        /* 悬挂屏回路行（loopPairing）：F=前腿、B=后腿是两个不同物理管，双向都进候选集；
+           其余行只展开规范方向（dirs 首位），反方向靠镜像归一。 */
+        var dirList = row.loopPairing ? (row.dirs || []).slice()
+          : [(row.dirs ? row.dirs[0] : 'U')];
+        for (var di = 0; di < dirList.length && out.length < MATRIX_EXPAND_LIMIT; di += 1) {
+        var dir = dirList[di];
         for (var si = 0; si < spaceList.length && out.length < MATRIX_EXPAND_LIMIT; si += 1) {
           for (var pi = 0; pi < posList.length && out.length < MATRIX_EXPAND_LIMIT; pi += 1) {
             for (var pj = 0; pj < pos2List.length && out.length < MATRIX_EXPAND_LIMIT; pj += 1) {
@@ -756,6 +828,7 @@
               }
             }
           }
+        }
         }
       });
     });
@@ -1384,9 +1457,12 @@
 
         var typeText = pick('事件类型/更换原因');
         var descText = pick('详细描述/结论');
+        /* 业务键含来源ID：同弯头双侧拍摄（同码同内容、不同来源ID）是两条真实源记录，都进清洗结果；
+           无来源ID列的手工表按原内容键去重，行为不变。 */
+        var sourceIdRaw = pick('来源ID');
         var businessKey = category === '事件'
-          ? ['事件', code, dateValue, typeText, descText, thicknessRaw, hardnessRaw].join('\u0001')
-          : ['更换', rowBoiler, code, relatedCode, dateValue, typeText].join('\u0001');
+          ? ['事件', code, dateValue, typeText, descText, thicknessRaw, hardnessRaw, sourceIdRaw].join('\u0001')
+          : ['更换', rowBoiler, code, relatedCode, dateValue, typeText, sourceIdRaw].join('\u0001');
         if (seenKeys[businessKey]) {
           markDuplicate(duplicateGroups, duplicateOrder, businessKey, seenKeys[businessKey], rowNumber);
           uniquePush(duplicateDroppedRows, rowNumber);

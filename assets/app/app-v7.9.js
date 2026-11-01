@@ -711,6 +711,12 @@ function importLifecycleRows(rawRows, options = {}) {
           else { userDB.events[sameSourceIdx] = { ...eventRecord, ts: existing.ts }; stats.updatedEvents++; importEvents++; }
           continue;
         }
+        /* 带来源ID的记录只按来源ID幂等：不同来源ID即使同码同内容也全部保留——
+           悬挂屏双侧拍摄/复检各是一条真实源记录，绝不因编码归一而丢条目（2026-11-01 回路编号切换口径） */
+        userDB.events.push(eventRecord);
+        stats.addedEventTs.push(eventRecord.ts);
+        importEvents++;
+        continue;
       }
       if (!isEventExist(eventRecord)) {
           userDB.events.push(eventRecord);
@@ -962,11 +968,13 @@ const matrix = [
   { name:'冷灰斗-前坡', sys:'SLB', comp:'LHD', pos:'F000', dirs:['L','R'], tMax:96, spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'冷灰斗-后坡', sys:'SLB', comp:'LHD', pos:'B000', dirs:['L','R'], tMax:96, spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'燃烧器区域', sys:'SLB', comp:'RSQ', special:'rsq', corners:[1,4], layers:['A','B','C','D','E','F'], nozzles:[1,8], spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
-  { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['L','R'], p2Max:4, dirs:['F','B'], tMax:14, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
+  /* 大屏：编号数回路（148M216-0，2026-11-01确认）——每片4小屏×14回路，前腿F00k/后腿B00k/底弯W记前腿位 */
+  { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['L','R'], p2Max:4, dirs:['F','B'], tMax:14, loopPairing: true, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
   /* 后屏：编号数腿，回路k=F00k+F(27−k)，13回路/26管位（图纸148M215-0，2026-11-01确认） */
-  { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:26, spec:'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat:'按材料库分项', badge:'badge-sh' },
-  /* 高过每屏24根（F001–F024↔B024–B001，2026-10-31 图纸确认）：F/B 即主口径，B↔F 镜像走主分支 */
-  { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:24, spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
+  /* 后屏：编号数回路（148M215-0，2026-11-01确认），前腿F00k/后腿B00k/底弯W记前腿位，13回路 */
+  { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing: true, spec:'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat:'按材料库分项', badge:'badge-sh' },
+  /* 高过：统一回路编号（2026-11-01）——前腿F00k、后腿B00k、底弯W记前腿位，12回路；历史腿号F013–F024由归一自动迁移 */
+  { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:12, loopPairing: true, spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
   /* 高再每屏管数未确认：台账只展开 F1~7，B 与 F8+ 码走 fieldDirs 宽松校验、不镜像（保留原方向待核） */
   { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['F'], tMax:7, fieldDirs:['F','B'], spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh' },
   { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,4], posLetters:['L','R'], pMax:112, dirs:['F','B'], tMax:5, spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
@@ -2668,19 +2676,23 @@ function matrixExpandCodes(m, unit) {
   const posList = m.pos ? [m.pos] : Array.from({length: m.pMax}, (_, i) => `${m.posLetters[0]}${pad(i + 1, 3)}`);
   const pos2List = m.pos2Letters ? Array.from({length: m.p2Max}, (_, i) => `${m.pos2Letters[0]}${pad(i + 1, 3)}`) : [null];
   const spaceList = m.spaces ? Array.from({length: m.spaces[1] - m.spaces[0] + 1}, (_, i) => `${m.spaces[0] + i}KJ`) : [null];
-  const dir = m.dirs[0];
-  for(const sp of spaceList) {
-    for(const p of posList) {
-      for(const p2 of pos2List) {
-        const head = [sp, p, p2].filter(Boolean).join('-');
-        for(let t = 1; t <= m.tMax; t += 1) {
-          const locParts = [
-            sp ? `第${parseInt(sp, 10)}检修空间` : '',
-            m.pos ? `${m.pos}墙/坡` : `第${parseInt(p.slice(1), 10)}排/屏`,
-            p2 ? `第${parseInt(p2.slice(1), 10)}小屏` : '',
-            `${dir}${pad(t, 3)}`
-          ].filter(Boolean);
-          out.push({ code: `${prefix}-${[head, `${dir}${pad(t, 3)}`].filter(Boolean).join('-')}-Q`, loc: locParts.join(' · ') });
+  /* 悬挂屏回路行（loopPairing）：F=前腿、B=后腿是两个不同物理管，双向都进台账；
+     其余行只展开规范方向（dirs 首位），反方向靠镜像归一。 */
+  const dirList = m.loopPairing ? m.dirs : [m.dirs[0]];
+  for(const dir of dirList) {
+    for(const sp of spaceList) {
+      for(const p of posList) {
+        for(const p2 of pos2List) {
+          const head = [sp, p, p2].filter(Boolean).join('-');
+          for(let t = 1; t <= m.tMax; t += 1) {
+            const locParts = [
+              sp ? `第${parseInt(sp, 10)}检修空间` : '',
+              m.pos ? `${m.pos}墙/坡` : `第${parseInt(p.slice(1), 10)}排/屏`,
+              p2 ? `第${parseInt(p2.slice(1), 10)}小屏` : '',
+              `${dir}${pad(t, 3)}`
+            ].filter(Boolean);
+            out.push({ code: `${prefix}-${[head, `${dir}${pad(t, 3)}`].filter(Boolean).join('-')}-Q`, loc: locParts.join(' · ') });
+          }
         }
       }
     }
@@ -2689,7 +2701,9 @@ function matrixExpandCodes(m, unit) {
 }
 function matrixRowCount(m) {
   if(m.special === 'rsq') return (m.corners[1] - m.corners[0] + 1) * m.layers.length * (m.nozzles[1] - m.nozzles[0] + 1);
-  let count = (m.pos ? 1 : m.pMax * (m.pos2Letters ? m.p2Max : 1)) * m.tMax;
+  /* 悬挂屏回路行双向展开（F 前腿 + B 后腿），其余行只计规范方向 */
+  const dirFactor = m.loopPairing ? m.dirs.length : 1;
+  let count = (m.pos ? 1 : m.pMax * (m.pos2Letters ? m.p2Max : 1)) * m.tMax * dirFactor;
   if(m.spaces) count *= (m.spaces[1] - m.spaces[0] + 1);
   return count;
 }
@@ -4412,57 +4426,75 @@ const DRAWING_MAX_BYTES = 4 * 1024 * 1024;
 // 每回路=前腿F00k(向下)+底部弯头+后腿F(25-k)(向上)；frontSegs沿流程(顶→底)、rearSegs沿流程(底→顶)。
 // W记录对应底弯件=frontSegs末段；与 scripts/clean_boiler_film_records.py 的 GGRQ_LOOP_SEGMENTS 保持一致。
 const GGRQ_LOOP_BASELINE = [
-  { loop: 1, front: 1, rear: 24, frontSegs: [['Φ54×9', '12Cr1MoVG'], ['Φ54×9', 'SA-213T91'], ['Φ54×7.5', 'SA-213TP347H']], rearSegs: [['Φ54×11', 'SA-213T91'], ['Φ54×11', 'SA-213T22']] },
-  { loop: 2, front: 2, rear: 23, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213TP304H']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 3, front: 3, rear: 22, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213TP304H']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 4, front: 4, rear: 21, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213TP304H']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 5, front: 5, rear: 20, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 6, front: 6, rear: 19, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 7, front: 7, rear: 18, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 8, front: 8, rear: 17, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 9, front: 9, rear: 16, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 10, front: 10, rear: 15, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 11, front: 11, rear: 14, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
-  { loop: 12, front: 12, rear: 13, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] }
+  { loop: 1, frontSegs: [['Φ54×9', '12Cr1MoVG'], ['Φ54×9', 'SA-213T91'], ['Φ54×7.5', 'SA-213TP347H']], rearSegs: [['Φ54×11', 'SA-213T91'], ['Φ54×11', 'SA-213T22']] },
+  { loop: 2, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213TP304H']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 3, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213TP304H']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 4, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213TP304H']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 5, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 6, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 7, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 8, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 9, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 10, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 11, frontSegs: [['Φ51×9', '12Cr1MoVG']], rearSegs: [['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91'], ['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] },
+  { loop: 12, frontSegs: [['Φ51×9', '12Cr1MoVG'], ['Φ51×9', 'SA-213T91'], ['Φ51×8', 'SA-213T91']], rearSegs: [['Φ51×11', 'SA-213T91'], ['Φ51×11', 'SA-213T22']] }
 ];
 // 屏式过热器（后屏）13回路材质分段基准（图纸148M215-0 + 用户确认2026-11-01）。
-// 编号数腿：回路k = 前腿F00k↓ + 底弯W + 后腿F(27−k)↑（F001↔F026 … F013↔F014），每回路即一根U形管。
-// 回路1外圈Φ60；回路2-3底弯TP347H；回路4-6底弯T91；回路7-12整根12Cr1MoVG（含底弯）；回路13包扎管（屏底绕出平面）底弯TP347H。
+// 统一回路编号：回路k = 前腿F00k↓ + 底弯W(F00k-W) + 后腿B00k↑，每回路即一根U形管。
+// 回路1外圈Φ60；回路2-3底弯TP347H；回路4-6底弯T91；回路7-12整根12Cr1MoVG（含底弯）；回路13包扎管底弯Φ54×9 TP347H。
 const HPGRQ_LOOP_BASELINE = [
-  { loop: 1, front: 1, rear: 26, frontSegs: [['Φ60×8', '12Cr1MoVG'], ['Φ60×8', 'SA-213T91'], ['Φ60×9', 'SA-213TP347H']], rearSegs: [['Φ60×8', 'SA-213T91'], ['Φ60×9', '12Cr1MoVG']] },
-  { loop: 2, front: 2, rear: 25, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213TP347H']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 3, front: 3, rear: 24, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213TP347H']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 4, front: 4, rear: 23, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213T91']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 5, front: 5, rear: 22, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213T91']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 6, front: 6, rear: 21, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213T91']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 7, front: 7, rear: 20, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 8, front: 8, rear: 19, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 9, front: 9, rear: 18, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 10, front: 10, rear: 17, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 11, front: 11, rear: 16, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 12, front: 12, rear: 15, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
-  { loop: 13, front: 13, rear: 14, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×9', 'SA-213TP347H']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] }
+  { loop: 1, frontSegs: [['Φ60×8', '12Cr1MoVG'], ['Φ60×8', 'SA-213T91'], ['Φ60×9', 'SA-213TP347H']], rearSegs: [['Φ60×8', 'SA-213T91'], ['Φ60×9', '12Cr1MoVG']] },
+  { loop: 2, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213TP347H']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 3, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213TP347H']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 4, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213T91']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 5, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213T91']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 6, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213T91']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 7, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 8, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 9, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 10, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 11, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 12, frontSegs: [['Φ54×8.5', '12Cr1MoVG']], rearSegs: [['Φ54×8.5', '12Cr1MoVG']] },
+  { loop: 13, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×9', 'SA-213TP347H']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] }
 ];
-// 悬挂屏回路系统配置：编号数腿，回路k = 前腿F00k + 后腿F(total+1−k)，回路数 = total/2，底弯W记在前腿位。
+// 全大屏过热器 14回路材质分段基准（图纸148M216-0 + 用户确认2026-11-01）。
+// 每片4小屏，每小屏14回路（14根U形管，全部Φ51×7）；外三圈（回路1-3）与最内圈（回路14，夹持管外套）
+// 两腿下段+底弯为SA-213T91、顶部段12Cr1MoVG；中间回路（4-13）整根12Cr1MoVG（含底弯）。
+const DPGRQ_LOOP_BASELINE = [
+  { loop: 1, frontSegs: [['Φ51×7', '12Cr1MoVG'], ['Φ51×7', 'SA-213T91'], ['Φ51×7', 'SA-213T91']], rearSegs: [['Φ51×7', 'SA-213T91'], ['Φ51×7', '12Cr1MoVG']] },
+  { loop: 2, frontSegs: [['Φ51×7', '12Cr1MoVG'], ['Φ51×7', 'SA-213T91'], ['Φ51×7', 'SA-213T91']], rearSegs: [['Φ51×7', 'SA-213T91'], ['Φ51×7', '12Cr1MoVG']] },
+  { loop: 3, frontSegs: [['Φ51×7', '12Cr1MoVG'], ['Φ51×7', 'SA-213T91'], ['Φ51×7', 'SA-213T91']], rearSegs: [['Φ51×7', 'SA-213T91'], ['Φ51×7', '12Cr1MoVG']] },
+  { loop: 4, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 5, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 6, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 7, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 8, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 9, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 10, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 11, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 12, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 13, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
+  { loop: 14, frontSegs: [['Φ51×7', '12Cr1MoVG'], ['Φ51×7', 'SA-213T91'], ['Φ51×7', 'SA-213T91']], rearSegs: [['Φ51×7', 'SA-213T91'], ['Φ51×7', '12Cr1MoVG']] }
+];
+// 悬挂屏回路系统配置：统一回路编号——回路k = 前腿F00k + 底弯W(F00k-W) + 后腿B00k；历史腿号由归一自动迁移。
 const PLATEN_LOOP_SYSTEMS = {
-  GGRQ: { total: 24, baseline: GGRQ_LOOP_BASELINE },
-  HPGRQ: { total: 26, baseline: HPGRQ_LOOP_BASELINE }
+  GGRQ: { loops: 12, baseline: GGRQ_LOOP_BASELINE },
+  HPGRQ: { loops: 13, baseline: HPGRQ_LOOP_BASELINE },
+  DPGRQ: { loops: 14, baseline: DPGRQ_LOOP_BASELINE }
 };
-function platenLoopForTube(sys, tubeNo) {
+function platenLoopForTube(sys, loopNo) {
   const cfg = PLATEN_LOOP_SYSTEMS[sys];
-  if (!cfg || !Number.isFinite(tubeNo) || tubeNo < 1 || tubeNo > cfg.total) return null;
-  const half = cfg.total / 2;
-  const loopNo = tubeNo <= half ? tubeNo : cfg.total + 1 - tubeNo;
+  if (!cfg || !Number.isFinite(loopNo) || loopNo < 1 || loopNo > cfg.loops) return null;
   return cfg.baseline.find(l => l.loop === loopNo) || null;
 }
-function ggrqLoopForTube(tubeNo) {
-  return platenLoopForTube('GGRQ', tubeNo);
+function ggrqLoopForTube(loopNo) {
+  return platenLoopForTube('GGRQ', loopNo);
 }
-function ggrqBottomBendAttrs(tubeNo) {
-  const loop = ggrqLoopForTube(tubeNo);
+function ggrqBottomBendAttrs(loopNo) {
+  const loop = ggrqLoopForTube(loopNo);
   return loop ? loop.frontSegs[loop.frontSegs.length - 1] : null;
 }
-// 悬挂屏回路绑定：回路k = 前腿F00k-Q + 底弯W(F00k-W) + 后腿F(total+1−k)-Q 三段共用一个回路身份。
+// 悬挂屏回路绑定：回路k = 前腿F00k-Q + 底弯W(F00k-W) + 后腿B00k-Q 三段共用一个回路身份。
 // 返回 { loop, frontCode, bendCode, rearCode, current:{front,bend,rear} }；非悬挂屏系统/管号越界返回 null。
 // 只在真实页面与完整测试沙箱调用（依赖 parseTubeCode/normalizedTubeCode，隔离切片仅定义不调用）。
 function platenLoopBinding(code) {
@@ -4470,20 +4502,19 @@ function platenLoopBinding(code) {
   const parsed = parseTubeCode(normalized);
   if (!parsed || !parsed.tube) return null;
   const cfg = PLATEN_LOOP_SYSTEMS[parsed.sys];
-  if (!cfg || parsed.tube > cfg.total) return null;
-  const tubeNo = parsed.dir === 'B' ? cfg.total + 1 - parsed.tube : parsed.tube;
-  const loop = platenLoopForTube(parsed.sys, tubeNo);
+  if (!cfg || parsed.tube > cfg.loops) return null;
+  const loop = platenLoopForTube(parsed.sys, parsed.tube);
   if (!loop) return null;
-  const half = cfg.total / 2;
-  const padTube = n => 'F' + String(n).padStart(3, '0');
+  const padF = n => 'F' + String(n).padStart(3, '0');
+  const padB = n => 'B' + String(n).padStart(3, '0');
   const segs = normalized.split('-');
-  const head = segs.slice(0, segs.length - 2);   // 去掉管号段与 Q/W 部位尾，保留机组/系统/部件/空间/屏号
+  const head = segs.slice(0, segs.length - 2);   // 去掉管号段与 Q/W 部位尾，保留机组/系统/部件/空间/片与屏号
   return {
     loop: loop.loop,
-    frontCode: head.concat([padTube(loop.front), 'Q']).join('-'),
-    bendCode: head.concat([padTube(loop.front), 'W']).join('-'),
-    rearCode: head.concat([padTube(loop.rear), 'Q']).join('-'),
-    current: { front: parsed.partKind === 'Q' && tubeNo <= half, bend: parsed.partKind === 'W', rear: parsed.partKind === 'Q' && tubeNo > half }
+    frontCode: head.concat([padF(loop.loop), 'Q']).join('-'),
+    bendCode: head.concat([padF(loop.loop), 'W']).join('-'),
+    rearCode: head.concat([padB(loop.loop), 'Q']).join('-'),
+    current: { front: parsed.partKind === 'Q' && parsed.dir === 'F', bend: parsed.partKind === 'W', rear: parsed.partKind === 'Q' && parsed.dir === 'B' }
   };
 }
 function ggrqLoopBinding(code) {
@@ -4503,9 +4534,8 @@ function tubeSpecMaterialSummary(code, events) {
   });
   if (parsed && parsed.tube) {
     const loopCfg = PLATEN_LOOP_SYSTEMS[parsed.sys];
-    if (loopCfg && parsed.tube <= loopCfg.total) {
-      const tubeNo = parsed.dir === 'B' ? loopCfg.total + 1 - parsed.tube : parsed.tube;
-      const loop = platenLoopForTube(parsed.sys, tubeNo);
+    if (loopCfg && parsed.tube <= loopCfg.loops) {
+      const loop = platenLoopForTube(parsed.sys, parsed.tube);
       if (loop && parsed.partKind === 'W') {
         const bend = loop.frontSegs[loop.frontSegs.length - 1];
         const segLabel = (seg, isBend) => seg[0] + ' ' + seg[1] + (isBend ? '【底弯】' : '');
@@ -4516,9 +4546,8 @@ function tubeSpecMaterialSummary(code, events) {
         return summary + '（全回路：' + chain.join(' → ') + '）';
       }
       if (loop && parsed.partKind === 'Q') {
-        const padNo = String(tubeNo).padStart(3, '0');
-        const half = loopCfg.total / 2;
-        const isFront = tubeNo <= half;
+        const padNo = String(parsed.tube).padStart(3, '0');
+        const isFront = parsed.dir === 'F';
         /* 前腿直管段 = frontSegs 去掉末段底弯；整腿与底弯同材质时无独立直管段（高过回路8-11、后屏回路7-12） */
         const straightSegs = loop.frontSegs.slice(0, -1);
         const legSegs = isFront ? (straightSegs.length ? straightSegs : [loop.frontSegs[0]]) : loop.rearSegs;
@@ -4527,7 +4556,8 @@ function tubeSpecMaterialSummary(code, events) {
           + (isFront && i === legSegs.length - 1 ? (soleWithBend ? '（直管与底弯同材质）' : '【底弯前】')
             : !isFront && i === 0 ? '【底弯后】' : ''))
           .join(' → ');
-        let summary = '回路' + loop.loop + (isFront ? ' 前腿 F' + padNo + '（顶入口→底弯）：' : ' 后腿 F' + padNo + '（底弯→顶出口）：') + chain;
+        const legLetter = isFront ? 'F' : 'B';
+        let summary = '回路' + loop.loop + (isFront ? ' 前腿 ' + legLetter + padNo + '（顶入口→底弯）：' : ' 后腿 ' + legLetter + padNo + '（底弯→顶出口）：') + chain;
         /* 只有同部位（Q）记录的规格才与直管分段链比对；弯头(W)记录的规格属于底弯件，不混入直管链。
            部位字母直接取编码尾 [QW]，不依赖 parseTubeCode/normalizedTubeCode（本函数会被隔离切片加载） */
         const qPairs = [];
@@ -4557,7 +4587,7 @@ function platenLoopBaselineTable(baseline, caption) {
     l.rearSegs.forEach(seg => segs.push(chip(seg)));
     return '<tr>' +
       '<td style="padding:6px 10px; white-space:nowrap; font-weight:700;">回路' + l.loop + '</td>' +
-      '<td style="padding:6px 10px; white-space:nowrap;">F' + String(l.front).padStart(3, '0') + '↓ + F' + String(l.rear).padStart(3, '0') + '↑</td>' +
+      '<td style="padding:6px 10px; white-space:nowrap;">F' + String(l.loop).padStart(3, '0') + '↓ + B' + String(l.loop).padStart(3, '0') + '↑</td>' +
       '<td style="padding:6px 10px;">' + segs.join(arrow) + '</td>' +
       '</tr>';
   }).join('');
@@ -4572,7 +4602,8 @@ function renderGGRQLoopBaseline() {
   const host = document.getElementById('ggrqLoopBaseline');
   if (!host) return;
   host.innerHTML = platenLoopBaselineTable(GGRQ_LOOP_BASELINE, '高温过热器 12 回路材质分段基准（图纸 148M211-0）') +
-    platenLoopBaselineTable(HPGRQ_LOOP_BASELINE, '屏式过热器 13 回路材质分段基准（图纸 148M215-0）');
+    platenLoopBaselineTable(HPGRQ_LOOP_BASELINE, '屏式过热器 13 回路材质分段基准（图纸 148M215-0）') +
+    platenLoopBaselineTable(DPGRQ_LOOP_BASELINE, '全大屏过热器 14 回路材质分段基准（图纸 148M216-0）');
 }
 let designDrawings = [];
 try { designDrawings = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '[]'); } catch (err) { designDrawings = []; }
