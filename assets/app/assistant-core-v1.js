@@ -497,7 +497,9 @@
     parsed.seq = tail.length > 1 ? Number(tail.slice(1)) : null;
     parsed.partKind = tail[0];
     var POS_RE = /^([FBLR])(\d{3})$/;
-    var TUBE_RE = /^(?:GGRQ|GZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UD])(\d{3})$/;
+    /* 管序 F/B：高过/高再/大屏/后屏/低过/低再（[UD] 继续放行解析，历史 U/D 码由矩阵行判合法性）；
+       省煤器仍为 U/D 口径 */
+    var TUBE_RE = /^(?:GGRQ|GZRQ|DPGRQ|HPGRQ|DGRQ|DZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UD])(\d{3})$/;
     var WALL_RE = /^([FBLR])000$/;
     if (parsed.sys === 'SLB' && (parsed.comp === 'WB' || parsed.comp === 'LHD')) {
       if (parts.length !== 2) return null;
@@ -697,7 +699,7 @@
       }
       result.matched = hit;
       result.fieldPosition = !hit && rows.some(function (row) { return fieldPositionMatches(row, parsed); });
-      if (result.fieldPosition) result.reason = '现场管位编码有效（按每屏管数校验），保持现场计数方向';
+      if (result.fieldPosition) result.reason = '现场管位编码有效（每屏管数待核），保持现场计数方向';
       else if (!hit) result.reason = '编码格式有效，但未落入台账矩阵的排/屏或管号范围';
     }
     return result;

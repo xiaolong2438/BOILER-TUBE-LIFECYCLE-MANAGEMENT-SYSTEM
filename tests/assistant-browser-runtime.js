@@ -135,7 +135,7 @@ window.runAssistantTests = async function () {
     const csv = [
       '数据分类,炉号,日期,管段编码,规格,材质,厚度(mm),硬度(HB),事件类型/更换原因,关联新管码,详细描述/结论',
       '事件,1,2025-01-10,1G-SLB-WB-F000-R007-Q001,Φ63.5×7.5,SA-210C,7.05,183,测厚,,AI 冒烟测厚记录',
-      '事件,2,2025-02-11,2G-GGRQ-GQ-L013-U006-Q001,Φ51×8,SA-213T91,6.85,205,测厚,,AI 冒烟测厚记录二'
+      '事件,2,2025-02-11,2G-GGRQ-GQ-L013-F006-Q001,Φ51×8,SA-213T91,6.85,205,测厚,,AI 冒烟测厚记录二'
     ].join(String.fromCharCode(10));
     const file = new File([csv], 'assistant-smoke.csv', { type: 'text/csv' });
     const before = userDB.events.length;
@@ -269,9 +269,9 @@ window.runAssistantTests = async function () {
   }
 
   /* 三行设计已按清洗规则校准：炉号必须与管段编码首段一致（否则报「炉号与管段编码不一致」错误行） */
-  const ROW_A = ['事件', '1', '2025-03-01', '1G-GGRQ-GQ-L040-U001-Q001', 'Φ63.5×7.5', 'SA-210C', '7.02', '181', '测厚', '', 'T3 批量A'];
-  const ROW_B = ['事件', '2', '2025-03-02', '2G-GGRQ-GQ-L040-U006-Q001', 'Φ51×8', 'SA-213T91', '6.85', '205', '测厚', '', 'T3 批量B'];
-  const ROW_C = ['事件', '2', '2025-03-03', '2G-GGRQ-GQ-L040-U006-Q002', 'Φ60×6', 'SA-210C', '6.51', '170', '测厚', '', 'T3 批量C'];
+  const ROW_A = ['事件', '1', '2025-03-01', '1G-GGRQ-GQ-L040-F001-Q001', 'Φ63.5×7.5', 'SA-210C', '7.02', '181', '测厚', '', 'T3 批量A'];
+  const ROW_B = ['事件', '2', '2025-03-02', '2G-GGRQ-GQ-L040-F006-Q001', 'Φ51×8', 'SA-213T91', '6.85', '205', '测厚', '', 'T3 批量B'];
+  const ROW_C = ['事件', '2', '2025-03-03', '2G-GGRQ-GQ-L040-F006-Q002', 'Φ60×6', 'SA-210C', '6.51', '170', '测厚', '', 'T3 批量C'];
   function replyFor(rows, notes) {
     return JSON.stringify({ headers: TABLE_HEADERS, rows: rows, notes: notes === undefined ? 'T3 识别备注' : notes });
   }

@@ -35,7 +35,7 @@ const MATRIX = [
   { sys: "SLB", comp: "WB", pos: "F000", dirs: ["R", "L"], tMax: 192 },
   { sys: "SLB", comp: "WB", pos: "B000", dirs: ["R", "L"], tMax: 192 },
   { sys: "SLB", comp: "LHD", pos: "F000", dirs: ["L", "R"], tMax: 96 },
-  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["U", "D"], tMax: 12 }
+  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["F", "B"], tMax: 24 }
 ];
 /* 台账已有编码（模拟系统里已存在检测记录的管段） */
 const KNOWN = [
@@ -217,14 +217,14 @@ check("编码定位：矩阵内合法编码（含未有过记录的新管）不�
 check("编码定位：台账外编码超矩阵范围时报警告，并给出最相似真实编码（模糊定位核心）", () => {
   const rows = [
     ["数据分类", "炉号", "日期", "管段编码", "事件类型/更换原因"],
-    ["事件", "1", "2024-05-06", "1G-GGRQ-GQ-L080-U001-Q001", "测厚"]
+    ["事件", "1", "2024-05-06", "1G-GGRQ-GQ-L080-F001-Q001", "测厚"]
   ];
   const report = Core.cleanRows({ rows, ...CLEAN_CONTEXT }).report;
   const item = checkById(report, "out_of_range");
   assert.ok(item, "必须报 out_of_range");
   assert.equal(item.severity, "warning");
   const sample = item.sample[0];
-  assert.ok(sample.startsWith("1G-GGRQ-GQ-L080-U001-Q001"), "样例以原始编码开头");
+  assert.ok(sample.startsWith("1G-GGRQ-GQ-L080-F001-Q001"), "样例以原始编码开头");
   assert.ok(sample.includes("近似：1G-GGRQ-"), "样例必须给出近似编码建议");
   assert.ok(sample.includes("相似度"), "近似建议必须带相似度");
   const similarity = Number(sample.match(/相似度 (\d+)%/)[1]);
@@ -232,7 +232,7 @@ check("编码定位：台账外编码超矩阵范围时报警告，并给出最�
 });
 
 check("编码定位：建议只看同机组同系统，跨系统候选被过滤", () => {
-  const ledger = ["1G-SLB-WB-F000-R003-Q001", "2G-GGRQ-GQ-L012-U005-Q001"];
+  const ledger = ["1G-SLB-WB-F000-R003-Q001", "2G-GGRQ-GQ-L012-F005-Q001"];
   const hit = Core.suggestSimilarCode("1G-SLB-WB-F000-R005-Q001", ledger);
   assert.ok(hit && hit.code.startsWith("1G-SLB-"), "1 号机组 SLB 系统的笔误只能建议 SLB 候选");
   assert.equal(Core.suggestSimilarCode("1G-SLB-WB-F000-R003-Q001", ledger), null, "编码本身在台账 → 无需建议");
@@ -464,9 +464,9 @@ const DIR_MATRIX = [
   { sys: "SLB", comp: "WB", pos: "F000", dirs: ["R", "L"], tMax: 192 },
   { sys: "SLB", comp: "WB", pos: "L000", dirs: ["F", "B"], tMax: 169 },
   { sys: "SLB", comp: "LHD", pos: "F000", dirs: ["L", "R"], tMax: 96 },
-  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["U", "D"], tMax: 12 },
-  { sys: "DPGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 6, pos2Letters: ["L", "R"], p2Max: 4, dirs: ["U", "D"], tMax: 14 },
-  { sys: "DZRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 112, dirs: ["U", "D"], tMax: 6, spaces: [1, 5], tubeOptional: true },
+  { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["F", "B"], tMax: 24 },
+  { sys: "DPGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 6, pos2Letters: ["L", "R"], p2Max: 4, dirs: ["F", "B"], tMax: 14 },
+  { sys: "DZRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 112, dirs: ["F", "B"], tMax: 6, spaces: [1, 5], tubeOptional: true },
   { sys: "SMQ", comp: "EXIN", posLetters: ["L", "R"], pMax: 124, dirs: ["U", "D"], tMax: 1 }
 ];
 
@@ -481,8 +481,8 @@ check("归一：墙面反方向管号按同一物理位置镜像（前墙 L025 �
 check("归一：覆盖全部段位——侧墙 F↔B、冷灰斗、过/再热器排号与管号、小屏号、检修空间", () => {
   assert.equal(Core.canonicalTubeCode("2G-SLB-WB-L000-B020-Q001", DIR_MATRIX).code, "2G-SLB-WB-L000-F150-Q001");
   assert.equal(Core.canonicalTubeCode("2G-SLB-LHD-F000-R016-Q001", DIR_MATRIX).code, "2G-SLB-LHD-F000-L081-Q001");
-  assert.equal(Core.canonicalTubeCode("1G-GGRQ-GQ-R005-D003-Q001", DIR_MATRIX).code, "1G-GGRQ-GQ-L028-U010-Q001");
-  assert.equal(Core.canonicalTubeCode("1G-DPGRQ-GQ-R003-R002-D005-Q001", DIR_MATRIX).code, "1G-DPGRQ-GQ-L004-L003-U010-Q001");
+  assert.equal(Core.canonicalTubeCode("1G-GGRQ-GQ-R005-B003-Q001", DIR_MATRIX).code, "1G-GGRQ-GQ-L028-F022-Q001");
+  assert.equal(Core.canonicalTubeCode("1G-DPGRQ-GQ-R003-R002-B005-Q001", DIR_MATRIX).code, "1G-DPGRQ-GQ-L004-L003-F010-Q001");
   assert.equal(Core.canonicalTubeCode("1G-DZRQ-GQ-4KJ-R065-Q001", DIR_MATRIX).code, "1G-DZRQ-GQ-4KJ-L048-Q001");
 });
 

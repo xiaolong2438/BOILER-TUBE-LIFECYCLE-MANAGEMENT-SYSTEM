@@ -63,7 +63,7 @@ assert.match(externalJs, /prefix === unit \|\| prefix === `\$\{unit\}G`/);
   const start = externalJs.indexOf("function codeMatchesDashboardUnit");
   const end = externalJs.indexOf("function getDashboardUnitLabel");
   vm.runInContext(externalJs.slice(start, end), ctx);
-  const matches = vm.runInContext("codeMatchesDashboardUnit('2G-GZRQ-GQ-L032-U004-Q001', '2')", ctx);
+  const matches = vm.runInContext("codeMatchesDashboardUnit('2G-GZRQ-GQ-L032-F004-Q001', '2')", ctx);
   assert.equal(matches, true, "2G- 前缀必须匹配 2#机组");
   assert.equal(vm.runInContext("codeMatchesDashboardUnit('1G-SLB-WB-F000-R025-Q001', '2')", ctx), false);
 }

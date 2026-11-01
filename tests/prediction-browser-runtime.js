@@ -54,7 +54,7 @@ window.runPredictionTests = async function () {
     }
   });
   await test('unavailable bend threshold and invalid pipeType remain unknown',()=>{
-    events([5,4.8,4.6],{code:'1G-DGRQ-GQ-L001-U001-Q001',spec:'Φ60×8.5',material:'15CrMoG'});
+    events([5,4.8,4.6],{code:'1G-DGRQ-GQ-L001-F001-Q001',spec:'Φ60×8.5',material:'15CrMoG'});
     const target=userDB.events[0].code, h=extractThicknessData(target,{includeSystem:false});
     const d=predictThicknessTrendFromHistory(target,h,'bend');
     assert(d.threshold===null && d.thresholdInfo.straight===4.16 && d.thresholdInfo.bend===null && d.rul===null,'missing bend became a number');

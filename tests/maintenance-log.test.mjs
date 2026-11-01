@@ -124,11 +124,11 @@ check("hook(update) 记录字段级前后值，值没变则不记录", () => {
 check("hook(delete) 保留被删记录快照，便于追溯", () => {
   const { log } = boot();
   const entry = log.hook("delete", {
-    record: { code: "2G-GGRQ-GQ-L013-U006-Q001", type: "测厚", date: "2025-02-11", thickness: "6.85", desc: "误录" }
+    record: { code: "2G-GGRQ-GQ-L013-F006-Q001", type: "测厚", date: "2025-02-11", thickness: "6.85", desc: "误录" }
   });
   assert.equal(entry.action, "delete");
   assert.match(entry.summary, /删除测厚/);
-  assert.equal(entry.meta.snapshot.code, "2G-GGRQ-GQ-L013-U006-Q001");
+  assert.equal(entry.meta.snapshot.code, "2G-GGRQ-GQ-L013-F006-Q001");
   assert.ok(entry.changes.length >= 3, "删除时应至少留下编码/日期/厚度快照");
 });
 

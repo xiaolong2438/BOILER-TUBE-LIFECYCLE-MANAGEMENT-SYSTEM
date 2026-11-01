@@ -212,7 +212,7 @@ check("docxToRows：deflate 文档 → 表格 → 字段规范化（日期/数�
     + "<w:tc><w:p><w:r><w:t>6.5mm</w:t></w:r></w:p></w:tc>"
     + "</w:tr><w:tr>"
     + "<w:tc><w:p><w:r><w:t>2024/4/8</w:t></w:r></w:p></w:tc>"
-    + "<w:tc><w:p><w:r><w:t>2G-GGRQ-GQ-L012-U005-Q001</w:t></w:r></w:p></w:tc>"
+    + "<w:tc><w:p><w:r><w:t>2G-GGRQ-GQ-L012-F005-Q001</w:t></w:r></w:p></w:tc>"
     + "<w:tc><w:p><w:r><w:t>1,234</w:t></w:r></w:p></w:tc>"
     + "</w:tr></w:tbl>"
     + XML_FOOTER;
@@ -223,7 +223,7 @@ check("docxToRows：deflate 文档 → 表格 → 字段规范化（日期/数�
   const plain = JSON.parse(JSON.stringify(result.rows));
   assert.deepEqual(plain[0], ["日期", "管段编码", "实测壁厚值(mm)"]);
   assert.deepEqual(plain[1], ["2024-03-05", "1G-SLB-WB-F000-R003-Q001", "6.5"]);
-  assert.deepEqual(plain[2], ["2024-04-08", "2G-GGRQ-GQ-L012-U005-Q001", "1234"]);
+  assert.deepEqual(plain[2], ["2024-04-08", "2G-GGRQ-GQ-L012-F005-Q001", "1234"]);
 });
 
 check("docxToRows：多个表格按并集合并、重复行去重", async () => {

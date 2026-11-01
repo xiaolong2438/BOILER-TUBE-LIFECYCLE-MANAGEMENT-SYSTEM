@@ -101,7 +101,7 @@ IMPORT_HEADERS = [
 ]
 CODE_RE = re.compile(
     r"^(?P<unit>[12])G-(?P<sys>GGRQ|GZRQ)-GQ-"
-    r"(?P<screen>[LR]\d{3})-(?P<tube>[FBUD]\d{3})-"
+    r"(?P<screen>[LR]\d{3})-(?P<tube>[FB]\d{3})-"
     r"(?P<kind>[QW])(?P<serial>\d{1,3})?$"
 )
 SUMMARY_RE = re.compile(
