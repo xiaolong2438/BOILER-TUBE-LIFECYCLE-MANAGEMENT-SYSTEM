@@ -83,6 +83,34 @@ class CleaningSemanticsTest(unittest.TestCase):
         self.assertTrue(all(r.material_basis_note for r in reheater), '区带映射必须留依据')
         self.assertTrue(all('-L001-F002-' in r.code for r in reheater))
 
+    def test_a_side_screens_mirror_to_canonical_l(self):
+        # 用户确认32屏（L001–L032↔R032–R001）：A侧R屏号在包内即归一为规范方向L，源侧别留注记。
+        raw = (1, '高温过热器', 'A侧第1排炉前至炉后第5根', 'Φ54×7.5\nΦ51×8\nΦ51×9\nΦ60×4',
+               'SA-213TP347H\nSA-213TP304H\nT91\n12Cr1MoVG', '1G-GGRQ-GQ-R001-F005-W01',
+               '射线', '合格', '炉后往炉前数第1弯头为TP347H')
+        rec = clean.expand_source_row('2022年1号机A修', 4, raw, 0)[0]
+        self.assertEqual(f"{rec.location_key}-{rec.part_kind}", '1G-GGRQ-GQ-L032-F005-W', 'R001≙L032')
+        self.assertTrue(any('R001≙L032' in n for n in rec.notes), '镜像依据进注记')
+
+    def test_legacy_leg_numbers_migrate_to_loop_numbering(self):
+        # 2026-11-01统一回路编号：回路k=入口段F00k+底弯W(F00k-W)+出口段B00k；旧腿号F013–F024按回路号迁移。
+        raw_w = (1, '高温过热器', '炉左至炉右第24屏炉后第1根', 'Φ54×7.5', 'TP347H',
+                 '1G-GGRQ-GQ-L024-F024-W01', '射线', '合格', None)
+        rec_w = clean.expand_source_row('2026年1号机C修', 39, raw_w, 0)[0]
+        self.assertEqual(f"{rec_w.location_key}-{rec_w.part_kind}", '1G-GGRQ-GQ-L024-F001-W',
+                         'W记入口段位：F024-W→F001-W（回路1）')
+        self.assertTrue(any('统一回路编号迁移' in n for n in rec_w.notes))
+        raw_q = (1, '高温过热器', '炉左至炉右第24屏炉后第2根', 'Φ54×11', 'SA-213T22',
+                 '1G-GGRQ-GQ-L024-F023-Q01', '超声', '合格', None)
+        rec_q = clean.expand_source_row('2026年1号机C修', 40, raw_q, 0)[0]
+        self.assertEqual(f"{rec_q.location_key}-{rec_q.part_kind}", '1G-GGRQ-GQ-L024-B002-Q',
+                         'Q换对侧腿：F023-Q→B002-Q（回路2出口段）')
+        raw_keep = (1, '高温过热器', '炉左至炉右第24屏炉前第12根', 'Φ51×8', 'T91',
+                    '1G-GGRQ-GQ-L024-F012-W01', '射线', '合格', None)
+        rec_keep = clean.expand_source_row('2026年1号机C修', 41, raw_keep, 0)[0]
+        self.assertEqual(f"{rec_keep.location_key}-{rec_keep.part_kind}", '1G-GGRQ-GQ-L024-F012-W',
+                         '已是回路号的F012不迁移')
+
     def test_ggrq_bottom_bend_band_matches_user_confirmed_palindrome(self):
         # 2026源表备注的24弯头材质区带（对称）必须与12回路分段基准逐管互证。
         band_by_tube = {1: 'SA-213TP347H', 24: 'SA-213TP347H',
@@ -117,8 +145,8 @@ class CleaningSemanticsTest(unittest.TestCase):
         self.assertIn('L002-F002', anomalies[0].code)
         self.assertEqual(anomalies[0].result, clean.OBSERVED_ANOMALY)
         self.assertFalse(any(r.origin == '汇总展开' and r.location_key == anomalies[0].location_key for r in summary))
-        self.assertTrue(all('-F024-' in r.code for r in self.result.records if r.source_row == 8),
-                        '炉后第1根按确认几何镜像为F024')
+        self.assertTrue(all('-F001-' in r.code for r in self.result.records if r.source_row == 8),
+                        '炉后第1根W按确认几何镜像F024后，再按统一回路编号落入口段位F001-W（回路1）')
         self.assertTrue(all(r.date in ('2026-04', '2022-10', '2021-11') for r in self.result.records))
         self.assertTrue(all(r.desc.startswith('方法：') and '结果：' in r.desc for r in self.result.records),
                         'v9：描述列只含方法/结果简明结论')

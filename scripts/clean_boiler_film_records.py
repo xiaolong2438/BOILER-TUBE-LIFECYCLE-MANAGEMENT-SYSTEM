@@ -33,7 +33,7 @@ import openpyxl
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
-RULE_VERSION = "film-records-physical-codes-v9"
+RULE_VERSION = "film-records-physical-codes-v10"
 # 用户确认（2026-10-31，图纸148M211-0）：高过12回路材质分段基准。
 # 每回路 = 入口段F00k（顶部入口联箱向下）+ 底部弯头 + 出口段F(25-k)（向上至顶部出口），
 # 材质沿整个回路连续变化；W记录对应底弯件=入口段末段（回路8-11为12Cr1MoVGΦ51×9直接过弯）。
@@ -69,6 +69,24 @@ def ggrq_bottom_bend_attrs(tube_no: int) -> tuple[str, str]:
     loop_no = tube_no if tube_no <= 12 else GGRQ_TUBES_PER_SCREEN + 1 - tube_no
     loop = next(l for l in GGRQ_LOOP_SEGMENTS if l["loop"] == loop_no)
     return loop["front_segs"][-1]
+
+
+def migrate_loop_code(location: str, kind: str, notes: list[str]) -> str:
+    """统一回路编号迁移（2026-11-01口径）：高过旧腿号F013–F024按回路号迁移——
+    W落入口段位F00(25-n)-W；Q（如有）换对侧腿B00(25-n)。非高过/已是回路号(≤12)原样返回。"""
+    segs = location.split("-")
+    if len(segs) != 5 or not segs[1].endswith("GGRQ"):
+        return location
+    tube_seg = segs[4]
+    if tube_seg[0] != "F" or not tube_seg[1:].isdigit() or int(tube_seg[1:]) <= 12:
+        return location
+    old_no = int(tube_seg[1:])
+    loop_no = 25 - old_no
+    new_seg = f"F{loop_no:03d}" if kind == "W" else f"B{loop_no:03d}"
+    role = "入口段位" if kind == "W" else "出口段"
+    notes.append(f"统一回路编号迁移：旧腿号F{old_no:03d}-{kind}→{new_seg}-{kind}（回路{loop_no}{role}，2026-11-01口径）")
+    segs[4] = new_seg
+    return "-".join(segs)
 # 用户确认（2026-10-31）：12CrMoVG实为12Cr1MoVG；材质写法统一全称；检测月份见BATCH_META；
 # 源2026第32行“第24屏”实为第27屏。
 MATERIAL_NAME_MAP = {"304H": "SA-213TP304H", "TP347H": "SA-213TP347H",
@@ -293,7 +311,19 @@ def parse_source_code(raw: str, batch: str, system: str, position: str) -> tuple
         if screen[0] != letter:
             notes.append(f"侧别按用户规则修正：{side[1]}侧→{letter}")
         screen = letter + screen[1:]
-    return f"{unit}G-{match['sys']}-GQ-{screen}-{match['tube']}", match["kind"], notes
+    # 屏号镜像（用户确认）：高过32屏（R001–R032↔L032–L001）、高再64片（R001–R064↔L064–L001），
+    # R屏号一律镜像为规范方向L，源侧别保留在源位置/原始编码列。
+    screen_total = 32 if match["sys"] == "GGRQ" else 64 if match["sys"] == "GZRQ" else None
+    if screen[0] == "R":
+        if not screen_total:
+            raise ValueError(f"{batch} 系统屏数未确认，R屏号不镜像：{raw}")
+        rear_no = int(screen[1:])
+        if not 1 <= rear_no <= screen_total:
+            raise ValueError(f"{batch} R屏号超出{screen_total}屏范围：{raw}")
+        canonical_no = screen_total + 1 - rear_no
+        notes.append(f"屏号按用户确认{screen_total}屏镜像归一：R{rear_no:03d}≙L{canonical_no:03d}")
+        screen = f"L{canonical_no:03d}"
+    return migrate_loop_code(f"{unit}G-{match['sys']}-GQ-{screen}-{match['tube']}", match["kind"], notes), match["kind"], notes
 
 
 def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int) -> list[Record]:
@@ -324,11 +354,18 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
                 raise ValueError("炉后计数目前仅2026高过已确认每屏24根；其他批次需先确认再镜像")
             tubes = [GGRQ_TUBES_PER_SCREEN + 1 - t for t in tubes]
             direction = "F"
-            mirror_note = "用户已确认高过每屏24根（F001–F024↔B024–B001）：源“炉后第{0}根”≙F{1:03d}，编码落规范方向F".format(
+            mirror_note = "用户已确认高过每屏24根（F001–F024↔B024–B001）：源“炉后第{0}根”≙F{1:03d}；W记录再按统一回路编号落入口段位".format(
                 "+".join(str(GGRQ_TUBES_PER_SCREEN + 1 - t) for t in sorted(tubes, reverse=True)),
                 min(tubes))
-        locations = [f"{BATCH_META[batch]['unit']}G-{SYS_MAP[system]}-GQ-L{s:03d}-{direction}{t:03d}"
-                     for s in range(start, end + 1) for t in tubes]
+        loop_migration_notes: dict[str, list[str]] = {}
+        locations = []
+        for s in range(start, end + 1):
+            for t in tubes:
+                loc_notes: list[str] = []
+                locations.append(migrate_loop_code(
+                    f"{BATCH_META[batch]['unit']}G-{SYS_MAP[system]}-GQ-L{s:03d}-{direction}{t:03d}", "W", loc_notes))
+                if loc_notes:
+                    loop_migration_notes[locations[-1]] = loc_notes
         anomalies: dict[str, tuple[str, int, list[str]]] = {}
         if codes and not ("其余合格" in result_raw and "割开" in result_raw and "氧化皮" in result_raw):
             raise ValueError(f"汇总异常/合格分组依据不足：{batch}!H{row_num}")
@@ -347,7 +384,8 @@ def expand_source_row(batch: str, row_num: int, raw: list[str], prior_count: int
                 "origin": "原始编码" if abnormal else "汇总展开",
                 "result": OBSERVED_ANOMALY if abnormal else "合格",
                 "nature": "异常观察" if abnormal else "原文合格",
-                "notes": notes + (["合格依据：源汇总行明确记载其余合格"] if codes and not abnormal else []),
+                "notes": notes + loop_migration_notes.get(loc, [])
+                         + (["合格依据：源汇总行明确记载其余合格"] if codes and not abnormal else []),
             })
     else:
         if not codes:
@@ -523,8 +561,8 @@ def validate(result: CleanResult) -> list[str]:
             errors.append(f"{batch}未遵循源清单顺序")
         if [r.import_serial for r in records] != list(range(1, len(records) + 1)):
             errors.append(f"{batch}流水号不连续或不唯一")
-        if len({r.code for r in records}) != len(records):
-            errors.append(f"{batch}导入编码重复")
+        if len({r.source_id for r in records}) != len(records):
+            errors.append(f"{batch}来源ID重复")
         for r in candidates:
             if r.date != meta["date"]:
                 errors.append(f"{r.source_id}日期精度丢失")
@@ -679,7 +717,10 @@ def release_notes(result: CleanResult) -> str:
         "与回路2-4底弯段Φ51×8 TP304H一致。\n"
         "源2026第39行展开32项，结果、Φ54×7.5和TP347H均来自本行；按确认几何编码落F024（B001≙F024），"
         "与回路1底弯段Φ54×7.5 TP347H一致。"
-        "只排除同批本汇总的5异常，不因其他年度检查而删除本年度事件。\n\n"
+        "只排除同批本汇总的5异常，不因其他年度检查而删除本年度事件。\n"
+        "自v10起包内编码直接按2026-11-01统一回路编号口径出码：A侧R屏号镜像为规范方向L（高过32屏R001≙L032、高再64片R001≙L064），"
+        "高过旧腿号F013–F024按回路号迁移（W落入口段位F00(25-n)-W、Q换对侧腿B00(25-n)，2026年共50条）；"
+        "源侧别与旧腿号保留在源位置/原始编码列，导入系统无需再做屏号/腿号迁移；同码多条=同回路底弯双侧拍摄或历年复检，幂等以来源ID为准。\n\n"
         "四、仍需确认，未冒充事实\n"
         "高过弯头材质/规格已按12回路分段基准填入（2026第4/5行32条、2022/2021高过152条），"
         "高再仍按前7根区带映射（Φ60×4），依据逐条记录在材质/规格依据列。\n"

@@ -189,7 +189,7 @@ function resolvePackageDir() {
   for (const name of ['verified', 'verified-physical']) {
     try {
       const manifest = JSON.parse(readFileSync(new URL(`../data-cleaning/${name}/manifest.json`, import.meta.url), 'utf8'));
-      if (manifest.rule_version === 'film-records-physical-codes-v9') return `../data-cleaning/${name}`;
+      if (manifest.rule_version === 'film-records-physical-codes-v10') return `../data-cleaning/${name}`;
     } catch { /* 目录未发布，尝试下一个 */ }
   }
   throw new Error('找不到字母尾物理编码规则的数据包');
@@ -215,18 +215,21 @@ const actual = csvGrid(csvText);
 assert.equal(actual.length - 1, packageManifest.statistics.import_count);
 assert.equal(actual.length - 1, 464, '第27屏确认修正后全量464条');
 assert.ok(actual.slice(1).every(r => /-[QW]$/.test(r[3])), '发布包编码必须全部为字母尾');
+// v10：包内编码直接按统一回路编号口径出码——无R屏号残留、无旧腿号F013–F024。
+assert.ok(actual.slice(1).every(r => /-GQ-L\d{3}-[FB]\d{3}-[QW]$/.test(r[3])), '屏号规范L、管位为入口段F/出口段B且无旧腿号');
+assert.ok(actual.slice(1).every(r => !/-F01[3-9]|-F02[0-4]/.test(r[3])), '旧腿号F013–F024已按回路号迁移');
 ctx.userDB = { events: [], replacements: [] };
 const imported = ctx.importLifecycleRows(actual);
 assert.equal(imported.importedEvents, 464);
-assert.equal(imported.normalizedCount, 202, '152条A侧R屏号L↔R镜像 + 50条旧腿号F013–F024按回路号迁移');
+assert.equal(imported.normalizedCount, 0, 'v10包内已完成屏号镜像与旧腿号迁移，导入无需再归一');
 const normalizedSample = ctx.userDB.events.find(e => e.sourceId === '2022年1号机A修!R4#001');
 assert.ok(normalizedSample && normalizedSample.code === '1G-GGRQ-GQ-L001-F001-W', 'A侧R001按确认镜像落L032前的规范屏号；实际：' + (normalizedSample && normalizedSample.code));
 assert.equal(ctx.importLifecycleRows(actual).skippedDuplicates, 464);
 assert.equal(new Set(ctx.userDB.events.map(e => e.ts)).size, 464);
 assert.equal(new Set(ctx.userDB.events.map(e => e.sourceId)).size, 464);
 assert.equal(ctx.userDB.events.filter(e => e.code.endsWith('-F024-W')).length, 0, '旧腿号F024全部迁移');
-assert.equal(ctx.userDB.events.filter(e => /-F001-W$/.test(e.code)).length, 96, '回路1底弯全厂96条（32屏×炉前+炉后迁移+2022复检）');
-assert.equal(ctx.userDB.events.filter(e => e.code === '1G-GGRQ-GQ-L001-F001-W').length, 3, 'L001屏回路1底弯3条：炉前+炉后迁移+2022复检');
+assert.equal(ctx.userDB.events.filter(e => /-F001-W$/.test(e.code)).length, 96, '回路1底弯全厂96条（高过80：2022/2021各8+2026双侧64；高再16）');
+assert.equal(ctx.userDB.events.filter(e => e.code === '1G-GGRQ-GQ-L001-F001-W').length, 3, 'L001屏回路1底弯3条：2026炉前+炉后双侧+2022复检（来源ID幂等不合并）');
 assert.equal(ctx.userDB.events.filter(e => e.code.includes('-B0')).length, 0, '包内弯头记录全部归一到入口段位F00k-W');
 const l027 = ctx.userDB.events.find(e => e.code === '1G-GGRQ-GQ-L027-F001-W');
 assert.equal(l027.result_nature ?? '合格', '合格');
