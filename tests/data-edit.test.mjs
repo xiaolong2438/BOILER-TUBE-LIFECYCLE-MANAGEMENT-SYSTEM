@@ -7,6 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const js = readFileSync(resolve(here, "../assets/app/app-v7.9.js"), "utf8");
 const html = readFileSync(resolve(here, "../炉管全生命周期管理系统.html"), "utf8");
 const css = readFileSync(resolve(here, "../assets/app/app-v8.0.css"), "utf8");
+const xlsxExport = readFileSync(resolve(here, "../assets/app/xlsx-export-v1.js"), "utf8");
 
 // 事件记录：数据录入表格每行必须提供“编辑”入口，保存走统一校验并留痕。
 assert.match(js, /function openEditEvent\(ts\)/);
@@ -20,6 +21,23 @@ assert.match(js, /onclick="openTubeProfile\('\$\{value\}'\)/, "编码按钮调�
 assert.match(js, /title="打开管段档案 \$\{value\}"/, "悬停提示打开管段档案");
 assert.match(js, /\$\{dmCodeCell\(r\.code\)\}/, "事件表编码列用 dmCodeCell");
 assert.match(js, /\$\{dmCodeCell\(r\.oldCode\)\}\$\{dmCodeCell\(r\.newCode, 'var\(--ok\)'\)\}/, "更换登记表旧/新编码都用 dmCodeCell");
+
+// 批量数据管理：受热面筛选与批量范围叠加，作用于两张记录表与 CSV/XLSX 导出。
+assert.match(html, /id="dm-sys-filter" onchange="setDmSysFilter\(this\.value\)"/, "受热面筛选下拉存在");
+assert.match(html, /<option value="">全部受热面<\/option>/);
+assert.match(js, /function getDmSysFilter\(\)/);
+assert.match(js, /function setDmSysFilter\(value\)/);
+assert.match(js, /localStorage\.setItem\('boiler_dm_sys_filter', value \|\| ''\)/, "受热面筛选记忆在本地");
+assert.match(js, /function dmRowInScope\(boilerOf, codes, boilerFilter, sysFilter\)/);
+assert.match(js, /sysSelect\.innerHTML = '<option value="">全部受热面<\/option>' \+ CODE_SYSTEMS\.map/, "选项来自受热面系统表");
+assert.match(js, /\$\{escapeHTML\(item\.sys\)\} · \$\{escapeHTML\(item\.label\)\}/);
+assert.match(js, /dmRowInScope\(eventBoiler\(r\), \[r\.code\], filter, sys\)/, "事件表应用受热面过滤");
+assert.match(js, /dmRowInScope\(replacementBoiler\(r\), \[r\.oldCode, r\.newCode\], filter, sys\)/, "更换表应用受热面过滤（旧码或新码命中）");
+assert.match(js, /dmRowInScope\(eventBoiler\(e\), \[e\.code\], filter, sys\)/, "CSV导出应用受热面过滤");
+assert.match(xlsxExport, /dmRowInScope\(eventBoiler\(item\), \[item\.code\], filter, sys\)/, "XLSX导出应用受热面过滤");
+assert.match(xlsxExport, /\(filter === 'all' \? '全厂' : `\$\{filter\}号机组`\) \+ \(sys \? `_\$\{sys\}` : ''\)/, "XLSX文件名带受热面范围");
+assert.match(html, /导出筛选范围数据 \(CSV\)/, "导出按钮文案与筛选语义一致");
+assert.match(html, /导出筛选范围 Excel/);
 
 // 编辑校验与新增口径一致：机组/编码/日期/结论必填，编码与机组前缀联动校验。
 assert.match(js, /if\(!boiler \|\| !code \|\| !date \|\| !desc\) \{ showToast\('机组、管段编码、日期和详细数据\/结论不能为空', 'warn'\); return; \}/);
@@ -40,8 +58,8 @@ assert.match(html, /id="dm-rep-table-body"/);
 // 弹窗容器与筛选联动：机组筛选同时刷新事件表与更换表。
 assert.match(html, /id="dataEditModal"/);
 assert.match(html, /onchange="renderDataManagerTables\(\)"/);
-assert.match(js, /function renderDataManagerTables\(\) \{ renderDMTable\(\); renderReplacementTable\(\); \}/);
-assert.match(js, /renderDMTable\(\); renderReplacementTable\(\); updateLifecycleDropdown\(\);/);
+assert.match(js, /function renderDataManagerTables\(\) \{[\s\S]*?renderDMTable\(\); renderReplacementTable\(\);\s*\}/);
+assert.match(js, /renderDataManagerTables\(\);\s*\r?\n\s*updateLifecycleDropdown\(\);/);
 assert.match(js, /function closeDataEditModal\(\)/);
 
 // 权限口径与 AI 助手一致：viewer 只读，界面隐藏编辑/删除操作。

@@ -318,6 +318,19 @@ function normalizeBoiler(value) {
 function getBatchBoilerFilter() {
   return document.getElementById('dm-batch-boiler')?.value || 'all';
 }
+/* 批量数据管理：受热面筛选（按编码系统码），与批量范围叠加作用于记录表与导出 */
+function getDmSysFilter() {
+  return document.getElementById('dm-sys-filter')?.value || '';
+}
+function setDmSysFilter(value) {
+  localStorage.setItem('boiler_dm_sys_filter', value || '');
+  renderDataManagerTables();
+}
+function dmRowInScope(boilerOf, codes, boilerFilter, sysFilter) {
+  if (boilerFilter !== 'all' && boilerOf !== boilerFilter) return false;
+  if (sysFilter && !codes.some(c => getCodeSystem(c) === sysFilter)) return false;
+  return true;
+}
 /* 方向感知归一（与 AI 助手清洗同一口径）：现场可归近一端计数，落库统一为台账规范方向。
    依赖 assistant-core 的 canonicalTubeCode；组件未加载时原样返回，不阻断保存。 */
 function normalizeCodeDirection(code) {
@@ -417,7 +430,14 @@ function addReplacement() {
 function canManageTubeData() {
   try { return getAssistantRole() !== 'viewer'; } catch (err) { return true; }
 }
-function renderDataManagerTables() { renderDMTable(); renderReplacementTable(); }
+function renderDataManagerTables() {
+  const sysSelect = document.getElementById('dm-sys-filter');
+  if (sysSelect && !sysSelect.options.length) {
+    sysSelect.innerHTML = '<option value="">全部受热面</option>' + CODE_SYSTEMS.map(item => '<option value="' + escapeHTML(item.sys) + '">' + escapeHTML(item.sys) + ' · ' + escapeHTML(item.label) + '</option>').join('');
+    sysSelect.value = localStorage.getItem('boiler_dm_sys_filter') || '';
+  }
+  renderDMTable(); renderReplacementTable();
+}
 /* 数据录入记录表里的管段编码 → 点击打开管段档案（管段分析），与操作列的编辑/删除并存 */
 function dmCodeCell(code, tone) {
   if (!code) return '<td>-</td>';
@@ -427,7 +447,8 @@ function dmCodeCell(code, tone) {
 function renderDMTable() {
   const tbody = document.getElementById('dm-table-body'); if(!tbody) return;
   const filter = getBatchBoilerFilter();
-  const all = [...userDB.events].filter(r => filter === 'all' || eventBoiler(r) === filter).sort((a,b) => b.ts - a.ts);
+  const sys = getDmSysFilter();
+  const all = [...userDB.events].filter(r => dmRowInScope(eventBoiler(r), [r.code], filter, sys)).sort((a,b) => b.ts - a.ts);
   const manage = canManageTubeData();
   tbody.innerHTML = all.map(r => {
     const action = manage
@@ -530,7 +551,8 @@ function saveEventEdit(ts) {
 function renderReplacementTable() {
   const tbody = document.getElementById('dm-rep-table-body'); if(!tbody) return;
   const filter = getBatchBoilerFilter();
-  const all = [...userDB.replacements].filter(r => filter === 'all' || replacementBoiler(r) === filter).sort((a,b) => b.ts - a.ts);
+  const sys = getDmSysFilter();
+  const all = [...userDB.replacements].filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys)).sort((a,b) => b.ts - a.ts);
   const manage = canManageTubeData();
   tbody.innerHTML = all.map(r => {
     const action = manage
@@ -625,10 +647,11 @@ function downloadCSVTemplate() {
 function exportCSV() {
   const filter = getBatchBoilerFilter();
   let csvContent = '\uFEFF' + EVENT_CSV_COLUMNS.join(',') + '\n';
-  userDB.events.filter(e => filter === 'all' || eventBoiler(e) === filter).forEach(e => {
+  const sys = getDmSysFilter();
+  userDB.events.filter(e => dmRowInScope(eventBoiler(e), [e.code], filter, sys)).forEach(e => {
     csvContent += ['事件', eventBoiler(e), e.date, e.code, e.spec, e.material, e.thickness, e.hardness, e.type, '', e.desc].map(csvEscape).join(',') + '\n';
   });
-  userDB.replacements.filter(r => filter === 'all' || replacementBoiler(r) === filter).forEach(r => {
+  userDB.replacements.filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys)).forEach(r => {
     csvContent += ['更换', replacementBoiler(r), r.date, r.oldCode, '', '', '', '', r.reason, r.newCode, r.reason].map(csvEscape).join(',') + '\n';
   });
   const scope = filter === 'all' ? '全厂' : `${filter}号机组`;
