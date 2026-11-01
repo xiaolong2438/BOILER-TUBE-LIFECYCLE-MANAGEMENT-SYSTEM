@@ -39,6 +39,15 @@ assert.match(matrixBlock, /sys:'GGRQ'[^}]*spec:'[^']*×/, "HSH full inventory sp
 
 assert.match(html, /function buildMaintenanceOutagePlan\s*\(/, "maintenance plan builder should exist");
 assert.match(html, /function renderMaintenancePlan\s*\(/, "maintenance plan renderer should exist");
+
+/* 机组检修基线（业主 2026-10 确认）：2号机 2021-11 A修→2023/2025 C修→2027-04 计划A修；
+   1号机 2022-10 A修→2024-04/2026-04 C修→2028-04 计划A修。写死年份不得再漂移。 */
+assert.match(html, /const MAINTENANCE_UNIT_BASELINES\s*=/, "per-unit maintenance baseline should exist");
+assert.match(html, /'2':\s*\{\s*historyLabels:\s*\['2021A修',\s*'2023C修',\s*'2025C修'\],\s*nextA:\s*'2027年4月',\s*cycleStartYear:\s*2025/, "unit 2 baseline should match the confirmed schedule");
+assert.match(html, /'1':\s*\{\s*historyLabels:\s*\['2022A修',\s*'2024C修',\s*'2026C修'\],\s*nextA:\s*'2028年4月',\s*cycleStartYear:\s*2026/, "unit 1 baseline should match the confirmed schedule");
+assert.doesNotMatch(html, /'2019A修'|'2020A修'|'2021C修', '2023A修'|'2022C修', '2024A修'/, "outdated hardcoded overhaul labels should be removed");
+assert.match(html, /2027年4月 A修/, "next overhaul should carry the confirmed April 2027 month");
+assert.match(html, /单炉视图锁定机组真实检修基线|单炉视图按机组基线排程/, "single-boiler plan should pin to the unit baseline");
 assert.match(html, /function getMaintenanceLedgerSurfaces\s*\(/, "maintenance plan should aggregate full inventory ledger surfaces");
 assert.match(html, /function collectMaintenanceHistorySignals\s*\(/, "maintenance plan should collect historical inspection signals");
 assert.match(html, /function getLatestMaintenanceContext\s*\(/, "maintenance plan should use the latest maintenance context");

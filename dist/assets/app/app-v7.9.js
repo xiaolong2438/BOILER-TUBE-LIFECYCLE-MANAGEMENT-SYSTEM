@@ -1357,7 +1357,9 @@ const DASHBOARD_SURFACE_HEALTH = [
 let dashboardUnit = localStorage.getItem('boiler_dashboard_unit') || 'all';
 function codeMatchesDashboardUnit(code, unit = dashboardUnit) {
   if(unit === 'all') return true;
-  return String(code || '').split('-')[0] === unit;
+  /* 编码前缀为 1G-/2G-（机组G-系统-…），必须剥掉 G 再比，否则单机组视图永远匹配不到 */
+  const prefix = String(code || '').trim().split('-')[0];
+  return prefix === unit || prefix === `${unit}G`;
 }
 function getDashboardUnitLabel(unit = dashboardUnit) {
   return unit === 'all' ? '全厂' : `${unit}#机组`;
@@ -1421,6 +1423,55 @@ function collectDashboardWarnings(options = {}) {
   return [...measuredWarnings, ...systemWarnings.filter(item => !measuredCodes.has(item.code)), ...localWarnings.filter(item => !measuredCodes.has(item.code))]
     .sort((a, b) => a.sort - b.sort || (b.ts || 0) - (a.ts || 0)).slice(0, limit);
 }
+/* 待处置任务（左栏）与风险信号（右栏）分家：
+   风险信号 = 系统发现的异常状态（预警流）；待处置任务 = 接下来要做的动作——
+   1) 材料库判定已到/接近更换阈值的管段 → 换管评估；2) 超期未检（复用检修模块 P1-P4 分层，P4 不进任务卡）→ 复测。
+   返回 tasks（按 换管P1 → 复测P1 → 换管P2 → 复测P2/P3 排序，截取 limit 条）与两类全量计数（供指标卡）。 */
+function collectDashboardTasks(limit = 4) {
+  const retiredCodes = collectRetiredTubeCodes();
+  const tasks = [];
+  const seenCodes = new Set();
+  let replaceCount = 0;
+  [...new Set(userDB.events.map(event => event.code))].forEach(code => {
+    if(seenCodes.has(code) || isRetiredTubeCode(code, retiredCodes) || !codeMatchesDashboardUnit(code)) return;
+    const history = extractThicknessData(code, { includeSystem: false });
+    const current = history[history.length - 1];
+    if(!current) return;
+    const info = resolveMaterialTheoryThickness(code, selectedTubePipeType(code));
+    const warning = assessReplacementWarning(current.val, info);
+    if(warning.level !== 'replace' && warning.level !== 'replace-soon') return;
+    seenCodes.add(code);
+    replaceCount += 1;
+    tasks.push({
+      code,
+      boiler: getCodeBoiler(code) || '1',
+      priority: warning.level === 'replace' ? 'P1' : 'P2',
+      tone: warning.level === 'replace' ? 'danger' : 'warn',
+      kind: '换管评估',
+      rank: warning.level === 'replace' ? 0 : 2,
+      detail: `${warning.label} · 实测 ${current.val}mm${Number.isFinite(warning.margin) ? ` · 裕量 ${warning.margin.toFixed(2)}mm` : ''}`
+    });
+  });
+  const year = Number(document.getElementById('maintenanceCycleStart')?.value) || new Date().getFullYear();
+  const overdue = buildMaintenanceOverdueRows(year, dashboardUnit)
+    .filter(row => !seenCodes.has(row.code) && (row.priority === 'P1' || row.priority === 'P2' || row.priority === 'P3'));
+  const overdueCount = overdue.length;
+  overdue.slice(0, Math.max(0, limit - tasks.length)).forEach(row => {
+    tasks.push({
+      code: row.code,
+      boiler: getCodeBoiler(row.code) || '1',
+      priority: row.priority,
+      tone: row.priority === 'P1' ? 'danger' : row.priority === 'P2' ? 'warn' : '',
+      kind: '复测',
+      rank: row.priority === 'P1' ? 1 : row.priority === 'P2' ? 3 : 4,
+      detail: row.hasRecord
+        ? `${row.yearsSince !== null ? `${row.yearsSince.toFixed(1)}年未检` : '检查记录无日期'} · ${row.priority === 'P1' ? '列入最近停炉窗口复测' : row.priority === 'P2' ? '优先安排最近C修复查' : '下次C修纳入抽查'}`
+        : '未见检查记录 · 补测厚/硬度建立基准'
+    });
+  });
+  tasks.sort((a, b) => a.rank - b.rank);
+  return { tasks: tasks.slice(0, limit), replaceCount, overdueCount };
+}
 function getDashboardSurfaceHealth(unit = dashboardUnit) {
   return DASHBOARD_SURFACE_HEALTH.map(item => {
     const delta = unit === '1' ? item.unit1 : unit === '2' ? item.unit2 : 0;
@@ -1440,7 +1491,7 @@ function getDashboardTrendStats(warnings = getDashboardScopedWarnings(100), unit
   });
   const current = series[series.length - 1];
   const previous = series[series.length - 2];
-  return { current, previous, delta: current - previous, highCount, mediumCount, series, labels: unit === 'all' ? ['2020A修', '2022C修', '2024A修', '当前'] : unit === '1' ? ['2019A修', '2021C修', '2023A修', '当前'] : ['2020A修', '2022C修', '2024A修', '当前'] };
+  return { current, previous, delta: current - previous, highCount, mediumCount, series, labels: unit === 'all' ? ['2021/22A修', '2023/24C修', '2025/26C修', '当前'] : [...MAINTENANCE_UNIT_BASELINES[unit].historyLabels, '当前'] };
 }
 function buildDashboardTrendChart(stats = getDashboardTrendStats()) {
   const svg = document.getElementById('dashboardTrendChart');
@@ -1606,10 +1657,8 @@ function syncDashboardSnapshot() {
   const ledgerCount = dashboardUnit === 'all' ? ledgerStats.total * 2 : ledgerStats.total;
   const leftUnit = document.getElementById('dashboard-left-unit');
   if(leftUnit) leftUnit.textContent = unitLabel;
-  const highEl = document.getElementById('dashboard-high-risk-count');
-  if(highEl) highEl.textContent = highCount.toLocaleString();
-  const warnEl = document.getElementById('dashboard-warn-risk-count');
-  if(warnEl) warnEl.textContent = mediumCount.toLocaleString();
+  /* 左栏指标卡（换管评估/超期未检复测）由 renderHeroTasks 随任务数据统一赋值；
+     顶部 KPI 仍按风险等级计数，与右栏风险信号同一口径 */
   const highKpi = document.getElementById('dashboard-high-risk-count-kpi');
   if(highKpi) highKpi.textContent = highCount.toLocaleString();
   const warnKpi = document.getElementById('dashboard-warn-risk-count-kpi');
@@ -1625,9 +1674,9 @@ function syncDashboardSnapshot() {
   if(ledgerEl) ledgerEl.textContent = ledgerCount.toLocaleString();
   const overhaulEl = document.getElementById('dashboard-next-overhaul');
   if(overhaulEl) {
-    // 两台炉 A 级检修交替进行：2#机组 2027，1#机组 2028；全厂取最近节点
-    const nextOverhaul = { '2': '2027 A修', '1': '2028 A修', 'all': '2027 A修 · 2#' };
-    overhaulEl.textContent = nextOverhaul[dashboardUnit] || '2027 A修';
+    // 两台炉 A 级检修交替进行：2#机组 2027年4月，1#机组 2028年4月；全厂取最近节点
+    const nextOverhaul = { '2': `${MAINTENANCE_UNIT_BASELINES['2'].nextA} A修`, '1': `${MAINTENANCE_UNIT_BASELINES['1'].nextA} A修`, 'all': `${MAINTENANCE_UNIT_BASELINES['2'].nextA} A修 · 2#` };
+    overhaulEl.textContent = nextOverhaul[dashboardUnit] || `${MAINTENANCE_UNIT_BASELINES['2'].nextA} A修`;
   }
   const ledgerNote = document.getElementById('dashboard-ledger-note');
   if(ledgerNote) ledgerNote.textContent = dashboardUnit === 'all' ? '全厂两台炉，按新编码规则（机组G-SYS-COMP-位置-Q/W）覆盖全受热面' : `${unitLabel}，按新编码规则覆盖全受热面`;
@@ -1648,23 +1697,23 @@ function renderDashboardWarnings() {
   }
   renderHeroTasks();
 }
-/* 待处置任务：优先由真实预警自动生成 Top3；无预警且演示数据开启时保留内置示例卡 */
+/* 待处置任务：行动队列 = 换管评估 + 超期未检复测（collectDashboardTasks），与右栏风险信号（状态流）分家。
+   指标卡（换管评估/超期未检复测计数）随任务数据一次算好；无任务且演示开启时保留 HTML 内置示例卡 */
 function renderHeroTasks() {
   const host = document.querySelector('.hero-task-list');
   if(!host) return;
-  const warnings = getDashboardScopedWarnings(99);
-  if(warnings.length === 0) {
+  const { tasks, replaceCount, overdueCount } = collectDashboardTasks(4);
+  const replaceEl = document.getElementById('dashboard-task-replace-count');
+  if(replaceEl) replaceEl.textContent = replaceCount.toLocaleString();
+  const overdueEl = document.getElementById('dashboard-task-overdue-count');
+  if(overdueEl) overdueEl.textContent = overdueCount.toLocaleString();
+  if(tasks.length === 0) {
     if(!demoDataEnabled()) {
-      host.innerHTML = `<div class="hero-task-item" style="cursor:default;"><div class="prio">✓</div><div><div class="title">暂无待处置任务</div><div class="meta">导入检测数据后将按预警自动生成</div></div></div>`;
+      host.innerHTML = `<div class="hero-task-item" style="cursor:default;"><div class="prio">✓</div><div><div class="title">暂无待处置任务</div><div class="meta">导入检测数据后将按换管评估与超期未检自动生成</div></div></div>`;
     }
-    return; /* 演示开启时保留 HTML 内置的三张示例卡 */
+    return;
   }
-  host.innerHTML = warnings.slice(0, 3).map((item, index) => {
-    const prio = item.level === 'HIGH' ? 'P' + Math.min(1 + index, 3) : item.level === 'MEDIUM' ? 'P' + Math.min(2 + index, 3) : 'P3';
-    const tone = item.level === 'HIGH' ? ' danger' : item.level === 'MEDIUM' ? ' warn' : '';
-    const boiler = String(item.code || '')[0] === '2' ? '2' : '1';
-    return `<button type="button" class="hero-task-item${tone}" data-dashboard-boiler="${boiler}" onclick="openTubeProfile('${escapeHTML(item.code)}')" title="打开管段档案 ${escapeHTML(item.code)} · ${escapeHTML(item.text)}"><div class="prio">${prio}</div><div><div class="title">${escapeHTML(item.code)}</div><div class="meta">${escapeHTML(item.short || item.text)}</div></div></button>`;
-  }).join('');
+  host.innerHTML = tasks.map(task => `<button type="button" class="hero-task-item${task.tone ? ` ${task.tone}` : ''}" data-dashboard-boiler="${escapeHTML(task.boiler)}" onclick="openTubeProfile('${escapeHTML(task.code)}')" title="打开管段档案 ${escapeHTML(task.code)} · ${escapeHTML(task.kind)}：${escapeHTML(task.detail)}"><div class="prio">${escapeHTML(task.priority)}</div><div><div class="title">${escapeHTML(task.code)}</div><div class="meta">${escapeHTML(task.kind)} · ${escapeHTML(task.detail)}</div></div></button>`).join('');
   host.querySelectorAll('[data-dashboard-boiler]').forEach(item => {
     item.style.display = dashboardUnit === 'all' || item.dataset.dashboardBoiler === dashboardUnit ? '' : 'none';
   });
@@ -2377,6 +2426,14 @@ const MAINTENANCE_OUTAGE_PATTERN = [
   { type: 'C修', durationDays: 30, workloadShare: 25 },
   { type: 'C修', durationDays: 30, workloadShare: 25 }
 ];
+/* 两台机组检修基线（业主 2026-10 确认）：
+   2号机：2021-11 A修 → 2023 C修 → 2025 C修 → 2027-04 计划A修（后续 2029C / 2031C）
+   1号机：2022-10 A修 → 2024-04 C修 → 2026-04 C修 → 2028-04 计划A修（后续 2030C / 2032C）
+   计划年公式 year = startYear + 第N次停炉×2，故单炉视图基准年取「下次A修的前一个停炉年」：2号机 2025、1号机 2026。 */
+const MAINTENANCE_UNIT_BASELINES = {
+  '2': { historyLabels: ['2021A修', '2023C修', '2025C修'], nextA: '2027年4月', cycleStartYear: 2025 },
+  '1': { historyLabels: ['2022A修', '2024C修', '2026C修'], nextA: '2028年4月', cycleStartYear: 2026 }
+};
 const MAINTENANCE_INSPECTION_ITEMS = ['割管取样', '射线', '测厚', '硬度', '防磨防爆检查'];
 const MAINTENANCE_SYSTEM_PRIORITY = ['GZRQ', 'GGRQ', 'HPGRQ', 'DPGRQ', 'DZRQ', 'DGRQ', 'SLB', 'RSH', 'WSH', 'SMQ'];
 function maintenanceFocusForSurface(sys) {
@@ -2526,7 +2583,10 @@ function splitSurfacesByWorkload(surfaces) {
   return groups.map(group => group.surfaces);
 }
 function buildMaintenanceOutagePlan(cycleStartYear = new Date().getFullYear(), boiler = 'all') {
-  const startYear = Number.isFinite(Number(cycleStartYear)) ? Number(cycleStartYear) : new Date().getFullYear();
+  /* 单炉视图锁定机组真实检修基线（2号机下次A修 2027-04、1号机 2028-04）；
+     基准年输入只影响全厂合并视图与超期未检的统计口径，不改变单炉的排程年份 */
+  const baseline = MAINTENANCE_UNIT_BASELINES[boiler];
+  const startYear = baseline ? baseline.cycleStartYear : (Number.isFinite(Number(cycleStartYear)) ? Number(cycleStartYear) : new Date().getFullYear());
   const historySignals = collectMaintenanceHistorySignals(boiler);
   const latestContext = getLatestMaintenanceContext(boiler);
   const rankedSurfaces = getMaintenanceLedgerSurfaces().map(surface => ({
@@ -2886,7 +2946,7 @@ function renderMaintenancePlan() {
   const latestText = latest ? `${latest.date || '-'} ${latest.type || ''} ${latest.desc || ''}` : '暂无最近一次检修记录';
   const workloadTotal = getMaintenanceLedgerSurfaces().reduce((sum, surface) => sum + surface.ledgerCount, 0);
   const thresholdText = threshold === 'never' ? '未见检查记录' : `${threshold}年以上`;
-  if(summary) summary.innerHTML = `<div>ℹ</div><div>${escapeHTML(boilerText)}截至 ${startYear} 年，全量台账 ${overdueStats.total.toLocaleString()} 根中，未见检查记录 ${overdueStats.noRecord.toLocaleString()} 根，12年以上/未见记录 ${overdueStats.over12.toLocaleString()} 根，10年以上/未见记录 ${overdueStats.over10.toLocaleString()} 根，8年以上/未见记录 ${overdueStats.over8.toLocaleString()} 根，6年以上/未见记录 ${overdueStats.over6.toLocaleString()} 根。当前筛选：${escapeHTML(surfaceText)} · ${escapeHTML(thresholdText)}，命中 ${filteredOverdueRows.length.toLocaleString()} 根；全部受热面视图会按系统均衡展示前 ${visibleOverdueRows.length} 根，避免只显示某一个受热面。下方A/C/C安排仍按 ${MAINTENANCE_CYCLE_YEARS} 年滚动覆盖：A修50天承担50%工作量，两次C修各30天、各承担25%；最近一次检修上下文：${escapeHTML(latestText)}。</div>`;
+  if(summary) summary.innerHTML = `<div>ℹ</div><div>${escapeHTML(boilerText)}截至 ${startYear} 年，全量台账 ${overdueStats.total.toLocaleString()} 根中，未见检查记录 ${overdueStats.noRecord.toLocaleString()} 根，12年以上/未见记录 ${overdueStats.over12.toLocaleString()} 根，10年以上/未见记录 ${overdueStats.over10.toLocaleString()} 根，8年以上/未见记录 ${overdueStats.over8.toLocaleString()} 根，6年以上/未见记录 ${overdueStats.over6.toLocaleString()} 根。当前筛选：${escapeHTML(surfaceText)} · ${escapeHTML(thresholdText)}，命中 ${filteredOverdueRows.length.toLocaleString()} 根；全部受热面视图会按系统均衡展示前 ${visibleOverdueRows.length} 根，避免只显示某一个受热面。下方A/C/C安排仍按 ${MAINTENANCE_CYCLE_YEARS} 年滚动覆盖：A修50天承担50%工作量，两次C修各30天、各承担25%；机组检修基线：2号机 2021-11 A修→2023/2025 C修、下次 2027年4月 A修，1号机 2022-10 A修→2024-04/2026-04 C修、下次 2028年4月 A修（单炉视图按机组基线排程）；最近一次检修上下文：${escapeHTML(latestText)}。</div>`;
 }
 function exportMaintenanceOverdueCSV() {
   const startYear = Number(document.getElementById('maintenanceCycleStart')?.value) || new Date().getFullYear();
@@ -2931,24 +2991,28 @@ function exportMaintenancePlanCSV() {
   const boiler = document.getElementById('maintenanceBoiler')?.value || 'all';
   const boilerText = boiler === 'all' ? '1号炉/2号炉' : `${boiler}号炉`;
   const boilerIds = boiler === 'all' ? ['1', '2'] : [boiler];
-  const plan = buildMaintenanceOutagePlan(startYear, boiler);
-  const rows = plan.flatMap(outage => outage.surfaces.flatMap(surface => outage.items.flatMap(item => boilerIds.map(boilerId => {
-    const planCode = `${boilerId}-${surface.sys}-PL-000-0000-${outage.type === 'A修' ? 'A01' : `C0${outage.outageNo}`}`;
-    const desc = `计划项：${item}；受热面：${surface.sys} ${surface.label}；台账工作量：${surface.ledgerCount || 0}管；周期起始年：${startYear}；${outage.type} 第${outage.outageNo}次停炉（第${outage.cycleYear}年），计划年份：${outage.year}，工期：${outage.durationDays}天，工作量：${outage.workloadShare}%；历史风险分：${surface.historyScore || 0}；重点补充/扩大检查范围：${surface.antiWearExpansion || ''}；现场结果：；责任人：；完成日期：；备注：`;
-    return [
-      '事件',
-      boilerId,
-      '',
-      planCode,
-      surface.spec || '',
-      surface.material || '',
-      '',
-      '',
-      '检修维护',
-      '',
-      desc
-    ];
-  }))));
+  /* 按炉分别取计划：buildMaintenanceOutagePlan 对单炉视图锁定机组基线（2号机 2027-04 A修起、1号机 2028-04 A修起），
+     全厂导出时两炉错开两年，不再共用同一条 A/C/C 时间轴 */
+  const rows = boilerIds.flatMap(boilerId => {
+    const planStartYear = MAINTENANCE_UNIT_BASELINES[boilerId]?.cycleStartYear || startYear;
+    return buildMaintenanceOutagePlan(startYear, boilerId).flatMap(outage => outage.surfaces.flatMap(surface => outage.items.flatMap(item => {
+      const planCode = `${boilerId}-${surface.sys}-PL-000-0000-${outage.type === 'A修' ? 'A01' : `C0${outage.outageNo}`}`;
+      const desc = `计划项：${item}；受热面：${surface.sys} ${surface.label}；台账工作量：${surface.ledgerCount || 0}管；周期起始年：${planStartYear}；${outage.type} 第${outage.outageNo}次停炉（第${outage.cycleYear}年），计划年份：${outage.year}，工期：${outage.durationDays}天，工作量：${outage.workloadShare}%；历史风险分：${surface.historyScore || 0}；重点补充/扩大检查范围：${surface.antiWearExpansion || ''}；现场结果：；责任人：；完成日期：；备注：`;
+      return [
+        '事件',
+        boilerId,
+        '',
+        planCode,
+        surface.spec || '',
+        surface.material || '',
+        '',
+        '',
+        '检修维护',
+        '',
+        desc
+      ];
+    })));
+  });
   const csv = '\uFEFF' + [EVENT_CSV_COLUMNS, ...rows].map(row => row.map(maintenanceCSVCell).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
