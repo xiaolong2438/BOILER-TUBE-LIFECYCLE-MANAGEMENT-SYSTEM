@@ -65,6 +65,7 @@ assert.equal(vm.runInContext("designDrawingsForSys('').length", ctx), 3, "全部
 assert.match(html, /id="ggrqLoopBaseline"/, "分段基准表容器应存在");
 assert.match(html, /高温过热器材质分段基准（12回路）/, "分段基准卡片标题应存在");
 assert.match(js, /const GGRQ_LOOP_BASELINE = \[/);
+assert.match(js, /const HPGRQ_LOOP_BASELINE = \[/, "屏式过热器13回路分段基准应存在");
 assert.match(js, /function ggrqLoopForTube\(tubeNo\)/);
 assert.match(js, /function ggrqBottomBendAttrs\(tubeNo\)/);
 assert.match(js, /function renderGGRQLoopBaseline\(\)/);
@@ -112,8 +113,13 @@ assert.ok(f002Summary.includes('全回路') && f002Summary.includes('【底弯�
 assert.ok(!f002Summary.includes('检测记录'), '记录值与基准一致时不重复列出');
 const f005Summary = summaryOf('1G-GGRQ-GQ-L005-F005-W', [{ spec: 'Φ51×9', material: 'SA-213T91' }]);
 assert.ok(f005Summary.startsWith('回路5 底弯段 Φ51×8 SA-213T91；检测记录：Φ51×9 SA-213T91'), '记录与基准不一致时并列展示待核');
-assert.equal(summaryOf('1G-GGRQ-GQ-L002-F002-Q', [{ spec: 'Φ51×9', material: 'SA-213T91' }]), 'Φ51×9 SA-213T91', 'Q记录用检测记录自带值');
-assert.equal(summaryOf('1G-GGRQ-GQ-L002-F002-Q', []), '', '无记录无基准返回空串，调用方退回材料库分项兜底');
+const qFrontSummary = summaryOf('1G-GGRQ-GQ-L002-F002-Q', [{ spec: 'Φ51×9', material: 'SA-213T91' }]);
+assert.ok(qFrontSummary.startsWith('回路2 前腿 F002（顶入口→底弯）：Φ51×9 12Cr1MoVG → Φ51×9 SA-213T91【底弯前】'), 'Q记录按回路基准显示所在腿沿流程分段链（底弯前邻段=T91）');
+assert.ok(!qFrontSummary.includes('检测记录'), '记录值命中分段链时不重复列出');
+assert.ok(summaryOf('1G-GGRQ-GQ-L002-F002-Q', []).startsWith('回路2 前腿 F002'), 'Q记录无检测值也返回基准链，调用方无需退回材料库');
+const qRearSummary = summaryOf('1G-GGRQ-GQ-L025-F023-Q', []);
+assert.ok(qRearSummary.startsWith('回路2 后腿 F023（底弯→顶出口）：Φ51×11 SA-213T91【底弯后】 → Φ51×11 SA-213T22'), '后腿Q列出底弯后多种规格（按顺序全部列出）');
+assert.ok(summaryOf('1G-GGRQ-GQ-L002-F002-Q', [{ spec: 'Φ51×11', material: 'SA-213T22' }]).includes('；检测记录：Φ51×11 SA-213T22'), '记录值不在前腿直管链时附检测记录待核');
 assert.ok(summaryOf('1G-GGRQ-GQ-L001-B001-W', []).startsWith('回路1 底弯段 Φ54×7.5 SA-213TP347H'), 'B方向按确认镜像换算后取回路基准');
 assert.equal(summaryOf('1G-GZRQ-GQ-L001-F001-W', [{ spec: 'Φ60×4', material: 'SA-213TP304H' }]), 'Φ60×4 SA-213TP304H', '高再无回路基准，用检测记录值');
 
