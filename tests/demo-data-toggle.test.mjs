@@ -30,9 +30,9 @@ assert.match(js, /Object\.entries\(systemLifecycleData\(\)\)/);
 // 切换后重渲染受影响视图。
 assert.match(js, /function refreshAfterDemoToggle\(\)/);
 
-// 待处置任务：有预警时自动生成 Top3（含机组过滤），无预警且演示关闭时给空态。
+// 待处置任务：行动队列（换管评估+超期未检复测，含机组过滤），无任务且演示关闭时给空态。
 assert.match(js, /function renderHeroTasks\(\)/);
-assert.match(js, /const warnings = getDashboardScopedWarnings\(99\);/);
+assert.match(js, /const \{ tasks, replaceCount, overdueCount \} = collectDashboardTasks\(4\);/);
 assert.match(js, /host\.querySelectorAll\('\[data-dashboard-boiler\]'\)\.forEach/);
 assert.match(js, /暂无待处置任务/);
 assert.match(js, /renderHeroTasks\(\);\s*\r?\n\}/, "renderDashboardWarnings 必须联动任务卡");

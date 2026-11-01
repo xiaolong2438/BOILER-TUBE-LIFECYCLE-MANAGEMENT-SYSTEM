@@ -42,12 +42,31 @@ assert.match(styleSource, /@media \(max-width: 700px\)[\s\S]*\.health-core-grid/
 assert.doesNotMatch(html, /先定位高风险受热面/);
 assert.doesNotMatch(html, /首页聚焦设备专工最需要的四件事/);
 
-// 待处置任务/风险信号：管编码 + 短结果（完整明细悬停可见）
+// 待处置任务与风险信号分家：任务卡=行动（换管评估+超期未检复测），风险信号=状态（编码+短结果）
 assert.match(externalJs, /function shortEventResult\(event\)/);
 assert.match(externalJs, /short: shortEventResult\(event\)/);
-assert.match(externalJs, /<div class="title">\$\{escapeHTML\(item\.code\)\}<\/div><div class="meta">\$\{escapeHTML\(item\.short \|\| item\.text\)\}<\/div>/, "任务卡标题=编码、摘要=短结果");
-assert.match(externalJs, /title="打开管段档案 \$\{escapeHTML\(item\.code\)\} · \$\{escapeHTML\(item\.text\)\}"/, "完整明细保留在悬停提示");
+assert.match(externalJs, /function collectDashboardTasks\(/, "待处置任务必须由独立行动队列生成，不得与风险信号同源");
+assert.match(externalJs, /kind: '换管评估'/, "到/接近更换阈值 → 换管评估任务");
+assert.match(externalJs, /buildMaintenanceOverdueRows\(year, dashboardUnit\)/, "复测任务复用检修模块超期未检 P1-P4 分层");
+assert.match(externalJs, /<div class="title">\$\{escapeHTML\(task\.code\)\}<\/div><div class="meta">\$\{escapeHTML\(task\.kind\)\} · \$\{escapeHTML\(task\.detail\)\}<\/div>/, "任务卡标题=编码、摘要=动作+关键结论");
+assert.match(externalJs, /title="打开管段档案 \$\{escapeHTML\(task\.code\)\} · \$\{escapeHTML\(task\.kind\)\}：\$\{escapeHTML\(task\.detail\)\}"/, "完整明细保留在悬停提示");
 assert.match(externalJs, /<strong>\$\{escapeHTML\(item\.code\)\}<\/strong><span>\$\{escapeHTML\(item\.short \|\| item\.text\)\}<\/span>/, "风险信号列表同用短结果");
+assert.match(html, /id="dashboard-task-replace-count"/, "左栏指标卡随任务口径（换管评估）");
+assert.match(html, /id="dashboard-task-overdue-count"/, "左栏指标卡随任务口径（超期未检复测）");
+assert.doesNotMatch(html, /id="dashboard-high-risk-count"/, "旧的风险计数指标卡已迁到任务口径");
+
+// 机组匹配：编码前缀 1G-/2G- 必须剥掉 G 再比，否则单机组视图预警永远为空（回归修复）
+assert.match(externalJs, /prefix === unit \|\| prefix === `\$\{unit\}G`/);
+{
+  const vm = await import("node:vm");
+  const ctx = vm.createContext({});
+  const start = externalJs.indexOf("function codeMatchesDashboardUnit");
+  const end = externalJs.indexOf("function getDashboardUnitLabel");
+  vm.runInContext(externalJs.slice(start, end), ctx);
+  const matches = vm.runInContext("codeMatchesDashboardUnit('2G-GZRQ-GQ-L032-U004-Q001', '2')", ctx);
+  assert.equal(matches, true, "2G- 前缀必须匹配 2#机组");
+  assert.equal(vm.runInContext("codeMatchesDashboardUnit('1G-SLB-WB-F000-R025-Q001', '2')", ctx), false);
+}
 
 // 行为验证：shortEventResult 自包含，可独立执行
 import vm from "node:vm";
