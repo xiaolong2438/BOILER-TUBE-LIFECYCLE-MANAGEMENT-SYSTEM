@@ -8,6 +8,7 @@ on:
       - "炉管全生命周期管理系统.html"
       - "login.html"
       - "assets/**"
+      - "dist/**"
       - "functions/**"
       - "migrations/**"
       - "scripts/**"
