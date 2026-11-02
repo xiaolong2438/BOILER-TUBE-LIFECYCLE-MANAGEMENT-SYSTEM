@@ -1643,6 +1643,75 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
+/* ============ 材料库样表：固定列宽 + 两行表头 ============ */
+/* 15 列全部给定基准宽度，名称/材料/备注按内容分配；表头允许换行，
+   避免自动布局把「名称」压成逐字竖排，同时把整表从约 1576px 收窄到 1200px。 */
+.material-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 1200px;
+}
+
+.material-table col.mt-no { width: 40px; }
+.material-table col.mt-name { width: 142px; }
+.material-table col.mt-od { width: 56px; }
+.material-table col.mt-wall { width: 68px; }
+.material-table col.mt-material { width: 108px; }
+.material-table col.mt-pressure { width: 68px; }
+.material-table col.mt-temperature { width: 64px; }
+.material-table col.mt-straight { width: 80px; }
+.material-table col.mt-bend-radius { width: 62px; }
+.material-table col.mt-bend { width: 86px; }
+.material-table col.mt-spec { width: 82px; }
+.material-table col.mt-stock-qty { width: 56px; }
+.material-table col.mt-stock-length { width: 66px; }
+.material-table col.mt-remark { width: 170px; }
+.material-table col.mt-actions { width: 52px; }
+
+.material-table th {
+  padding: 9px 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
+  line-height: 1.4;
+  text-align: center;
+  text-transform: none;
+  vertical-align: middle;
+  white-space: normal;
+}
+
+.material-table td {
+  padding: 10px 6px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.material-table th:nth-child(2),
+.material-table td:nth-child(2),
+.material-table th:nth-child(5),
+.material-table td:nth-child(5),
+.material-table th:nth-child(14),
+.material-table td:nth-child(14) {
+  text-align: left;
+}
+
+.material-table td:nth-child(2),
+.material-table td:nth-child(5) {
+  padding-left: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.material-table td:nth-child(14) {
+  padding-left: 10px;
+  line-height: 1.55;
+  white-space: normal;
+}
+
+.material-table td:nth-child(15) {
+  padding: 8px 4px;
+}
+
 .badge {
   display: inline-block;
   padding: 4px 12px;

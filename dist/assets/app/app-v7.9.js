@@ -2568,10 +2568,10 @@ function renderMaterialLibrary(key) {
     return `
     <tr>
       <td>${escapeHTML(materialCell(item.categoryNo))}</td>
-      <td style="font-family:inherit">${escapeHTML(item.sampleName || item.position)}</td>
+      <td style="font-family:inherit" title="${escapeHTML(item.sampleName || item.position)}">${escapeHTML(item.sampleName || item.position)}</td>
       <td>${escapeHTML(materialCell(item.diameter))}</td>
       <td>${escapeHTML(materialCell(item.wallThickness))}</td>
-      <td style="font-family:inherit">${escapeHTML(materialCell(item.material))}</td>
+      <td style="font-family:inherit" title="${escapeHTML(materialCell(item.material))}">${escapeHTML(materialCell(item.material))}</td>
       <td>${escapeHTML(materialCell(rule.pressure))}</td>
       <td>${escapeHTML(materialCell(rule.temperature))}</td>
       <td>${escapeHTML(materialCell(rule.straight))}</td>
@@ -2595,7 +2595,13 @@ function renderMaterialLibrary(key) {
     </div>
     <div class="card">
       <div class="card-title">样表分类清单</div>
-      <div class="table-wrap"><table><thead><tr><th>序号</th><th>名称</th><th>外径(mm)</th><th>取用壁厚(mm)</th><th>材料</th><th>设计压力(MPa)</th><th>设计温度(℃)</th><th>直管理论计算厚度(mm)</th><th>弯管半径(mm)</th><th>弯管外侧理论计算厚度(mm)</th><th>规格型号</th><th>库存根数</th><th>库存总长度(m)</th><th>备注</th><th>操作</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+      <div class="table-wrap material-table-wrap"><table class="material-table">
+        <colgroup>
+          <col class="mt-no"><col class="mt-name"><col class="mt-od"><col class="mt-wall"><col class="mt-material">
+          <col class="mt-pressure"><col class="mt-temperature"><col class="mt-straight"><col class="mt-bend-radius"><col class="mt-bend">
+          <col class="mt-spec"><col class="mt-stock-qty"><col class="mt-stock-length"><col class="mt-remark"><col class="mt-actions">
+        </colgroup>
+        <thead><tr><th>序号</th><th>名称</th><th>外径(mm)</th><th>取用壁厚(mm)</th><th>材料</th><th>设计压力(MPa)</th><th>设计温度(℃)</th><th>直管理论计算厚度(mm)</th><th>弯管半径(mm)</th><th>弯管外侧理论计算厚度(mm)</th><th>规格型号</th><th>库存根数</th><th>库存总长度(m)</th><th>备注</th><th>操作</th></tr></thead><tbody>${tableRows}</tbody></table></div>
     </div>`;
 }
 function renderComponent(key) { renderMaterialLibrary(key); }
