@@ -91,19 +91,20 @@
     if (!requireXLSX()) return;
     const filter = getBatchBoilerFilter();
     const sys = getDmSysFilter();
-    const events = userDB.events.filter(item => dmRowInScope(eventBoiler(item), [item.code], filter, sys)).map(item => ({
+    const codeQuery = getDmCodeQuery();
+    const events = userDB.events.filter(item => dmRowInScope(eventBoiler(item), [item.code], filter, sys, codeQuery)).map(item => ({
       '炉号': eventBoiler(item), '日期': item.date, '管段编码': item.code, '规格': item.spec,
       '材质': item.material, '厚度(mm)': item.thickness, '硬度(HB)': item.hardness,
       '事件类型': item.type, '详细描述/结论': item.desc
     }));
-    const replacements = userDB.replacements.filter(item => dmRowInScope(replacementBoiler(item), [item.oldCode, item.newCode], filter, sys)).map(item => ({
+    const replacements = userDB.replacements.filter(item => dmRowInScope(replacementBoiler(item), [item.oldCode, item.newCode], filter, sys, codeQuery)).map(item => ({
       '炉号': replacementBoiler(item), '更换日期': item.date, '旧管段编码': item.oldCode,
       '新管段编码': item.newCode, '更换原因': item.reason
     }));
     const wb = XLSX.utils.book_new();
     appendSheet(wb, '检测检修事件', events, ['炉号', '日期', '管段编码', '规格', '材质', '厚度(mm)', '硬度(HB)', '事件类型', '详细描述/结论'], [10, 14, 28, 18, 18, 14, 14, 16, 46]);
     appendSheet(wb, '更换记录', replacements, ['炉号', '更换日期', '旧管段编码', '新管段编码', '更换原因'], [10, 14, 28, 28, 46]);
-    const scope = (filter === 'all' ? '全厂' : `${filter}号机组`) + (sys ? `_${sys}` : '');
+    const scope = (filter === 'all' ? '全厂' : `${filter}号机组`) + (sys.length ? `_${sys.join('+')}` : '');
     writeWorkbook(wb, `锅炉寿命数据_${scope}_${today()}`);
   };
 

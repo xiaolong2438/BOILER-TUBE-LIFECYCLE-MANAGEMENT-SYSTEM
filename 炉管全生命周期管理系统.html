@@ -524,8 +524,8 @@
         <div>💡</div>
         <div><strong>操作指南：</strong>下载 Excel 或 CSV 模板填写后导入，Excel 日期单元格会自动转换为标准格式。<strong style="color:var(--ok);">系统已开启防重复校验</strong>，多次导入同一文件自动跳过已存在的数据，确保台账干净无冗余。</div>
       </div>
-      <div style="display:flex; gap:15px; flex-wrap:wrap;">
-        <div class="form-group" style="margin-bottom:0;">
+      <div class="dm-filter-row">
+        <div class="form-group">
           <label>批量范围</label>
           <div class="unit-switch" id="dm-batch-boiler" role="group" aria-label="批量范围机组筛选">
             <button type="button" class="active" data-boiler="all" onclick="setDmBoilerFilter('all')">全厂</button>
@@ -533,11 +533,26 @@
             <button type="button" data-boiler="2" onclick="setDmBoilerFilter('2')">2#机组</button>
           </div>
         </div>
-        <div class="form-group" style="max-width:260px; margin-bottom:0;">
-          <label>受热面筛选</label>
-          <select id="dm-sys-filter" onchange="setDmSysFilter(this.value)">
-            <option value="">全部受热面</option>
-          </select>
+        <div class="form-group dm-filter-sys">
+          <label id="dm-sys-filter-label">受热面筛选（可多选）</label>
+          <div class="dm-multi" id="dm-sys-filter">
+            <button type="button" class="dm-multi-trigger" id="dm-sys-trigger" aria-haspopup="true" aria-expanded="false" aria-labelledby="dm-sys-filter-label dm-sys-trigger-text" onclick="toggleDmSysPanel(event)">
+              <span id="dm-sys-trigger-text">全部受热面</span>
+              <span class="dm-multi-caret" aria-hidden="true"></span>
+            </button>
+            <div class="dm-multi-panel" id="dm-sys-panel" hidden>
+              <div class="dm-multi-tools">
+                <button type="button" class="btn btn-outline" onclick="dmSysSetAll(true)">全选</button>
+                <button type="button" class="btn btn-outline" onclick="dmSysSetAll(false)">清空</button>
+                <span class="dm-multi-hint">不勾选 = 全部受热面</span>
+              </div>
+              <div class="dm-multi-options" id="dm-sys-options"></div>
+            </div>
+          </div>
+        </div>
+        <div class="form-group dm-filter-code">
+          <label for="dm-code-search">编码查询</label>
+          <input type="text" id="dm-code-search" placeholder="输入编码关键词，如 1G-SLB 或 F000-R025" oninput="renderDataManagerTables()" />
         </div>
       </div>
       <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">

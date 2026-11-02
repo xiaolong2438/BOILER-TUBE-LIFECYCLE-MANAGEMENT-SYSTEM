@@ -330,17 +330,68 @@ function setDmBoilerFilter(value) {
   localStorage.setItem('boiler_dm_boiler_filter', value || 'all');
   renderDataManagerTables();
 }
-/* 批量数据管理：受热面筛选（按编码系统码），与批量范围叠加作用于记录表与导出 */
+/* 批量数据管理：受热面多选筛选（按编码系统码），与批量范围/编码查询叠加作用于记录表与导出。
+   状态为一组系统码数组；空数组 = 全部受热面。旧版本地存储的单选字符串自动迁移为数组。 */
 function getDmSysFilter() {
-  return document.getElementById('dm-sys-filter')?.value || '';
+  return [...document.querySelectorAll('#dm-sys-options input[type="checkbox"]:checked')].map(box => box.value);
 }
-function setDmSysFilter(value) {
-  localStorage.setItem('boiler_dm_sys_filter', value || '');
+function readDmSysSaved() {
+  const raw = localStorage.getItem('boiler_dm_sys_filter') || '';
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(value => typeof value === 'string') : [];
+  } catch (err) {
+    return [raw];
+  }
+}
+function setDmSysFilter(values) {
+  const list = Array.isArray(values) ? values : [];
+  localStorage.setItem('boiler_dm_sys_filter', JSON.stringify(list));
+  document.querySelectorAll('#dm-sys-options input[type="checkbox"]').forEach(box => { box.checked = list.includes(box.value); });
+  syncDmSysTrigger();
   renderDataManagerTables();
 }
-function dmRowInScope(boilerOf, codes, boilerFilter, sysFilter) {
+function dmSysSetAll(all) {
+  setDmSysFilter(all ? CODE_SYSTEMS.map(item => item.sys) : []);
+}
+function onDmSysOptionChange() {
+  localStorage.setItem('boiler_dm_sys_filter', JSON.stringify(getDmSysFilter()));
+  syncDmSysTrigger();
+  renderDataManagerTables();
+}
+function syncDmSysTrigger() {
+  const text = document.getElementById('dm-sys-trigger-text');
+  if (!text) return;
+  const selected = getDmSysFilter();
+  if (!selected.length) { text.textContent = '全部受热面'; return; }
+  if (selected.length === 1) {
+    const item = CODE_SYSTEMS.find(rule => rule.sys === selected[0]);
+    text.textContent = item ? `${item.sys} · ${item.label}` : selected[0];
+    return;
+  }
+  text.textContent = `已选 ${selected.length} 项受热面`;
+}
+function toggleDmSysPanel(event) {
+  event.stopPropagation();
+  const panel = document.getElementById('dm-sys-panel');
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  document.getElementById('dm-sys-trigger')?.setAttribute('aria-expanded', String(!panel.hidden));
+}
+function closeDmSysPanel() {
+  const panel = document.getElementById('dm-sys-panel');
+  if (panel) panel.hidden = true;
+  document.getElementById('dm-sys-trigger')?.setAttribute('aria-expanded', 'false');
+}
+/* 编码查询：大小写不敏感的包含匹配，事件旧码/新码任一命中即保留该行 */
+function getDmCodeQuery() {
+  return String(document.getElementById('dm-code-search')?.value || '').trim().toUpperCase();
+}
+function dmRowInScope(boilerOf, codes, boilerFilter, sysFilter, codeQuery) {
   if (boilerFilter !== 'all' && boilerOf !== boilerFilter) return false;
-  if (sysFilter && !codes.some(c => getCodeSystem(c) === sysFilter)) return false;
+  if (sysFilter && sysFilter.length && !codes.some(c => sysFilter.includes(getCodeSystem(c)))) return false;
+  if (codeQuery && !codes.some(c => String(c || '').toUpperCase().includes(codeQuery))) return false;
   return true;
 }
 /* 方向感知归一（与 AI 助手清洗同一口径）：现场可归近一端计数，落库统一为台账规范方向。
@@ -449,10 +500,17 @@ function renderDataManagerTables() {
     const savedBoiler = localStorage.getItem('boiler_dm_boiler_filter');
     if (savedBoiler) boilerHost.querySelectorAll('button').forEach(btn => btn.classList.toggle('active', btn.dataset.boiler === savedBoiler));
   }
-  const sysSelect = document.getElementById('dm-sys-filter');
-  if (sysSelect && !sysSelect.options.length) {
-    sysSelect.innerHTML = '<option value="">全部受热面</option>' + CODE_SYSTEMS.map(item => '<option value="' + escapeHTML(item.sys) + '">' + escapeHTML(item.sys) + ' · ' + escapeHTML(item.label) + '</option>').join('');
-    sysSelect.value = localStorage.getItem('boiler_dm_sys_filter') || '';
+  const sysOptions = document.getElementById('dm-sys-options');
+  if (sysOptions && !sysOptions.dataset.init) {
+    sysOptions.dataset.init = '1';
+    sysOptions.innerHTML = CODE_SYSTEMS.map(item =>
+      '<label class="dm-multi-option"><input type="checkbox" value="' + escapeHTML(item.sys) + '" onchange="onDmSysOptionChange()"><span>' + escapeHTML(item.sys) + ' · ' + escapeHTML(item.label) + '</span></label>'
+    ).join('');
+    const saved = readDmSysSaved();
+    sysOptions.querySelectorAll('input[type="checkbox"]').forEach(box => { box.checked = saved.includes(box.value); });
+    syncDmSysTrigger();
+    document.addEventListener('click', event => { if (!event.target.closest('#dm-sys-filter')) closeDmSysPanel(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDmSysPanel(); });
   }
   renderDMTable(); renderReplacementTable();
 }
@@ -468,7 +526,8 @@ function renderDMTable() {
   const tbody = document.getElementById('dm-table-body'); if(!tbody) return;
   const filter = getBatchBoilerFilter();
   const sys = getDmSysFilter();
-  const all = [...userDB.events].filter(r => dmRowInScope(eventBoiler(r), [r.code], filter, sys)).sort((a,b) => b.ts - a.ts);
+  const codeQuery = getDmCodeQuery();
+  const all = [...userDB.events].filter(r => dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
   const manage = canManageTubeData();
   const visibleTs = new Set(all.map(r => Number(r.ts)));
   [...dmSelectedTs].forEach(ts => { if (!visibleTs.has(ts)) dmSelectedTs.delete(ts); });
@@ -635,7 +694,8 @@ function renderReplacementTable() {
   const tbody = document.getElementById('dm-rep-table-body'); if(!tbody) return;
   const filter = getBatchBoilerFilter();
   const sys = getDmSysFilter();
-  const all = [...userDB.replacements].filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys)).sort((a,b) => b.ts - a.ts);
+  const codeQuery = getDmCodeQuery();
+  const all = [...userDB.replacements].filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
   const manage = canManageTubeData();
   tbody.innerHTML = all.map(r => {
     const action = manage
@@ -729,12 +789,13 @@ function downloadCSVTemplate() {
 }
 function exportCSV() {
   const filter = getBatchBoilerFilter();
-  let csvContent = '\uFEFF' + EVENT_CSV_COLUMNS.join(',') + '\n';
   const sys = getDmSysFilter();
-  userDB.events.filter(e => dmRowInScope(eventBoiler(e), [e.code], filter, sys)).forEach(e => {
+  const codeQuery = getDmCodeQuery();
+  let csvContent = '\uFEFF' + EVENT_CSV_COLUMNS.join(',') + '\n';
+  userDB.events.filter(e => dmRowInScope(eventBoiler(e), [e.code], filter, sys, codeQuery)).forEach(e => {
     csvContent += ['事件', eventBoiler(e), e.date, e.code, e.spec, e.material, e.thickness, e.hardness, e.type, '', e.desc].map(csvEscape).join(',') + '\n';
   });
-  userDB.replacements.filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys)).forEach(r => {
+  userDB.replacements.filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).forEach(r => {
     csvContent += ['更换', replacementBoiler(r), r.date, r.oldCode, '', '', '', '', r.reason, r.newCode, r.reason].map(csvEscape).join(',') + '\n';
   });
   const scope = filter === 'all' ? '全厂' : `${filter}号机组`;
@@ -2507,10 +2568,10 @@ function renderMaterialLibrary(key) {
     return `
     <tr>
       <td>${escapeHTML(materialCell(item.categoryNo))}</td>
-      <td style="font-family:inherit">${escapeHTML(item.sampleName || item.position)}</td>
+      <td style="font-family:inherit" title="${escapeHTML(item.sampleName || item.position)}">${escapeHTML(item.sampleName || item.position)}</td>
       <td>${escapeHTML(materialCell(item.diameter))}</td>
       <td>${escapeHTML(materialCell(item.wallThickness))}</td>
-      <td style="font-family:inherit">${escapeHTML(materialCell(item.material))}</td>
+      <td style="font-family:inherit" title="${escapeHTML(materialCell(item.material))}">${escapeHTML(materialCell(item.material))}</td>
       <td>${escapeHTML(materialCell(rule.pressure))}</td>
       <td>${escapeHTML(materialCell(rule.temperature))}</td>
       <td>${escapeHTML(materialCell(rule.straight))}</td>
@@ -2534,7 +2595,13 @@ function renderMaterialLibrary(key) {
     </div>
     <div class="card">
       <div class="card-title">样表分类清单</div>
-      <div class="table-wrap"><table><thead><tr><th>序号</th><th>名称</th><th>外径(mm)</th><th>取用壁厚(mm)</th><th>材料</th><th>设计压力(MPa)</th><th>设计温度(℃)</th><th>直管理论计算厚度(mm)</th><th>弯管半径(mm)</th><th>弯管外侧理论计算厚度(mm)</th><th>规格型号</th><th>库存根数</th><th>库存总长度(m)</th><th>备注</th><th>操作</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+      <div class="table-wrap material-table-wrap"><table class="material-table">
+        <colgroup>
+          <col class="mt-no"><col class="mt-name"><col class="mt-od"><col class="mt-wall"><col class="mt-material">
+          <col class="mt-pressure"><col class="mt-temperature"><col class="mt-straight"><col class="mt-bend-radius"><col class="mt-bend">
+          <col class="mt-spec"><col class="mt-stock-qty"><col class="mt-stock-length"><col class="mt-remark"><col class="mt-actions">
+        </colgroup>
+        <thead><tr><th>序号</th><th>名称</th><th>外径(mm)</th><th>取用壁厚(mm)</th><th>材料</th><th>设计压力(MPa)</th><th>设计温度(℃)</th><th>直管理论计算厚度(mm)</th><th>弯管半径(mm)</th><th>弯管外侧理论计算厚度(mm)</th><th>规格型号</th><th>库存根数</th><th>库存总长度(m)</th><th>备注</th><th>操作</th></tr></thead><tbody>${tableRows}</tbody></table></div>
     </div>`;
 }
 function renderComponent(key) { renderMaterialLibrary(key); }

@@ -22,22 +22,33 @@ assert.match(js, /title="打开管段档案 \$\{value\}"/, "悬停提示打开�
 assert.match(js, /\$\{dmCodeCell\(r\.code\)\}/, "事件表编码列用 dmCodeCell");
 assert.match(js, /\$\{dmCodeCell\(r\.oldCode\)\}\$\{dmCodeCell\(r\.newCode, 'var\(--ok\)'\)\}/, "更换登记表旧/新编码都用 dmCodeCell");
 
-// 批量数据管理：受热面筛选与批量范围叠加，作用于两张记录表与 CSV/XLSX 导出。
-assert.match(html, /id="dm-sys-filter" onchange="setDmSysFilter\(this\.value\)"/, "受热面筛选下拉存在");
-assert.match(html, /<option value="">全部受热面<\/option>/);
+// 批量数据管理：受热面多选筛选/编码查询与批量范围叠加，作用于两张记录表与 CSV/XLSX 导出。
+assert.match(html, /id="dm-sys-trigger"[^>]*onclick="toggleDmSysPanel\(event\)"/, "受热面多选下拉触发器存在");
+assert.match(html, /id="dm-sys-trigger-text">全部受热面</, "默认展示全部受热面");
+assert.match(html, /id="dm-sys-options"/, "受热面多选选项容器存在");
 assert.match(js, /function getDmSysFilter\(\)/);
-assert.match(js, /function setDmSysFilter\(value\)/);
-assert.match(js, /localStorage\.setItem\('boiler_dm_sys_filter', value \|\| ''\)/, "受热面筛选记忆在本地");
-assert.match(js, /function dmRowInScope\(boilerOf, codes, boilerFilter, sysFilter\)/);
-assert.match(js, /sysSelect\.innerHTML = '<option value="">全部受热面<\/option>' \+ CODE_SYSTEMS\.map/, "选项来自受热面系统表");
-assert.match(js, /\$\{escapeHTML\(item\.sys\)\} · \$\{escapeHTML\(item\.label\)\}/);
-assert.match(js, /dmRowInScope\(eventBoiler\(r\), \[r\.code\], filter, sys\)/, "事件表应用受热面过滤");
-assert.match(js, /dmRowInScope\(replacementBoiler\(r\), \[r\.oldCode, r\.newCode\], filter, sys\)/, "更换表应用受热面过滤（旧码或新码命中）");
-assert.match(js, /dmRowInScope\(eventBoiler\(e\), \[e\.code\], filter, sys\)/, "CSV导出应用受热面过滤");
-assert.match(xlsxExport, /dmRowInScope\(eventBoiler\(item\), \[item\.code\], filter, sys\)/, "XLSX导出应用受热面过滤");
-assert.match(xlsxExport, /\(filter === 'all' \? '全厂' : `\$\{filter\}号机组`\) \+ \(sys \? `_\$\{sys\}` : ''\)/, "XLSX文件名带受热面范围");
+assert.match(js, /#dm-sys-options input\[type="checkbox"\]:checked/, "多选值来自勾选的复选框");
+assert.match(js, /function setDmSysFilter\(values\)/);
+assert.match(js, /localStorage\.setItem\('boiler_dm_sys_filter', JSON\.stringify\(list\)\)/, "受热面多选以数组记忆在本地");
+assert.match(js, /function readDmSysSaved\(\)/);
+assert.match(js, /return \[raw\];/, "旧版单选字符串自动迁移为数组");
+assert.match(js, /function dmSysSetAll\(all\)/, "提供全选/清空");
+assert.match(js, /已选 \$\{selected\.length\} 项受热面/, "多选时触发器显示已选数量");
+assert.match(js, /sysFilter && sysFilter\.length && !codes\.some\(c => sysFilter\.includes\(getCodeSystem\(c\)\)\)/, "任一勾选受热面命中即保留该行");
+assert.match(js, /CODE_SYSTEMS\.map\(item =>\s*'<label class="dm-multi-option">/, "复选框选项来自受热面系统表");
+assert.match(js, /function dmRowInScope\(boilerOf, codes, boilerFilter, sysFilter, codeQuery\)/);
+assert.match(html, /id="dm-code-search"[^>]*oninput="renderDataManagerTables\(\)"/, "编码查询输入框存在并联动刷新两张记录表");
+assert.match(js, /function getDmCodeQuery\(\)/);
+assert.match(js, /codeQuery && !codes\.some\(c => String\(c \|\| ''\)\.toUpperCase\(\)\.includes\(codeQuery\)\)/, "编码查询按包含匹配，事件旧码/新码任一命中");
+assert.match(js, /dmRowInScope\(eventBoiler\(r\), \[r\.code\], filter, sys, codeQuery\)/, "事件表应用受热面与编码查询过滤");
+assert.match(js, /dmRowInScope\(replacementBoiler\(r\), \[r\.oldCode, r\.newCode\], filter, sys, codeQuery\)/, "更换表应用受热面与编码查询过滤（旧码或新码命中）");
+assert.match(js, /dmRowInScope\(eventBoiler\(e\), \[e\.code\], filter, sys, codeQuery\)/, "CSV导出应用受热面与编码查询过滤");
+assert.match(xlsxExport, /dmRowInScope\(eventBoiler\(item\), \[item\.code\], filter, sys, codeQuery\)/, "XLSX导出应用受热面与编码查询过滤");
+assert.match(xlsxExport, /\(sys\.length \? `_\$\{sys\.join\('\+'\)\}` : ''\)/, "XLSX文件名带多选受热面范围");
 assert.match(html, /导出筛选范围数据 \(CSV\)/, "导出按钮文案与筛选语义一致");
 assert.match(html, /导出筛选范围 Excel/);
+assert.match(css, /\.dm-filter-row \{/, "筛选行使用统一对齐布局");
+assert.match(css, /\.dm-filter-row \.form-group select,\s*\.dm-filter-row \.form-group input \{\s*height: 50px;/, "受热面下拉与编码查询输入框和分段按钮等高对齐");
 
 // 批量选择：表头全选框 + 行复选框 + 全选/反选/批量删除（viewer 只读不可见）。
 assert.match(html, /id="dm-select-all" aria-label="全选" onchange="dmToggleAll\(this\.checked\)"/);
