@@ -2717,7 +2717,21 @@ function loadLifecycle(customCode) {
   analyzeTubeDetails(code);
 }
 
-function renderMatrix() { const tbody = document.getElementById('matrixBody'); let total = 0; tbody.innerHTML = matrix.map(m => { const count = matrixRowCount(m); total += count; return `<tr><td style="font-family:inherit">${m.name}</td><td><span class="badge ${m.badge}">${m.sys}</span></td><td>${m.comp} · ${COMPONENT_LABELS[m.comp] || ''}</td><td>${matrixRowRangeText(m)}</td><td style="color:var(--accent)">${count}</td><td>${m.spec}</td><td style="font-family:inherit;font-size:11px">${m.mat}</td></tr>`; }).join(''); document.getElementById('invTotal').textContent = total.toLocaleString(); }
+function renderMatrix() {
+  const tbody = document.getElementById('matrixBody');
+  tbody.innerHTML = matrix.map(m => {
+    const count = matrixRowCount(m);
+    return `<tr><td style="font-family:inherit">${m.name}</td><td><span class="badge ${m.badge}">${m.sys}</span></td><td>${m.comp} · ${COMPONENT_LABELS[m.comp] || ''}</td><td>${matrixRowRangeText(m)}</td><td style="color:var(--accent)">${count}</td><td>${m.spec}</td><td style="font-family:inherit;font-size:11px">${m.mat}</td></tr>`;
+  }).join('');
+  /* 四张统计卡与生成说明统一取矩阵口径，避免写死数字与 matrix 定义脱节 */
+  const stats = tubeLedgerMatrixStats();
+  const setStatText = (id, text) => { const el = document.getElementById(id); if(el) el.textContent = text; };
+  setStatText('invTotal', stats.total.toLocaleString());
+  setStatText('invWW', stats.slb.toLocaleString());
+  setStatText('invSH', stats.sh.toLocaleString());
+  setStatText('invRhEco', stats.rhEco.toLocaleString());
+  setStatText('invTotalNote', `${stats.total.toLocaleString()}条/炉`);
+}
 function pad(n, len) { return String(n).padStart(len, '0'); }
 const MAINTENANCE_CYCLE_YEARS = 6;
 const MAINTENANCE_OUTAGE_INTERVAL_YEARS = 2;

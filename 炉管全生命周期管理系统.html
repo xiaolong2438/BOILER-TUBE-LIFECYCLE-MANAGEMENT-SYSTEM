@@ -657,10 +657,10 @@
   <section class="view" id="view-inventory">
     <div class="section-title"><h2>全量管段台账</h2><span class="sub">TUBE INVENTORY · CSV / XLSX EXPORT</span></div>
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-label">单炉管理单元</div><div class="stat-value" id="invTotal">8,519</div></div>
-      <div class="stat-card"><div class="stat-label">水冷壁 (WW)</div><div class="stat-value" style="color:var(--ok)">722</div></div>
-      <div class="stat-card"><div class="stat-label">过热器 (SH)</div><div class="stat-value" style="color:var(--warn)">2,681</div></div>
-      <div class="stat-card"><div class="stat-label">再热+省煤器</div><div class="stat-value" style="color:var(--accent-3)">1,736</div></div>
+      <div class="stat-card"><div class="stat-label">单炉管理单元</div><div class="stat-value" id="invTotal">9,512</div></div>
+      <div class="stat-card"><div class="stat-label">水冷壁 (WW)</div><div class="stat-value" id="invWW" style="color:var(--ok)">1,106</div></div>
+      <div class="stat-card"><div class="stat-label">过热器 (SH)</div><div class="stat-value" id="invSH" style="color:var(--warn)">4,226</div></div>
+      <div class="stat-card"><div class="stat-label">再热+省煤器</div><div class="stat-value" id="invRhEco" style="color:var(--accent-3)">4,180</div></div>
     </div>
     <div class="card">
       <div class="card-title">全厂管段编码规则矩阵</div>
@@ -670,7 +670,7 @@
     </div>
     <div class="card">
       <div class="card-title">全量台账生成与导出引擎</div>
-      <p style="color:var(--text-dim); font-size:13px; margin-bottom:15px;">基于矩阵规则，瞬间生成 <strong style="color:var(--accent);">8,519条/炉</strong> 精确管码的标准化CSV文件，可直接导入 ERP/EAM 系统。</p>
+      <p style="color:var(--text-dim); font-size:13px; margin-bottom:15px;">基于矩阵规则，瞬间生成 <strong id="invTotalNote" style="color:var(--accent);">9,512条/炉</strong> 精确管码的标准化CSV文件，可直接导入 ERP/EAM 系统。</p>
       <div style="display:flex; gap:15px; flex-wrap:wrap;">
         <button class="btn" onclick="generateCSV(1)">⚡ 生成 1号炉 CSV</button>
         <button class="btn" onclick="generateCSV(2)">⚡ 生成 2号炉 CSV</button>
