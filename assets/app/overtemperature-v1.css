@@ -7,7 +7,7 @@
 #ot-app .ot-eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--accent); font-weight: 700; }
 #ot-app .ot-actions, #ot-app .ot-filter-buttons, #ot-app .ot-row-actions, #ot-app .ot-form-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #ot-app .btn { font-size: 12px; line-height: 1.5; min-height: 34px; padding: 8px 13px; border-radius: 7px; }
-#ot-app .btn-primary { background: var(--accent); color: var(--bg-deep, #081b25); border: 1px solid var(--accent); }
+#ot-app .btn-primary { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
 #ot-app .btn-secondary { background: var(--surface-sunken); color: var(--text); border: 1px solid var(--line); }
 #ot-app button:disabled { opacity: .5; cursor: not-allowed; }
 #ot-app button:focus-visible, #ot-app input:focus-visible, #ot-app select:focus-visible, #ot-app textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -23,7 +23,7 @@
 #ot-app .ot-warning { color: var(--warn); }
 #ot-app .ot-unit-switch { display: inline-flex; gap: 4px; padding: 4px; background: var(--surface-sunken); border: 1px solid var(--line); border-radius: 9px; margin-bottom: 14px; }
 #ot-app .ot-unit-switch .btn { border: 0; background: transparent; box-shadow: none; }
-#ot-app .ot-unit-switch [aria-pressed="true"] { background: var(--accent); color: var(--bg-deep, #081b25); }
+#ot-app .ot-unit-switch [aria-pressed="true"] { background: var(--accent); color: #fff; }
 #ot-app .ot-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: end; }
 #ot-app .ot-filter-buttons { min-height: 40px; }
 #ot-app .ot-field { display: flex; flex-direction: column; min-width: 0; gap: 7px; margin: 0; font-size: 12px; }
