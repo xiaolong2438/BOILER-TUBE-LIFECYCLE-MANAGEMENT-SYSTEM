@@ -1939,12 +1939,14 @@ function switchView(viewId, { updateHash = true } = {}) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b === btn));
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === target));
   const titleEl = document.getElementById('topbar-title');
-  const VIEW_TITLES = { dashboard: '炉管风险驾驶舱', 'tube-analysis': '管段综合分析', 'maintenance-plan': '检修计划指挥', datamgr: '数据录入与管理', generator: '编码生成器', inventory: '全量管段台账', maintainlog: '维护记录', components: '受热面材料库', headers: '集箱库', diagram: '炉管分布图', drawings: '受热面设计图纸' };
+  const VIEW_TITLES = { dashboard: '炉管风险驾驶舱', 'tube-analysis': '管段综合分析', overtemperature: '超温分析', 'maintenance-plan': '检修计划指挥', datamgr: '数据录入与管理', generator: '编码生成器', inventory: '全量管段台账', maintainlog: '维护记录', components: '受热面材料库', headers: '集箱库', diagram: '炉管分布图', drawings: '受热面设计图纸' };
   if(titleEl) titleEl.textContent = VIEW_TITLES[viewId] || (btn ? btn.querySelector('span')?.textContent : '') || titleEl.textContent;
   if(window.scrollY > 8) window.scrollTo({ top: 0, behavior: 'smooth' });
   document.body.classList.remove('rail-open');
   if(btn) btn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   if(viewId === 'maintainlog' && window.BTMaintenanceLog && typeof window.BTMaintenanceLog.render === 'function') window.BTMaintenanceLog.render();
+  if(viewId === 'overtemperature') window.BTOvertemperature?.refresh();
+  if(viewId === 'tube-analysis') window.BTTemperatureEvidence?.hydrate({ force: true });
   if(updateHash && location.hash !== '#view-' + viewId) history.replaceState(null, '', '#view-' + viewId);
 }
 function initNav() {
@@ -1976,7 +1978,8 @@ document.addEventListener('keydown', (e) => {
   if(!/^[1-9]$/.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
   const tag = (e.target.tagName || '').toLowerCase();
   if(tag === 'input' || tag === 'select' || tag === 'textarea' || e.target.isContentEditable) return;
-  const btns = [...document.querySelectorAll('.nav-btn')];
+  // 新增模块不改变原有数字快捷键对应关系。
+  const btns = [...document.querySelectorAll('.nav-btn')].filter(btn => btn.dataset.view !== 'overtemperature');
   const idx = Number(e.key) - 1;
   if(idx < btns.length && !btns[idx].classList.contains('active')) switchView(btns[idx].dataset.view);
 });
@@ -2094,7 +2097,7 @@ function buildTubeProfileHTML(rawCode, options = {}) {
   const timelineHTML = timeline.length
     ? timeline.map(t => `<div class="tl-item"><div class="tl-date">${escapeHTML(t.date)}</div><div class="tl-title">${escapeHTML(t.t)}</div><div class="tl-desc">${t.d}</div></div>`).join('')
     : '<div class="alert alert-info">暂无寿命事件记录。可在“数据录入”补充测厚、检修或更换信息后形成完整趋势。</div>';
-  return `<div class="tube-detail"><h3>${escapeHTML(code)} <span class="badge ${badge}" style="margin-left:10px;">${sourceLabel}</span></h3><div class="info-grid"><div class="info-item"><div class="k">名称/部件</div><div class="v">${escapeHTML(d.name)}</div></div><div class="info-item"><div class="k">规格材质</div><div class="v">${escapeHTML(d.spec)}</div></div><div class="info-item"><div class="k">首次记录/投运</div><div class="v">${escapeHTML(d.install)}</div></div><div class="info-item"><div class="k">状态/风险</div><div class="v" style="color:${statusColor}; font-size:12px;">${escapeHTML(d.risk)}</div></div></div>${loopBindHTML}${theoryHTML}${miniChartSVG}${aiTrendEntry}${actions}</div><div class="card"><div class="card-title">全寿命事件时间线 (共 ${timeline.length} 条)</div><div class="timeline">${timelineHTML}</div></div>`;
+  return `<div class="tube-detail"><h3>${escapeHTML(code)} <span class="badge ${badge}" style="margin-left:10px;">${sourceLabel}</span></h3><div class="info-grid"><div class="info-item"><div class="k">名称/部件</div><div class="v">${escapeHTML(d.name)}</div></div><div class="info-item"><div class="k">规格材质</div><div class="v">${escapeHTML(d.spec)}</div></div><div class="info-item"><div class="k">首次记录/投运</div><div class="v">${escapeHTML(d.install)}</div></div><div class="info-item"><div class="k">状态/风险</div><div class="v" style="color:${statusColor}; font-size:12px;">${escapeHTML(d.risk)}</div></div></div>${loopBindHTML}${theoryHTML}${miniChartSVG}${aiTrendEntry}${actions}${window.BTTemperatureEvidence?.profileHTML(code) || ''}</div><div class="card"><div class="card-title">全寿命事件时间线 (共 ${timeline.length} 条)</div><div class="timeline">${timelineHTML}</div></div>`;
 }
 function openTubeProfile(code) {
   document.querySelector('[data-view="tube-analysis"]').click();
@@ -4199,7 +4202,7 @@ ${composite.report}` };
   const composite = buildCompositeAIReport(trendData, compositeSignals);
   return { ...trendData, compositeRisk: composite.compositeRisk, compositeScore: composite.score, compositeSignals, composite, report: `${formatTheoryDetails(thresholdInfo)}\n更换判定：${replacementWarning.label}；实测 ${last.val}mm，裕量 ${replacementWarning.margin.toFixed(2)}mm，提前预警裕量≤0.20mm。\n${trendReport}\n\n${composite.report}` };
 }function buildTrendAnalysisPrompt(data) {
-  return `炉管综合寿命风险大模型深度分析。\n\n分析对象：${data.target}\n\n测厚历史：\n${data.history.map(p => `- ${p.dateStr}: ${p.val}mm (${p.source || '记录'})`).join('\n')}\n\n趋势预测结果：\n- 当前壁厚：${data.current}mm\n- 保守年化减薄速率：${data.rate}\n- 对应规格理论厚度预警值：${data.threshold === null ? '未匹配，不可可靠预测' : data.threshold + 'mm'}\n- ${formatTheoryDetails(data.thresholdInfo)}\n- 更换预警：${data.replacementWarning.label}\n- 阈值来源：${data.thresholdInfo?.source || '未匹配'}\n- 最可能触阈年份（P50）：${data.p50ThresholdYear}\n- 偏乐观估计触阈年份：${data.thresholdYear}（留有余量的估算，不代表概率保证）\n- 偏乐观触阈估算小时：${data.rulText}h\n- 趋势评级：${data.status}\n- 本地综合风险：${data.compositeRisk || data.status}\n- 数据置信度：${data.conf}%\n\n硬度历史：\n${data.composite?.hardnessText || '暂无硬度历史'}\n硬度预测：${data.compositeSignals?.hardnessForecast ? `${data.compositeSignals.hardnessForecast.direction}，1年 ${data.compositeSignals.hardnessForecast.oneYear}HB，3年 ${data.compositeSignals.hardnessForecast.threeYear}HB，置信度 ${data.compositeSignals.hardnessForecast.confidence}%` : '数据不足，不能可靠预测'}\n\n金相组织/材料劣化证据：\n${data.composite?.metallographyText || '暂无金相组织记录'}\n\n无损检测、割管取样和检修结论：\n${data.composite?.inspectionText || '暂无无损/割管/检修结论'}\n\n请调用大模型专家能力，在不编造现场数据的前提下，综合减薄趋势、当前厚度、硬度变化、金相组织、裂纹/蠕变/脱碳/球化等证据，输出该炉管综合风险等级、主要失效机理、相邻管排排查范围、复测项目、检修优先级和需要补充的数据。`;
+  return `炉管综合寿命风险大模型深度分析。\n\n分析对象：${data.target}\n\n测厚历史：\n${data.history.map(p => `- ${p.dateStr}: ${p.val}mm (${p.source || '记录'})`).join('\n')}\n\n趋势预测结果：\n- 当前壁厚：${data.current}mm\n- 保守年化减薄速率：${data.rate}\n- 对应规格理论厚度预警值：${data.threshold === null ? '未匹配，不可可靠预测' : data.threshold + 'mm'}\n- ${formatTheoryDetails(data.thresholdInfo)}\n- 更换预警：${data.replacementWarning.label}\n- 阈值来源：${data.thresholdInfo?.source || '未匹配'}\n- 最可能触阈年份（P50）：${data.p50ThresholdYear}\n- 偏乐观估计触阈年份：${data.thresholdYear}（留有余量的估算，不代表概率保证）\n- 偏乐观触阈估算小时：${data.rulText}h\n- 趋势评级：${data.status}\n- 本地综合风险：${data.compositeRisk || data.status}\n- 数据置信度：${data.conf}%\n\n硬度历史：\n${data.composite?.hardnessText || '暂无硬度历史'}\n硬度预测：${data.compositeSignals?.hardnessForecast ? `${data.compositeSignals.hardnessForecast.direction}，1年 ${data.compositeSignals.hardnessForecast.oneYear}HB，3年 ${data.compositeSignals.hardnessForecast.threeYear}HB，置信度 ${data.compositeSignals.hardnessForecast.confidence}%` : '数据不足，不能可靠预测'}\n\n金相组织/材料劣化证据：\n${data.composite?.metallographyText || '暂无金相组织记录'}\n\n无损检测、割管取样和检修结论：\n${data.composite?.inspectionText || '暂无无损/割管/检修结论'}\n\n关联区域温度与超温辅助证据（手工登记，非实时监控）：\n${data.thermalText || '尚未读取共享温度证据；不得假定正常或0超温。'}\n约束：温度证据仅供解释和复核优先级参考；不得凭集箱壁温、区域温度或累计超温时长生成寿命折减系数，不得改写本地减薄速率、触阈寿命和更换判定。\n\n请调用大模型专家能力，在不编造现场数据的前提下，综合减薄趋势、当前厚度、硬度变化、金相组织、裂纹/蠕变/脱碳/球化等证据，输出该炉管综合风险等级、主要失效机理、相邻管排排查范围、复测项目、检修优先级和需要补充的数据。`;
 }
 async function runDeepAIAnalysisFromTrend(data) {
   const promptBox = document.getElementById('llm-prompt');
@@ -4209,8 +4212,13 @@ async function runDeepAIAnalysisFromTrend(data) {
   setLLMStatus('AI模块正在调用大模型综合分析...', 'info');
   try {
     const evidenceText = buildTrendAnalysisPrompt(data);
+    const thermalRevision = data.thermalText;
     const text = await callLLMChatCompletions(evidenceText, 2200);
     if(window.__activeTubeAnalysis !== data) return;
+    if(data.thermalText !== thermalRevision) {
+      if(aiLLMBox) aiLLMBox.textContent = '分析期间温度证据已更新，本次远程结果已弃用。请重新分析以使用最新证据。';
+      return;
+    }
     const audit = auditLLMText(text, evidenceText);
     const notice = auditLLMNotice(audit);
     if(aiLLMBox) aiLLMBox.textContent = (notice ? notice + '\n\n' : '') + text;
@@ -4272,6 +4280,9 @@ async function runAIAnalysis(explicitTarget, pipeType) {
   document.getElementById('ai-pipe-type').value = data.thresholdInfo.pipeType || '';
   renderAIResults(data);
   scrollToAIResults();
+  // 温度证据单独异步追加，不回写预测速率、寿命和风险分值。
+  if(window.BTTemperatureEvidence) await window.BTTemperatureEvidence.attachAnalysis(data, { force: true });
+  if(window.__activeTubeAnalysis !== data) return data;
   const report = document.getElementById('ai-llm-report');
   const config = getLLMFormConfig();
   if(config.baseUrl && config.apiKey && config.model) {
@@ -4353,6 +4364,8 @@ function renderHardnessChart(data) {
   }
   renderAIChart(data);
   renderHardnessChart(data);
+  const thermalBox = document.getElementById('ai-thermal-evidence');
+  if(thermalBox) thermalBox.innerHTML = window.BTTemperatureEvidence?.profileHTML(data.target) || '';
   document.getElementById('ai-report-text').textContent = data.report || '不可可靠预测';
 }
 function renderThicknessHistoryOnly(data) {

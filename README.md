@@ -136,6 +136,7 @@ EOF
 
 # 2. 初始化本地数据库并写入管理员（密码至少 8 位）
 npx wrangler d1 execute DB --local --file=migrations/0001_init.sql
+npx wrangler d1 execute DB --local --file=migrations/0002_temperature.sql
 python scripts/hash_password_sql.py admin YourPassword123 admin > seed-admin.sql
 npx wrangler d1 execute DB --local --file=seed-admin.sql
 
@@ -155,6 +156,19 @@ python tests/run-assistant-browser.py            # 可选：真实 Edge 冒烟�
 ```
 
 > **约定**：根目录 HTML 与 `assets/` 是唯一源码真相，改动后必须执行 `node scripts/sync-dist.mjs` 同步 `dist/`；CI 每次部署前会从零重建 `dist/`。详见 [docs/dev-workflow.md](docs/dev-workflow.md)。
+
+## 超温分析（手工登记 / 多设备共享）
+
+在“超温分析”中先建测点，再配置实际生效时间、区域映射及限值依据。测点可批量编号建立，但不会把序号当成管排，也不会从截图自动生成温度或报警限值。
+
+- **温度观察**只证明某一时刻的读数，不累计超温时长。
+- **超温区间**必须登记实际起止时间、最高温度及核定依据。温度严格大于已确认限值，且整个区间经人工核定后才计入；未结束事件单列，不按当前时间自动扩展。
+- 同测点重叠区间去重；多个关联测点的区域时长取时间并集，不简单相加。筛选窗口采用 `[开始, 结束)`，北京时间（UTC+08:00）；裁剪区间的整段峰值不会冒充窗口内峰值。
+- 映射与限值新增版本，不覆盖历史；跨版本区间需拆分。配置不能回溯切入已有记录导致历史归属改变。
+- 共享数据使用 D1 独立行级表，与检测事件及整包 KV 分开；并发修改返回冲突，草稿不会自动覆盖云端。更正、作废保留前后值、操作人及原因。
+- 管段档案和综合分析显示温度辅助证据。已知换管日期时裁剪当前管统计；未知时只展示区域历史。**温度证据不改变原壁厚预测、剩余寿命或更换判定**，无记录不能解释为正常。
+
+首次启用需在既有 `0001_init.sql` 之后执行 `migrations/0002_temperature.sql`，正常 CI 发布会按顺序执行；两份脚本可重复执行且不清除已有数据。仅静态预览无法保存共享温度记录，页面会说明接口不可用。详细业务口径见 [docs/overtemperature.md](docs/overtemperature.md)。
 
 ## 部署（Cloudflare Pages）
 

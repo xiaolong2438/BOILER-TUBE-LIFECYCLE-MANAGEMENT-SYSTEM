@@ -1,0 +1,39 @@
+.thermal-evidence {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--line-subtle, #cbd5e1);
+  border-radius: 12px;
+  background: var(--card-bg, transparent);
+  color: var(--text-main, inherit);
+}
+.thermal-evidence-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.thermal-evidence-heading h4 { margin: 0; font-size: 15px; }
+.thermal-evidence-heading > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.thermal-evidence-heading .btn { font-size: 12px; padding: 7px 12px; }
+.thermal-evidence-note,
+.thermal-evidence-caution { font-size: 12px; line-height: 1.8; color: var(--text-dim, #64748b); margin: 12px 0 0; }
+.thermal-evidence-caution { border-top: 1px solid var(--line-subtle, #cbd5e1); padding-top: 12px; }
+.thermal-evidence-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.thermal-evidence-metrics > div { padding: 12px; border: 1px solid var(--line-subtle, #cbd5e1); border-radius: 8px; }
+.thermal-evidence-metrics span { display: block; font-size: 11px; color: var(--text-dim, #64748b); margin-bottom: 8px; }
+.thermal-evidence-metrics strong { display: block; font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.thermal-evidence-table { margin-top: 12px; max-height: 360px; overflow: auto; }
+.thermal-evidence-table table { min-width: 680px; }
+.thermal-evidence-table th { font-size: 11px; }
+.thermal-evidence-table td { font-family: inherit; font-size: 12px; line-height: 1.7; white-space: normal; min-width: 100px; }
+.thermal-evidence-table td:last-child { min-width: 260px; }
+.thermal-evidence-table small { display: block; color: var(--text-dim, #64748b); }
+.thermal-evidence-table td > div + div { margin-top: 7px; }
+@media (max-width: 780px) {
+  .thermal-evidence { padding: 14px; }
+  .thermal-evidence-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  .thermal-evidence-metrics { grid-template-columns: 1fr; }
+}

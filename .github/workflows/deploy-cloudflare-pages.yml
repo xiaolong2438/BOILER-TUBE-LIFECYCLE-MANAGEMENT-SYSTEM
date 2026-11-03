@@ -31,6 +31,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Run tests
         shell: bash
         run: |
@@ -134,6 +139,7 @@ jobs:
           npx --yes wrangler@latest pages project create boiler-tube-lifecycle-system --production-branch=main || true
           # The schema is idempotent; normal releases must preserve all existing rows.
           npx --yes wrangler@latest d1 execute DB --remote --file=migrations/0001_init.sql
+          npx --yes wrangler@latest d1 execute DB --remote --file=migrations/0002_temperature.sql
           echo "admin_seeded=false" >> "$GITHUB_OUTPUT"
           if [[ -n "${APP_ADMIN_USERNAME//[[:space:]]/}" && -n "${APP_ADMIN_PASSWORD//[[:space:]]/}" ]]; then
             npx --yes wrangler@latest d1 execute DB --remote --command="SELECT COUNT(*) AS admin_user_count FROM users WHERE role = 'admin';" --json > admin-count.json

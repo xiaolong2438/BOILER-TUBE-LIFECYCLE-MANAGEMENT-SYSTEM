@@ -1,0 +1,107 @@
+/* 独立超温页面；沿用全站主题令牌，不改其他模块控件。 */
+#ot-app { color: var(--text); min-width: 0; }
+#ot-app .ot-shell { display: flex; flex-direction: column; gap: 16px; }
+#ot-app .ot-header, #ot-app .ot-toolbar, #ot-app .ot-section-head, #ot-app .ot-pager { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+#ot-app .ot-header h2 { font-size: 26px; margin: 4px 0 8px; letter-spacing: .02em; }
+#ot-app .ot-header p, #ot-app .ot-help { color: var(--text-dim); font-size: 12px; line-height: 1.8; margin: 4px 0; }
+#ot-app .ot-eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--accent); font-weight: 700; }
+#ot-app .ot-actions, #ot-app .ot-filter-buttons, #ot-app .ot-row-actions, #ot-app .ot-form-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#ot-app .btn { font-size: 12px; line-height: 1.5; min-height: 34px; padding: 8px 13px; border-radius: 7px; }
+#ot-app .btn-primary { background: var(--accent); color: var(--bg-deep, #081b25); border: 1px solid var(--accent); }
+#ot-app .btn-secondary { background: var(--surface-sunken); color: var(--text); border: 1px solid var(--line); }
+#ot-app button:disabled { opacity: .5; cursor: not-allowed; }
+#ot-app button:focus-visible, #ot-app input:focus-visible, #ot-app select:focus-visible, #ot-app textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#ot-app .ot-panel { background: var(--surface-glass-1); border: 1px solid var(--line); border-radius: 12px; padding: 20px; box-shadow: var(--shadow-card, none); }
+#ot-app .ot-sync, #ot-app .ot-draft-status { font-size: 12px; line-height: 1.8; color: var(--text-dim); }
+#ot-app .ot-draft-status:empty, #ot-app #ot-composer:empty, #ot-app #ot-history:empty { display: none; }
+#ot-app .ot-sync-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 8px; }
+#ot-app .ot-loading { opacity: .5; }
+#ot-app .ot-notice { color: var(--accent); margin: 4px 0 0; }
+#ot-app .ot-alert, #ot-app .ot-caution, #ot-app .ot-tube-filter { border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; background: var(--surface-sunken); padding: 12px 15px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; margin: 10px 0; }
+#ot-app .ot-alert { color: var(--danger); }
+#ot-app .ot-alert small, #ot-app .ot-caution small, #ot-app .ot-tube-filter small { display: block; color: var(--text-dim); }
+#ot-app .ot-warning { color: var(--warn); }
+#ot-app .ot-unit-switch { display: inline-flex; gap: 4px; padding: 4px; background: var(--surface-sunken); border: 1px solid var(--line); border-radius: 9px; margin-bottom: 14px; }
+#ot-app .ot-unit-switch .btn { border: 0; background: transparent; box-shadow: none; }
+#ot-app .ot-unit-switch [aria-pressed="true"] { background: var(--accent); color: var(--bg-deep, #081b25); }
+#ot-app .ot-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: end; }
+#ot-app .ot-filter-buttons { min-height: 40px; }
+#ot-app .ot-field { display: flex; flex-direction: column; min-width: 0; gap: 7px; margin: 0; font-size: 12px; }
+#ot-app .ot-field > span { color: var(--text); font-weight: 600; }
+#ot-app .ot-field small { font-size: 11px; font-weight: 400; color: var(--text-dim); line-height: 1.6; }
+#ot-app input, #ot-app select, #ot-app textarea { width: 100%; min-width: 0; font: inherit; color: var(--text); background: var(--surface-sunken); border: 1px solid var(--line); border-radius: 7px; padding: 9px 10px; box-sizing: border-box; }
+#ot-app select[multiple] { min-height: 98px; }
+#ot-app textarea { resize: vertical; min-height: 78px; }
+#ot-app .ot-tabs { display: flex; border-bottom: 1px solid var(--line); gap: 20px; }
+#ot-app .ot-tabs button { font: inherit; font-weight: 600; font-size: 14px; padding: 12px 4px; background: transparent; color: var(--text-dim); border: 0; border-bottom: 3px solid transparent; cursor: pointer; }
+#ot-app .ot-tabs [aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+#ot-app .ot-toolbar strong { font-size: 15px; }
+#ot-app .ot-toolbar small { display: block; color: var(--text-dim); margin-top: 5px; font-size: 11px; }
+#ot-app .ot-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+#ot-app .ot-stat { padding: 18px; min-height: 128px; }
+#ot-app .ot-stat h3 { font-size: 12px; font-weight: 500; color: var(--text-dim); margin: 0 0 13px; }
+#ot-app .ot-stat strong { display: block; font-size: 24px; line-height: 1.3; font-variant-numeric: tabular-nums; margin-bottom: 10px; overflow-wrap: anywhere; }
+#ot-app .ot-stat small { display: block; font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+#ot-app .ot-stat:first-child { border-top: 3px solid var(--accent); }
+#ot-app .ot-table-wrap { border: 1px solid var(--line); border-radius: 10px; margin-top: 16px; overflow: auto; background: var(--surface-glass-1); }
+#ot-app .ot-table { min-width: 940px; width: 100%; }
+#ot-app .ot-table th { font-size: 11px; padding: 12px; white-space: normal; letter-spacing: 0; }
+#ot-app .ot-table td { font-family: inherit; font-size: 12px; line-height: 1.7; padding: 14px 12px; white-space: normal; overflow-wrap: anywhere; min-width: 92px; }
+#ot-app .ot-table td:first-child { min-width: 190px; max-width: 300px; }
+#ot-app .ot-table small { display: block; color: var(--text-dim); font-size: 11px; margin-top: 3px; }
+#ot-app .ot-row-actions { min-width: 150px; gap: 5px; }
+#ot-app .ot-row-actions .btn { font-size: 11px; padding: 5px 8px; min-height: 29px; }
+#ot-app .ot-note-cell { min-width: 180px; }
+#ot-app .ot-void-row { opacity: .65; }
+#ot-app .ot-badge { display: inline-block; border: 1px solid var(--line); border-radius: 4px; font-size: 10px; padding: 1px 6px; margin: 2px 3px 2px 0; white-space: nowrap; }
+#ot-app .ot-warn { color: var(--warn); }
+#ot-app .ot-danger { color: var(--danger); }
+#ot-app .ot-muted { color: var(--text-dim); }
+#ot-app .ot-pager { color: var(--text-dim); font-size: 11px; padding: 14px 0; }
+#ot-app .ot-pager > div { display: flex; gap: 8px; }
+#ot-app .ot-empty { text-align: center; border: 1px dashed var(--line); border-radius: 12px; padding: 36px 20px; background: var(--surface-glass-1); }
+#ot-app .ot-empty strong { display: block; font-size: 15px; margin-bottom: 10px; }
+#ot-app .ot-empty p { color: var(--text-dim); font-size: 12px; line-height: 1.8; margin-bottom: 14px; }
+#ot-app .ot-chart { margin: 0; }
+#ot-app .ot-chart figcaption { font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+#ot-app .ot-chart figcaption small { display: block; color: var(--text-dim); font-weight: 400; margin-top: 4px; }
+#ot-app .ot-chart svg { display: block; width: 100%; max-width: 1000px; }
+#ot-app .ot-chart svg text { fill: var(--text); font: 12px sans-serif; }
+#ot-app .ot-chart svg rect { fill: var(--accent); opacity: .8; }
+#ot-app .ot-composer { scroll-margin-top: 90px; border-color: var(--accent); margin: 0 0 8px; }
+#ot-app .ot-section-head { margin-bottom: 18px; }
+#ot-app .ot-section-head h3 { font-size: 17px; margin: 0; }
+#ot-app .ot-form-body { border: 0; padding: 0; min-width: 0; }
+#ot-app .ot-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 14px 0; }
+#ot-app .ot-check { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; line-height: 1.8; margin: 16px 0; cursor: pointer; }
+#ot-app .ot-check input[type="checkbox"] { width: 16px; height: 16px; flex: 0 0 16px; margin-top: 3px; padding: 0; accent-color: var(--accent); }
+#ot-app .ot-region { border: 1px solid var(--line); padding: 16px; border-radius: 8px; margin: 18px 0; min-width: 0; }
+#ot-app .ot-region legend { padding: 0 8px; font-size: 13px; font-weight: 600; }
+#ot-app .ot-region-actions { display: flex; gap: 8px; justify-content: flex-end; }
+#ot-app .ot-region .ot-form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#ot-app .ot-form-footer { padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--line); }
+#ot-app .ot-form-footer small { color: var(--text-dim); font-size: 11px; }
+#ot-app .ot-code-list { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; max-height: 210px; overflow: auto; }
+#ot-app .ot-code { border: 1px solid var(--line); background: var(--surface-sunken); color: var(--accent); font: 11px var(--font-mono, monospace); padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+#ot-app .ot-region-preview { padding: 12px 0; }
+#ot-app .ot-preview-total { border-top: 1px solid var(--line); padding-top: 12px; }
+#ot-app .ot-preview-total small { display: block; color: var(--text-dim); line-height: 1.8; }
+#ot-app details { margin: 10px 0; border: 1px solid var(--line); border-radius: 7px; padding: 12px; }
+#ot-app summary { cursor: pointer; font-size: 12px; line-height: 1.8; }
+#ot-app pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.7; max-height: 360px; overflow: auto; padding: 12px; background: var(--surface-sunken); margin-top: 10px; }
+#ot-app .ot-audit-diff { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+html[data-theme="glass"] #ot-app .ot-panel { backdrop-filter: blur(18px); }
+@media (max-width: 1120px) {
+  #ot-app .ot-filter-grid, #ot-app .ot-region .ot-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #ot-app .ot-stat strong { font-size: 21px; }
+}
+@media (max-width: 640px) {
+  #ot-app .ot-filter-grid, #ot-app .ot-form-grid, #ot-app .ot-region .ot-form-grid, #ot-app .ot-audit-diff { grid-template-columns: 1fr; }
+  #ot-app .ot-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #ot-app .ot-panel { padding: 14px; }
+  #ot-app .ot-header h2 { font-size: 23px; }
+  #ot-app .ot-tabs { gap: 16px; }
+  #ot-app .ot-chart { overflow: auto; }
+  #ot-app .ot-chart svg { min-width: 640px; }
+}
+@media (max-width: 380px) { #ot-app .ot-stats { grid-template-columns: 1fr; } }

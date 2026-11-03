@@ -25,7 +25,7 @@ node scripts/sync-dist.mjs --check  # 只检查，有漂移时退出码 1（CI/�
 
 ```bash
 node scripts/sync-dist.mjs --check
-for t in tests/*.test.mjs; do node "$t" || break; done   # 25 个测试文件
+for t in tests/*.test.mjs; do node "$t" || break; done   # 包含超温模块与既有回归
 python tests/run-assistant-browser.py                    # 真实 Edge 冒烟（7 项）
 ```
 
@@ -65,3 +65,14 @@ INIT 时 `loadLLMConfigToForm()` 负责回填表单并刷新 `#llm-status` 状�
   - 云端更新：先把本机数据备份到 `boiler_user_db_backup`（材料库同理备份到
     `boiler_material_library_backup`），再载入云端版本，并在「维护记录」留一条系统日志。
 - 注意：这是**防丢保护**，不是合并。真要做多端协作，得改成按 `ts` 增量合并或服务端版本号。
+
+## 6. 超温模块的共享存储与验证
+
+温度数据独立于上述 KV：`/api/temperature/…` 使用 D1 行级记录、乐观版本号和幂等请求 ID。不要调用 `saveDB()` 保存温度记录，也不要把本机草稿当作共享成功。配置版本只追加，更正/作废必须保留操作原因和审计前后值。
+
+- 数据库初始化顺序为 `0001_init.sql`、`0002_temperature.sql`；CI 已显式执行两份文件。新增迁移时必须同步更新部署与保留数据测试，不能只新增 SQL。
+- `overtemperature-core-v1.js` 是前后端共用的纯逻辑；编码归一复用 `assistant-core-v1.js`。温度矩阵镜像的结构与主 `matrix` 由测试校验，编码规则变动时应同步更新。
+- 原始温度观察不产生时长；已核定超温区间按 `[startAt,endAt)` 合并，未结束事件不计入累计；统计窗口、限值版本及换管边界都要测试。
+- 本机静态预览没有共享 API。验证共享能力应使用本地 D1 或隔离 SQLite 测试适配器；不得把模拟接口通过描述为真实云端部署完成。
+- 运行 `node tests/overtemperature-core.test.mjs`、`node tests/overtemperature-api.test.mjs`、`node tests/overtemperature-evidence.test.mjs` 和 UI 接线测试；再同步 `dist` 并执行全量回归。
+- 测试仅使用明确标注的合成测点和记录，不向生产数据库或用户业务库写验收数据。

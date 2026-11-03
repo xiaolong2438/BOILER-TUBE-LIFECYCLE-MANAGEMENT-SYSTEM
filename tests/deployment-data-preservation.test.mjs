@@ -6,8 +6,11 @@ import { fileURLToPath } from "node:url";
 import { verifyPassword } from "../functions/api/auth/_password.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// On Windows, Python's CreateProcess may resolve System32/bash instead of Git Bash.
+const bashCommand = /(?:^|[\\/])bash(?:\.exe)?$/i.test(process.env.SHELL || '') ? process.env.SHELL : 'bash';
 const workflow = readFileSync(resolve(root, ".github/workflows/deploy-cloudflare-pages.yml"), "utf8").replace(/\r\n/g, "\n");
 const schema = readFileSync(resolve(root, "migrations/0001_init.sql"), "utf8");
+const temperatureSchema = readFileSync(resolve(root, "migrations/0002_temperature.sql"), "utf8");
 const checks = [];
 const check = (name, fn) => checks.push([name, fn]);
 
@@ -32,6 +35,8 @@ check("普通部署不包含数据库重置、全表删除或覆盖账号", () =
   const destructive = /\bDROP\s+(?:TABLE|DATABASE)\b|\bTRUNCATE\b|\bDELETE\s+FROM\b|reset[-_]schema|\bd1\s+(?:delete|restore|time-travel\s+restore)\b|PRAGMA\s+(?:writable_schema|foreign_keys\s*=\s*(?:OFF|0))/i;
   assert.doesNotMatch(workflow, destructive);
   assert.doesNotMatch(schema, destructive);
+  assert.doesNotMatch(temperatureSchema, destructive);
+  assert.ok(prepare.script.includes('--file=migrations/0002_temperature.sql'), '部署必须显式执行温度迁移');
   assert.doesNotMatch(prepare.script, /\b(?:INSERT\s+OR\s+REPLACE|REPLACE\s+INTO|DO\s+UPDATE)\b/i);
   assert.doesNotMatch(prepare.script, /python\s+scripts\/hash_password_sql\.py\b/, "部署不得调用会覆盖密码的手动重置入口");
   assert.match(prepare.script, /d1 execute DB --remote --file=migrations\/0001_init\.sql/);
@@ -60,7 +65,7 @@ check("部署不打印凭据、SQL seed、响应体或会话 cookie", () => {
 
 check("实际部署与 smoke 脚本的 Bash 语法有效", () => {
   for (const script of [prepare.script, smoke.script]) {
-    const result = spawnSync("bash", ["-n"], { input: script, encoding: "utf8", cwd: root });
+    const result = spawnSync(bashCommand, ["-n"], { input: script, encoding: "utf8", cwd: root });
     assert.ifError(result.error);
     assert.equal(result.status, 0, result.stderr);
   }
@@ -85,6 +90,7 @@ import tempfile
 config = json.load(sys.stdin)
 root = pathlib.Path(config["root"])
 schema = (root / "migrations/0001_init.sql").read_text(encoding="utf-8")
+temperature_schema = (root / "migrations/0002_temperature.sql").read_text(encoding="utf-8")
 password = "existing-admin-password"
 seed_password = "bootstrap-password-'private"
 seed_username = "first'admin"
@@ -127,7 +133,7 @@ else:
     db.row_factory = sqlite3.Row
     files = [arg.removeprefix("--file=") for arg in args if arg.startswith("--file=")]
     if files:
-        assert files in (["migrations/0001_init.sql"], ["seed-admin.sql"]), files
+        assert files in (["migrations/0001_init.sql"], ["migrations/0002_temperature.sql"], ["seed-admin.sql"]), files
         sql = pathlib.Path(files[0]).read_text(encoding="utf-8")
         if files == ["seed-admin.sql"] and os.environ.get("SEED_FAILURE"):
             # A CLI error can echo generated SQL; the workflow must suppress it.
@@ -162,6 +168,7 @@ with tempfile.TemporaryDirectory(prefix="deployment-data-preservation-") as temp
         for script in ("resolve_d1_id.py", "hash_password_sql.py"):
             shutil.copyfile(root / "scripts" / script, work / "scripts" / script)
         (work / "migrations/0001_init.sql").write_text(schema, encoding="utf-8")
+        (work / "migrations/0002_temperature.sql").write_text(temperature_schema, encoding="utf-8")
         if initialized:
             with closing(sqlite3.connect(work / "database.sqlite")) as db:
                 db.executescript(schema)
@@ -185,7 +192,7 @@ with tempfile.TemporaryDirectory(prefix="deployment-data-preservation-") as temp
         (work / "commands.jsonl").write_text("")
         env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8", "DEPLOY_TEST_STUB": stub_path.as_posix(), "GITHUB_OUTPUT": output.as_posix(), "APP_ADMIN_USERNAME": username, "APP_ADMIN_PASSWORD": secret, "CLOUDFLARE_API_TOKEN": "private-cloudflare-token", "CLOUDFLARE_ACCOUNT_ID": "private-cloudflare-account", **extra}
         prelude = 'npx() { python "$DEPLOY_TEST_STUB" npx "$@"; }\ncurl() { python "$DEPLOY_TEST_STUB" curl "$@"; }\n'
-        result = subprocess.run(["bash", "-c", prelude + config[kind]], cwd=work, env=env, encoding="utf-8", capture_output=True, timeout=30)
+        result = subprocess.run([config["bash"], "-c", prelude + config[kind]], cwd=work, env=env, encoding="utf-8", capture_output=True, timeout=30)
         logs = result.stdout + result.stderr
         for value in (seed_password, password, "private-cloudflare-token", "private-cloudflare-account", "private-session-cookie", "private-login-response", "private-session-response"):
             assert value not in logs, "Sensitive data leaked to deployment logs"
@@ -269,7 +276,7 @@ check("离线执行真实 workflow，保护检修数据、已有用户和会话�
   const result = spawnSync("python", ["-c", exerciseDeployment], {
     cwd: root,
     encoding: "utf8",
-    input: JSON.stringify({ root, prepare: prepare.script, smoke: smoke.script }),
+    input: JSON.stringify({ root, bash: bashCommand, prepare: prepare.script, smoke: smoke.script }),
     timeout: 120000,
     stdio: ["pipe", "pipe", "pipe"]
   });
