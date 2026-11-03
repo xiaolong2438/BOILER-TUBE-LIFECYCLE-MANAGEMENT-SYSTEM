@@ -1351,6 +1351,96 @@ html[data-theme="light"] .assistant-btn--danger {
   color: var(--text-ghost);
 }
 
+/* 图表数据表：与图形同源，用于核对数值口径；默认折叠，不抢占图表的视觉重心 */
+.chart-data {
+  margin-top: 6px;
+  border-top: 1px dashed var(--line-subtle);
+  padding-top: 4px;
+}
+
+.chart-data > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  padding: 3px 2px;
+  border-radius: var(--radius-xs);
+  transition: color 0.18s ease;
+}
+
+.chart-data > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chart-data > summary::before {
+  content: '▸';
+  font-size: 9px;
+  transition: transform 0.18s ease;
+}
+
+.chart-data[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.chart-data > summary:hover,
+.chart-data > summary:focus-visible {
+  color: var(--accent);
+}
+
+.chart-data-count {
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--text-ghost);
+}
+
+.chart-data-scroll {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 4px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-xs);
+}
+
+.chart-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-weight: 600;
+  padding: 5px 8px;
+  background: var(--surface-sunken);
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--line-subtle);
+  white-space: nowrap;
+}
+
+.chart-data-table td {
+  padding: 4px 8px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--line-subtle);
+  word-break: break-all;
+}
+
+.chart-data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.chart-data-more {
+  margin: 4px 2px 2px;
+  font-size: 9.5px;
+  color: var(--text-ghost);
+}
+
 .assistant-insights {
   margin: 8px 0 6px;
   padding: 0;

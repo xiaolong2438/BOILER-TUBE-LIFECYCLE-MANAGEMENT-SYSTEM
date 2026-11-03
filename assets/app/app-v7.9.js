@@ -3855,13 +3855,15 @@ function runLLMVisualAnalysis() {
   lastLLMVisualInsights = result.insights || [];
   let chartSvg = '';
   try { chartSvg = module.chartSvg(result.chart, { emptyText: '暂无可绘制的数据' }); } catch (err) { chartSvg = ''; }
+  let chartDataHtml = '';
+  try { chartDataHtml = typeof module.chartTableMarkup === 'function' ? module.chartTableMarkup(result.chart) : ''; } catch (err) { chartDataHtml = ''; }
   const metricsHtml = (result.metrics || []).map(m =>
     `<div class="llm-viz-metric"><span class="k">${escapeHTML(m.label)}</span><span class="v">${escapeHTML(String(m.value))}</span></div>`).join('');
   const insightsHtml = (result.insights || []).map(i => `<li>${escapeHTML(i)}</li>`).join('');
   view.innerHTML = `
     <div class="llm-viz-title">${escapeHTML(result.title || query)} · 样本 ${result.sampleSize ?? 0} 条</div>
     ${metricsHtml ? `<div class="llm-viz-metrics">${metricsHtml}</div>` : ''}
-    ${chartSvg ? `<figure class="llm-viz-chart">${chartSvg}</figure>` : ''}
+    ${chartSvg ? `<figure class="llm-viz-chart">${chartSvg}${chartDataHtml}</figure>` : ''}
     ${insightsHtml ? `<ul class="llm-viz-insights">${insightsHtml}</ul>` : ''}`;
 }
 async function discoverLLMModels(options = {}) {

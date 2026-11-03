@@ -488,6 +488,10 @@
     if (!chartSvg && module && typeof module.chartSvg === 'function' && analysis.chart) {
       try { chartSvg = module.chartSvg(analysis.chart); } catch (err) { chartSvg = ''; }
     }
+    var chartDataMarkup = '';
+    if (module && typeof module.chartTableMarkup === 'function' && analysis.chart) {
+      try { chartDataMarkup = module.chartTableMarkup(analysis.chart); } catch (err) { chartDataMarkup = ''; }
+    }
     var sampleSize = num(analysis.sampleSize);
     var datasetType = toText(analysis.datasetType) || 'unknown';
     var tone = analysis.tone === 'warn' || analysis.tone === 'danger' ? analysis.tone : '';
@@ -512,6 +516,7 @@
     lines.push('  <figure class="assistant-analysis-chart">');
     if (chartSvg) {
       lines.push(chartSvg);
+      if (chartDataMarkup) lines.push(chartDataMarkup);
     } else {
       lines.push('    <p class="assistant-analysis-chart-empty">当前图表暂无可绘制数据</p>');
     }

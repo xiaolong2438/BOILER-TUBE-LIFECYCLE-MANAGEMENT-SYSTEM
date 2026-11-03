@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图表可视化改进预览 · 炉管全生命周期管理系统</title>
+<link rel="stylesheet" href="../assets/app/app-v8.0.css">
+<link rel="stylesheet" href="../assets/app/assistant-v1.css">
+<style>
+  body { padding: 28px 22px 48px; background: var(--bg-0); }
+  .preview-wrap { max-width: 1120px; margin: 0 auto; }
+  .preview-head h1 { font-size: 24px; color: var(--text-hi); margin: 0 0 8px; }
+  .preview-head p { font-size: 13px; color: var(--text-dim); margin: 0 0 20px; line-height: 1.9; }
+  .preview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 20px; }
+  .preview-card { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px 20px; background: var(--bg-1); box-shadow: var(--shadow-sm); }
+  .preview-card h2 { font-size: 14px; margin: 0 0 6px; color: var(--text-hi); }
+  .preview-note { font-size: 11.5px; color: var(--text-faint); margin: 0 0 8px; line-height: 1.7; }
+  .preview-themes { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .preview-themes button { font-size: 12px; padding: 5px 14px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="preview-wrap">
+  <div class="preview-head">
+    <h1>图表可视化改进预览</h1>
+    <p>本页由 <code>assets/app/assistant-analysis-v1.js</code> 的真实 <code>chartSvg()</code> 引擎渲染，与系统内总览可视化、AI 助手、分析报告使用同一套输出。<br>
+    数据为演示值，仅用于查看图形效果。每张图下方的「查看图表数据」与图形同源，可用于核对数值口径。</p>
+  </div>
+  <div class="preview-themes">
+    <button class="btn btn-outline" onclick="document.documentElement.dataset.theme='light'">浅色</button>
+    <button class="btn btn-outline" onclick="document.documentElement.dataset.theme='dark'">深色</button>
+    <button class="btn btn-outline" onclick="document.documentElement.dataset.theme='glass'">液态玻璃</button>
+  </div>
+  <div class="preview-grid">
+
+<section class="preview-card">
+  <h2>折线 · 壁厚趋势</h2>
+  <p class="preview-note">面积渐变 + 末点数值标注；悬停任意点可见「日期 · 系列 · 精确壁厚」</p>
+  <figure class="assistant-analysis-chart">
+    <svg class="assistant-chart-svg" viewBox="0 0 640 260" role="img" aria-label="壁厚趋势" preserveAspectRatio="xMidYMid meet">
+  <g class="assistant-chart-grid">
+  <line x1="46" y1="232" x2="606" y2="232" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="235.5" text-anchor="end" fill="var(--text-faint)" font-size="10">6.2</text>
+  <line x1="46" y1="179.5" x2="606" y2="179.5" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="183" text-anchor="end" fill="var(--text-faint)" font-size="10">6.6</text>
+  <line x1="46" y1="127" x2="606" y2="127" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="130.5" text-anchor="end" fill="var(--text-faint)" font-size="10">6.9</text>
+  <line x1="46" y1="74.5" x2="606" y2="74.5" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="78" text-anchor="end" fill="var(--text-faint)" font-size="10">7.3</text>
+  <line x1="46" y1="22" x2="606" y2="22" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="25.5" text-anchor="end" fill="var(--text-faint)" font-size="10">7.6</text>
+  <text x="606" y="14" text-anchor="end" fill="var(--text-faint)" font-size="10">mm</text>
+  </g>
+  <defs><linearGradient id="btChart1-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent)" stop-opacity="0.26" /><stop offset="100%" stop-color="var(--accent)" stop-opacity="0.02" /></linearGradient></defs>
+  <path d="M46 49.8 L232.7 71 L419.3 105.8 L606 136.1 L606 232 L46 232 Z" fill="url(#btChart1-area)" stroke="none" />
+  <path d="M46 49.8 L232.7 71 L419.3 105.8 L606 136.1" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+  <circle cx="46" cy="49.8" r="3" fill="var(--accent)" stroke="var(--surface-sunken)" stroke-width="1"><title>2023/24 C修 · 高过第2屏回路4 · 7.42 mm</title></circle>
+  <circle cx="232.7" cy="71" r="3" fill="var(--accent)" stroke="var(--surface-sunken)" stroke-width="1"><title>2024 复检 · 高过第2屏回路4 · 7.28 mm</title></circle>
+  <circle cx="419.3" cy="105.8" r="3" fill="var(--accent)" stroke="var(--surface-sunken)" stroke-width="1"><title>2025/26 C修 · 高过第2屏回路4 · 7.05 mm</title></circle>
+  <circle cx="606" cy="136.1" r="4" fill="var(--accent)" stroke="var(--surface-sunken)" stroke-width="1"><title>当前 · 高过第2屏回路4 · 6.85 mm</title></circle>
+  <text x="613" y="139.6" fill="var(--accent)" font-size="11" font-weight="700">6.85</text>
+  <line x1="46" y1="204.2" x2="606" y2="204.2" stroke="var(--danger)" stroke-width="1.5" stroke-dasharray="6 4" />
+  <text x="606" y="199.2" text-anchor="end" fill="var(--danger)" font-size="10">理论最小壁厚 6.40</text>
+  <text x="46" y="248" text-anchor="middle" fill="var(--text-faint)" font-size="10">2023/24 C修<title>2023/24 C修</title></text>
+  <text x="232.7" y="248" text-anchor="middle" fill="var(--text-faint)" font-size="10">2024 复检<title>2024 复检</title></text>
+  <text x="419.3" y="248" text-anchor="middle" fill="var(--text-faint)" font-size="10">2025/26 C修<title>2025/26 C修</title></text>
+  <text x="606" y="248" text-anchor="middle" fill="var(--text-faint)" font-size="10">当前<title>当前</title></text>
+  <line x1="46" y1="232" x2="606" y2="232" stroke="var(--line)" stroke-width="1" />
+</svg>
+    <details class="chart-data">
+  <summary>查看图表数据<span class="chart-data-count">4 行</span></summary>
+  <div class="chart-data-scroll"><table class="chart-data-table"><thead><tr>
+    <th scope="col">类别</th>
+    <th scope="col">高过第2屏回路4</th>
+  </tr></thead><tbody>
+  <tr><td>2023/24 C修</td><td>7.42</td></tr>
+  <tr><td>2024 复检</td><td>7.28</td></tr>
+  <tr><td>2025/26 C修</td><td>7.05</td></tr>
+  <tr><td>当前</td><td>6.85</td></tr>
+</tbody></table></div>
+</details>
+  </figure>
+</section>
+
+<section class="preview-card">
+  <h2>柱状 · 受热面事件数</h2>
+  <p class="preview-note">柱顶直接标数值，不用再对着 Y 轴估读</p>
+  <figure class="assistant-analysis-chart">
+    <svg class="assistant-chart-svg" viewBox="0 0 640 260" role="img" aria-label="受热面事件数" preserveAspectRatio="xMidYMid meet">
+  <g class="assistant-chart-grid">
+  <line x1="46" y1="230" x2="624" y2="230" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="233.5" text-anchor="end" fill="var(--text-faint)" font-size="10">0</text>
+  <line x1="46" y1="178" x2="624" y2="178" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="181.5" text-anchor="end" fill="var(--text-faint)" font-size="10">12.4</text>
+  <line x1="46" y1="126" x2="624" y2="126" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="129.5" text-anchor="end" fill="var(--text-faint)" font-size="10">24.8</text>
+  <line x1="46" y1="74" x2="624" y2="74" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="77.5" text-anchor="end" fill="var(--text-faint)" font-size="10">37.3</text>
+  <line x1="46" y1="22" x2="624" y2="22" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="25.5" text-anchor="end" fill="var(--text-faint)" font-size="10">49.7</text>
+  <text x="624" y="14" text-anchor="end" fill="var(--text-faint)" font-size="10">条</text>
+  </g>
+  <rect x="80.2" y="37.4" width="27" height="192.6" rx="2" fill="var(--accent)" opacity="0.92"><title>水冷壁 · 检测事件 · 46 条</title></rect>
+  <text x="94.2" y="32.4" text-anchor="middle" fill="var(--text-dim)" font-size="10">46</text>
+  <rect x="176.5" y="96" width="27" height="134" rx="2" fill="var(--accent)" opacity="0.92"><title>高过 · 检测事件 · 32 条</title></rect>
+  <text x="190.5" y="91" text-anchor="middle" fill="var(--text-dim)" font-size="10">32</text>
+  <rect x="272.8" y="117" width="27" height="113" rx="2" fill="var(--accent)" opacity="0.92"><title>高再 · 检测事件 · 27 条</title></rect>
+  <text x="286.8" y="112" text-anchor="middle" fill="var(--text-dim)" font-size="10">27</text>
+  <rect x="369.2" y="154.6" width="27" height="75.4" rx="2" fill="var(--accent)" opacity="0.92"><title>后屏 · 检测事件 · 18 条</title></rect>
+  <text x="383.2" y="149.6" text-anchor="middle" fill="var(--text-dim)" font-size="10">18</text>
+  <rect x="465.5" y="179.8" width="27" height="50.2" rx="2" fill="var(--accent)" opacity="0.92"><title>大屏 · 检测事件 · 12 条</title></rect>
+  <text x="479.5" y="174.8" text-anchor="middle" fill="var(--text-dim)" font-size="10">12</text>
+  <rect x="561.8" y="137.9" width="27" height="92.1" rx="2" fill="var(--accent)" opacity="0.92"><title>省煤器 · 检测事件 · 22 条</title></rect>
+  <text x="575.8" y="132.9" text-anchor="middle" fill="var(--text-dim)" font-size="10">22</text>
+  <text x="94.2" y="246" text-anchor="middle" fill="var(--text-faint)" font-size="10">水冷壁<title>水冷壁</title></text>
+  <text x="190.5" y="246" text-anchor="middle" fill="var(--text-faint)" font-size="10">高过<title>高过</title></text>
+  <text x="286.8" y="246" text-anchor="middle" fill="var(--text-faint)" font-size="10">高再<title>高再</title></text>
+  <text x="383.2" y="246" text-anchor="middle" fill="var(--text-faint)" font-size="10">后屏<title>后屏</title></text>
+  <text x="479.5" y="246" text-anchor="middle" fill="var(--text-faint)" font-size="10">大屏<title>大屏</title></text>
+  <text x="575.8" y="246" text-anchor="middle" fill="var(--text-faint)" font-size="10">省煤器<title>省煤器</title></text>
+  <line x1="46" y1="230" x2="624" y2="230" stroke="var(--line)" stroke-width="1" />
+</svg>
+    <details class="chart-data">
+  <summary>查看图表数据<span class="chart-data-count">6 行</span></summary>
+  <div class="chart-data-scroll"><table class="chart-data-table"><thead><tr>
+    <th scope="col">类别</th>
+    <th scope="col">检测事件</th>
+  </tr></thead><tbody>
+  <tr><td>水冷壁</td><td>46</td></tr>
+  <tr><td>高过</td><td>32</td></tr>
+  <tr><td>高再</td><td>27</td></tr>
+  <tr><td>后屏</td><td>18</td></tr>
+  <tr><td>大屏</td><td>12</td></tr>
+  <tr><td>省煤器</td><td>22</td></tr>
+</tbody></table></div>
+</details>
+  </figure>
+</section>
+
+<section class="preview-card">
+  <h2>横条 · 最薄壁厚排行</h2>
+  <p class="preview-note">悬停显示占比，长名称自动截断并保留完整名</p>
+  <figure class="assistant-analysis-chart">
+    <svg class="assistant-chart-svg" viewBox="0 0 640 260" role="img" aria-label="最薄壁厚排行" preserveAspectRatio="xMidYMid meet">
+  <text x="106" y="34" text-anchor="end" fill="var(--text-dim)" font-size="10.5">1G-GGRQ-GQ-L002-F…<title>1G-GGRQ-GQ-L002-F004-W</title></text>
+  <rect x="120" y="14" width="468" height="22" rx="3" fill="var(--surface-sunken)" />
+  <rect x="120" y="14" width="468" height="22" rx="3" fill="var(--accent)" opacity="0.92"><title>1G-GGRQ-GQ-L002-F004-W · 6.85 · 占 27.8%</title></rect>
+  <text x="594" y="34" fill="var(--text-dim)" font-size="10.5">6.85</text>
+  <text x="106" y="64" text-anchor="end" fill="var(--text-dim)" font-size="10.5">2G-GZRQ-GQ-L032-F…<title>2G-GZRQ-GQ-L032-F004-Q</title></text>
+  <rect x="120" y="44" width="468" height="22" rx="3" fill="var(--surface-sunken)" />
+  <rect x="120" y="44" width="438.6" height="22" rx="3" fill="var(--accent)" opacity="0.92"><title>2G-GZRQ-GQ-L032-F004-Q · 6.42 · 占 26.1%</title></rect>
+  <text x="594" y="64" fill="var(--text-dim)" font-size="10.5">6.42</text>
+  <text x="106" y="94" text-anchor="end" fill="var(--text-dim)" font-size="10.5">1G-SLB-WB-F000-R0…<title>1G-SLB-WB-F000-R025-Q</title></text>
+  <rect x="120" y="74" width="468" height="22" rx="3" fill="var(--surface-sunken)" />
+  <rect x="120" y="74" width="408.6" height="22" rx="3" fill="var(--accent)" opacity="0.92"><title>1G-SLB-WB-F000-R025-Q · 5.98 · 占 24.3%</title></rect>
+  <text x="594" y="94" fill="var(--text-dim)" font-size="10.5">5.98</text>
+  <text x="106" y="124" text-anchor="end" fill="var(--text-dim)" font-size="10.5">2G-DPGRQ-GQ-L001-…<title>2G-DPGRQ-GQ-L001-L002-F007-Q</title></text>
+  <rect x="120" y="104" width="468" height="22" rx="3" fill="var(--surface-sunken)" />
+  <rect x="120" y="104" width="366.2" height="22" rx="3" fill="var(--accent)" opacity="0.92"><title>2G-DPGRQ-GQ-L001-L002-F007-Q · 5.36 · 占 21.8%</title></rect>
+  <text x="594" y="124" fill="var(--text-dim)" font-size="10.5">5.36</text>
+</svg>
+    <details class="chart-data">
+  <summary>查看图表数据<span class="chart-data-count">4 行</span></summary>
+  <div class="chart-data-scroll"><table class="chart-data-table"><thead><tr>
+    <th scope="col">类别</th>
+    <th scope="col">最薄壁厚</th>
+  </tr></thead><tbody>
+  <tr><td>1G-GGRQ-GQ-L002-F004-W</td><td>6.85</td></tr>
+  <tr><td>2G-GZRQ-GQ-L032-F004-Q</td><td>6.42</td></tr>
+  <tr><td>1G-SLB-WB-F000-R025-Q</td><td>5.98</td></tr>
+  <tr><td>2G-DPGRQ-GQ-L001-L002-F007-Q</td><td>5.36</td></tr>
+</tbody></table></div>
+</details>
+  </figure>
+</section>
+
+<section class="preview-card">
+  <h2>环图 · 事件类型构成</h2>
+  <p class="preview-note">扇区带占比提示；类别超容量时聚合为「其余 N 类」，合计始终闭合</p>
+  <figure class="assistant-analysis-chart">
+    <svg class="assistant-chart-svg" viewBox="0 0 640 260" role="img" aria-label="事件类型构成" preserveAspectRatio="xMidYMid meet">
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--surface-sunken)" stroke-width="26.9" />
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--accent)" stroke-width="26.9" stroke-dasharray="156.4 402.1" stroke-dashoffset="0" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>测厚 · 86 · 占 39.3%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--info-violet)" stroke-width="26.9" stroke-dasharray="42.6 402.1" stroke-dashoffset="-157.9" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>金相 · 24 · 占 11%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--ok)" stroke-width="26.9" stroke-dasharray="55.4 402.1" stroke-dashoffset="-202" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>硬度 · 31 · 占 14.2%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--warn)" stroke-width="26.9" stroke-dasharray="31.6 402.1" stroke-dashoffset="-258.9" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>无损 · 18 · 占 8.2%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--danger)" stroke-width="26.9" stroke-dasharray="9.5 402.1" stroke-dashoffset="-292" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>割管 · 6 · 占 2.7%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--text-dim)" stroke-width="26.9" stroke-dasharray="15 402.1" stroke-dashoffset="-303" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>胀粗 · 9 · 占 4.1%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--accent)" stroke-width="26.9" stroke-dasharray="20.5 402.1" stroke-dashoffset="-319.5" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>氧化皮 · 12 · 占 5.5%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--info-violet)" stroke-width="26.9" stroke-dasharray="24.2 402.1" stroke-dashoffset="-341.5" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>焊口 · 14 · 占 6.4%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--ok)" stroke-width="26.9" stroke-dasharray="7.7 402.1" stroke-dashoffset="-367.2" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>蠕变 · 5 · 占 2.3%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--warn)" stroke-width="26.9" stroke-dasharray="5.8 402.1" stroke-dashoffset="-376.4" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>渗透 · 4 · 占 1.8%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--danger)" stroke-width="26.9" stroke-dasharray="11.4 402.1" stroke-dashoffset="-383.8" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>超声 · 7 · 占 3.2%</title></circle>
+  <circle cx="112" cy="130" r="64" fill="none" stroke="var(--text-dim)" stroke-width="26.9" stroke-dasharray="4 402.1" stroke-dashoffset="-396.6" transform="rotate(-90 112 130)" stroke-linecap="butt"><title>射线 · 3 · 占 1.4%</title></circle>
+  <text x="112" y="128" text-anchor="middle" fill="var(--text-hi)" font-size="16" font-weight="700">219</text>
+  <text x="112" y="144" text-anchor="middle" fill="var(--text-faint)" font-size="9.5">合计</text>
+  <rect x="204" y="11" width="8" height="8" rx="2" fill="var(--accent)" />
+  <text x="217" y="18" fill="var(--text-dim)" font-size="10.5">测厚 · 86（39%）</text>
+  <rect x="204" y="29" width="8" height="8" rx="2" fill="var(--info-violet)" />
+  <text x="217" y="36" fill="var(--text-dim)" font-size="10.5">金相 · 24（11%）</text>
+  <rect x="204" y="47" width="8" height="8" rx="2" fill="var(--ok)" />
+  <text x="217" y="54" fill="var(--text-dim)" font-size="10.5">硬度 · 31（14%）</text>
+  <rect x="204" y="65" width="8" height="8" rx="2" fill="var(--warn)" />
+  <text x="217" y="72" fill="var(--text-dim)" font-size="10.5">无损 · 18（8%）</text>
+  <rect x="204" y="83" width="8" height="8" rx="2" fill="var(--danger)" />
+  <text x="217" y="90" fill="var(--text-dim)" font-size="10.5">割管 · 6（3%）</text>
+  <rect x="204" y="101" width="8" height="8" rx="2" fill="var(--text-dim)" />
+  <text x="217" y="108" fill="var(--text-dim)" font-size="10.5">胀粗 · 9（4%）</text>
+  <rect x="204" y="119" width="8" height="8" rx="2" fill="var(--accent)" />
+  <text x="217" y="126" fill="var(--text-dim)" font-size="10.5">氧化皮 · 12（5%）</text>
+  <rect x="204" y="137" width="8" height="8" rx="2" fill="var(--info-violet)" />
+  <text x="217" y="144" fill="var(--text-dim)" font-size="10.5">焊口 · 14（6%）</text>
+  <rect x="204" y="155" width="8" height="8" rx="2" fill="var(--ok)" />
+  <text x="217" y="162" fill="var(--text-dim)" font-size="10.5">蠕变 · 5（2%）</text>
+  <rect x="204" y="173" width="8" height="8" rx="2" fill="var(--warn)" />
+  <text x="217" y="180" fill="var(--text-dim)" font-size="10.5">渗透 · 4（2%）</text>
+  <rect x="204" y="191" width="8" height="8" rx="2" fill="var(--danger)" />
+  <text x="217" y="198" fill="var(--text-dim)" font-size="10.5">超声 · 7（3%）</text>
+  <rect x="204" y="209" width="8" height="8" rx="2" fill="var(--text-dim)" />
+  <text x="217" y="216" fill="var(--text-dim)" font-size="10.5">射线 · 3（1%）</text>
+</svg>
+    <details class="chart-data">
+  <summary>查看图表数据<span class="chart-data-count">13 行</span></summary>
+  <div class="chart-data-scroll"><table class="chart-data-table"><thead><tr>
+    <th scope="col">类别</th>
+    <th scope="col">数值</th>
+    <th scope="col">占比</th>
+  </tr></thead><tbody>
+  <tr><td>测厚</td><td>86</td><td>39.3%</td></tr>
+  <tr><td>金相</td><td>24</td><td>11%</td></tr>
+  <tr><td>硬度</td><td>31</td><td>14.2%</td></tr>
+  <tr><td>无损</td><td>18</td><td>8.2%</td></tr>
+  <tr><td>割管</td><td>6</td><td>2.7%</td></tr>
+  <tr><td>胀粗</td><td>9</td><td>4.1%</td></tr>
+  <tr><td>氧化皮</td><td>12</td><td>5.5%</td></tr>
+  <tr><td>焊口</td><td>14</td><td>6.4%</td></tr>
+  <tr><td>蠕变</td><td>5</td><td>2.3%</td></tr>
+  <tr><td>渗透</td><td>4</td><td>1.8%</td></tr>
+  <tr><td>超声</td><td>7</td><td>3.2%</td></tr>
+  <tr><td>射线</td><td>3</td><td>1.4%</td></tr>
+  <tr><td>合计</td><td>219</td><td>100.0%</td></tr>
+</tbody></table></div>
+</details>
+  </figure>
+</section>
+
+<section class="preview-card">
+  <h2>散点 · 壁厚异常识别</h2>
+  <p class="preview-note">异常点放大变红并铺危险色带；悬停可见管段编码、日期与异常原因</p>
+  <figure class="assistant-analysis-chart">
+    <svg class="assistant-chart-svg" viewBox="0 0 640 260" role="img" aria-label="壁厚异常识别" preserveAspectRatio="xMidYMid meet">
+  <line x1="46" y1="230" x2="622" y2="230" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="233.5" text-anchor="end" fill="var(--text-faint)" font-size="10">5.2</text>
+  <line x1="46" y1="178" x2="622" y2="178" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="181.5" text-anchor="end" fill="var(--text-faint)" font-size="10">5.8</text>
+  <line x1="46" y1="126" x2="622" y2="126" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="129.5" text-anchor="end" fill="var(--text-faint)" font-size="10">6.4</text>
+  <line x1="46" y1="74" x2="622" y2="74" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="77.5" text-anchor="end" fill="var(--text-faint)" font-size="10">7</text>
+  <line x1="46" y1="22" x2="622" y2="22" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />
+  <text x="38" y="25.5" text-anchor="end" fill="var(--text-faint)" font-size="10">7.6</text>
+  <rect x="46" y="86.5" width="576" height="143.5" fill="var(--danger)" opacity="0.06" />
+  <circle cx="85.7" cy="39.3" r="3.2" fill="var(--accent)" opacity="0.72"><title>1G-SLB-WB-F000-R001-Q · 2024-01-10 · 1 记录序号 · 7.42 壁厚(mm)</title></circle>
+  <circle cx="130.9" cy="44.4" r="3.2" fill="var(--accent)" opacity="0.72"><title>1G-SLB-WB-F000-R002-Q · 2024-01-10 · 2 记录序号 · 7.36 壁厚(mm)</title></circle>
+  <circle cx="176" cy="51.1" r="3.2" fill="var(--accent)" opacity="0.72"><title>1G-SLB-WB-F000-R003-Q · 2024-01-11 · 3 记录序号 · 7.28 壁厚(mm)</title></circle>
+  <circle cx="221.1" cy="48.6" r="3.2" fill="var(--accent)" opacity="0.72"><title>2G-SLB-WB-F000-R011-Q · 2024-01-11 · 4 记录序号 · 7.31 壁厚(mm)</title></circle>
+  <circle cx="266.3" cy="59.5" r="3.2" fill="var(--accent)" opacity="0.72"><title>1G-GGRQ-GQ-L002-F004-W · 2024-01-12 · 5 记录序号 · 7.18 壁厚(mm)</title></circle>
+  <circle cx="311.4" cy="56.2" r="3.2" fill="var(--accent)" opacity="0.72"><title>1G-GGRQ-GQ-L003-F002-Q · 2024-01-12 · 6 记录序号 · 7.22 壁厚(mm)</title></circle>
+  <circle cx="356.6" cy="67.1" r="3.2" fill="var(--accent)" opacity="0.72"><title>2G-GZRQ-GQ-L032-F004-Q · 2024-01-13 · 7 记录序号 · 7.09 壁厚(mm)</title></circle>
+  <circle cx="401.7" cy="62.1" r="3.2" fill="var(--accent)" opacity="0.72"><title>2G-GZRQ-GQ-L030-F001-Q · 2024-01-13 · 8 记录序号 · 7.15 壁厚(mm)</title></circle>
+  <circle cx="446.9" cy="212.7" r="4.6" fill="var(--danger)" opacity="0.95" stroke="var(--surface-sunken)" stroke-width="1"><title>2G-DPGRQ-GQ-L001-L002-F007-Q · 2024-01-14 · 9 记录序号 · 5.36 壁厚(mm) · 低于整体下界 6.86mm；减薄率 28.5%（名义 7.50mm）</title></circle>
+  <circle cx="492" cy="73" r="3.2" fill="var(--accent)" opacity="0.72"><title>1G-SMQ-SG-L018-U001-Q · 2024-01-14 · 10 记录序号 · 7.02 壁厚(mm)</title></circle>
+  <circle cx="537.1" cy="76.4" r="3.2" fill="var(--accent)" opacity="0.72"><title>1G-SMQ-SG-L019-U001-Q · 2024-01-15 · 11 记录序号 · 6.98 壁厚(mm)</title></circle>
+  <circle cx="582.3" cy="82.2" r="4.6" fill="var(--danger)" opacity="0.95" stroke="var(--surface-sunken)" stroke-width="1"><title>2G-HPGRQ-GQ-L010-F001-Q · 2024-01-15 · 12 记录序号 · 6.91 壁厚(mm) · 减薄率 21.3%（名义 8.79mm）</title></circle>
+  <line x1="46" y1="86.5" x2="622" y2="86.5" stroke="var(--danger)" stroke-width="1.5" stroke-dasharray="6 4" />
+  <text x="622" y="81.5" text-anchor="end" fill="var(--danger)" font-size="10">IQR 下界 6.86</text>
+  <text x="46" y="252" fill="var(--text-faint)" font-size="10">记录序号</text>
+  <text x="46" y="16" fill="var(--text-faint)" font-size="10">壁厚(mm)</text>
+  <line x1="46" y1="230" x2="622" y2="230" stroke="var(--line)" stroke-width="1" />
+</svg>
+    <details class="chart-data">
+  <summary>查看图表数据<span class="chart-data-count">12 行</span></summary>
+  <div class="chart-data-scroll"><table class="chart-data-table"><thead><tr>
+    <th scope="col">标签</th>
+    <th scope="col">记录序号</th>
+    <th scope="col">壁厚(mm)</th>
+    <th scope="col">判定</th>
+  </tr></thead><tbody>
+  <tr><td>1G-SLB-WB-F000-R001-Q · 2024-01-10</td><td>1</td><td>7.42</td><td>正常</td></tr>
+  <tr><td>1G-SLB-WB-F000-R002-Q · 2024-01-10</td><td>2</td><td>7.36</td><td>正常</td></tr>
+  <tr><td>1G-SLB-WB-F000-R003-Q · 2024-01-11</td><td>3</td><td>7.28</td><td>正常</td></tr>
+  <tr><td>2G-SLB-WB-F000-R011-Q · 2024-01-11</td><td>4</td><td>7.31</td><td>正常</td></tr>
+  <tr><td>1G-GGRQ-GQ-L002-F004-W · 2024-01-12</td><td>5</td><td>7.18</td><td>正常</td></tr>
+  <tr><td>1G-GGRQ-GQ-L003-F002-Q · 2024-01-12</td><td>6</td><td>7.22</td><td>正常</td></tr>
+  <tr><td>2G-GZRQ-GQ-L032-F004-Q · 2024-01-13</td><td>7</td><td>7.09</td><td>正常</td></tr>
+  <tr><td>2G-GZRQ-GQ-L030-F001-Q · 2024-01-13</td><td>8</td><td>7.15</td><td>正常</td></tr>
+  <tr><td>2G-DPGRQ-GQ-L001-L002-F007-Q · 2024-01-14</td><td>9</td><td>5.36</td><td>低于整体下界 6.86mm；减薄率 28.5%（名义 7.50mm）</td></tr>
+  <tr><td>1G-SMQ-SG-L018-U001-Q · 2024-01-14</td><td>10</td><td>7.02</td><td>正常</td></tr>
+  <tr><td>1G-SMQ-SG-L019-U001-Q · 2024-01-15</td><td>11</td><td>6.98</td><td>正常</td></tr>
+  <tr><td>2G-HPGRQ-GQ-L010-F001-Q · 2024-01-15</td><td>12</td><td>6.91</td><td>减薄率 21.3%（名义 8.79mm）</td></tr>
+</tbody></table></div>
+</details>
+  </figure>
+</section>
+  </div>
+</div>
+</body>
+</html>

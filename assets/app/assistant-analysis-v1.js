@@ -386,6 +386,42 @@
    * 5. 图表规格 → SVG（纯字符串，无 DOM）
    * ============================================================ */
 
+  /* 同一页面会并排渲染多张图，渐变/滤镜定义必须带序号，否则后一张会引用到前一张的 defs */
+  var chartSeq = 0;
+
+  function nextChartId(prefix) {
+    chartSeq += 1;
+    return 'btChart' + chartSeq + (prefix ? '-' + prefix : '');
+  }
+
+  /* 悬停提示统一走 SVG 原生 <title>：无需额外 JS，打印/导出 SVG 时也随图形一起保留 */
+  function titleNode(text) {
+    if (text === null || text === undefined || text === '') return '';
+    return '<title>' + esc(text) + '</title>';
+  }
+
+  function joinLabel(parts) {
+    return parts.filter(function (part) {
+      return part !== null && part !== undefined && String(part) !== '';
+    }).join(' · ');
+  }
+
+  /* 轴标签按实际可用宽度截断，避免长管段编码互相压字 */
+  function clipLabel(text, maxChars) {
+    var value = String(text === null || text === undefined ? '' : text);
+    if (!maxChars || maxChars < 2) return value;
+    return value.length > maxChars ? value.slice(0, maxChars - 1) + '…' : value;
+  }
+
+  /* 数据标注专用：坐标轴刻度用 axisText（1 位小数）足够，但壁厚 6.85 被写成 6.8 就是口径失真，
+     所以点上数值、悬停提示、数据表一律走这里，最多保留 2 位小数。 */
+  function valueText(value) {
+    var n = num(value);
+    if (n === null) return '—';
+    if (Math.abs(n) >= 1000) return intText(n);
+    return fixed(n, 2);
+  }
+
   function emptyChartSvg(options) {
     var opts = isObject(options) ? options : {};
     var width = num(opts.width) || 460;
@@ -427,6 +463,91 @@
     if (!categories.length || !series.length) return emptyChartSvg({ width: width, height: height, text: opts.emptyText, label: label });
     if (type === 'line') return renderLine(svgHead, categories, series, c, width, height);
     return renderBar(svgHead, categories, series, c, width, height);
+  }
+
+  /* ============================================================
+   * 5b. 图表规格 → 数据表（图形看不懂/要核对口径时的另一条通道）
+   * 只依赖 chart 规格本身，与 chartSvg 共用同一份数据，两边数字必然一致。
+   * ============================================================ */
+
+  function chartTable(chart) {
+    var c = isObject(chart) ? chart : {};
+    var type = c.type || 'bar';
+    var categories = toArray(c.categories).map(function (item) { return String(item); });
+    var series = toArray(c.series).filter(isObject).map(function (item) {
+      return { name: String(item.name || ''), values: toArray(item.values).map(function (v) { return num(v); }) };
+    });
+    var points = toArray(c.points).filter(isObject);
+    var valueHeader = c.yLabel ? '数值(' + c.yLabel + ')' : '数值';
+
+    if (type === 'scatter') {
+      if (!points.length) return null;
+      var threshold = c.threshold ? num(c.threshold.value) : null;
+      return {
+        columns: ['标签', c.xLabel || 'X', c.yLabel || 'Y', '判定'],
+        rows: points.map(function (point, index) {
+          var px = num(point.x);
+          var py = num(point.y);
+          var flagged = point.flagged === true || (threshold !== null && py !== null && py < threshold);
+          return [
+            point.label || '记录 ' + (index + 1),
+            px === null ? '—' : valueText(px),
+            py === null ? '—' : valueText(py),
+            flagged ? (point.flagNote || '异常') : '正常'
+          ];
+        })
+      };
+    }
+
+    if (!categories.length || !series.length) return null;
+
+    if (type === 'donut') {
+      var values = toArray(series[0].values).map(function (v) { return Math.max(0, num(v) || 0); });
+      var total = sum(values);
+      return {
+        columns: ['类别', valueHeader, '占比'],
+        rows: categories.map(function (name, index) {
+          var value = values[index] || 0;
+          return [name, intText(value), total > 0 ? pct(value / total, 1) : '—'];
+        }).concat(total > 0 ? [['合计', intText(total), '100.0%']] : [])
+      };
+    }
+
+    return {
+      columns: ['类别'].concat(series.map(function (item) { return item.name || valueHeader; })),
+      rows: categories.map(function (name, index) {
+        return [name].concat(series.map(function (item) {
+          var value = item.values[index];
+          return typeof value === 'number' && isFinite(value) ? valueText(value) : '—';
+        }));
+      })
+    };
+  }
+
+  /* 图表下方的可折叠数据表：用 <details> 实现，不依赖任何 JS 事件绑定，
+     因此在总览、AI 助手、报告等任何 innerHTML 注入场景都能直接用。 */
+  function chartTableMarkup(chart, options) {
+    var table = chartTable(chart);
+    if (!table || !table.rows.length) return '';
+    var opts = isObject(options) ? options : {};
+    var cap = num(opts.maxRows) || 60;
+    var shown = table.rows.slice(0, cap);
+    var lines = ['<details class="chart-data">',
+      '  <summary>' + esc(opts.summary || '查看图表数据') + '<span class="chart-data-count">' + esc(intText(table.rows.length)) + ' 行</span></summary>',
+      '  <div class="chart-data-scroll"><table class="chart-data-table"><thead><tr>'];
+    table.columns.forEach(function (column) {
+      lines.push('    <th scope="col">' + esc(column) + '</th>');
+    });
+    lines.push('  </tr></thead><tbody>');
+    shown.forEach(function (row) {
+      lines.push('  <tr>' + row.map(function (cell) { return '<td>' + esc(cell) + '</td>'; }).join('') + '</tr>');
+    });
+    lines.push('</tbody></table></div>');
+    if (table.rows.length > shown.length) {
+      lines.push('  <p class="chart-data-more">仅列前 ' + esc(intText(shown.length)) + ' 行，共 ' + esc(intText(table.rows.length)) + ' 行。</p>');
+    }
+    lines.push('</details>');
+    return lines.join('\n');
   }
 
   function plotFrame(width, height, padL, padR, padT, padB) {
@@ -516,11 +637,15 @@
   function xLabelsMarkup(frame, categories, y) {
     if (!categories.length) return [];
     var step = Math.max(1, Math.ceil(categories.length / 6));
+    var shown = Math.ceil(categories.length / step);
+    /* 每个标签能占的宽度 ÷ 单个字符约 5.6px（10px 字号），得出允许的字数上限 */
+    var maxChars = Math.max(3, Math.floor((frame.w / Math.max(1, shown)) / 5.6));
     var lines = [];
     for (var i = 0; i < categories.length; i += 1) {
       if (i % step !== 0 && i !== categories.length - 1) continue;
       var x = frame.left + (categories.length === 1 ? frame.w / 2 : (frame.w * i) / (categories.length - 1));
-      lines.push('  <text x="' + fixed(x, 1) + '" y="' + y + '" text-anchor="middle" fill="var(--text-faint)" font-size="10">' + esc(categories[i]) + '</text>');
+      lines.push('  <text x="' + fixed(x, 1) + '" y="' + y + '" text-anchor="middle" fill="var(--text-faint)" font-size="10">' +
+        esc(clipLabel(categories[i], maxChars)) + titleNode(categories[i]) + '</text>');
     }
     return lines;
   }
@@ -542,7 +667,9 @@
   }
 
   function renderLine(head, categories, series, chart, width, height) {
-    var frame = plotFrame(width, height, 46, 16, 22, 28);
+    var single = series.length === 1;
+    /* 单系列时右侧多留 30px，给末点数值标签让位 */
+    var frame = plotFrame(width, height, 46, single ? 34 : 16, 22, 28);
     var range = lineAxisRange(series, chart);
     var axis = buildYAxis(frame, range.max, range.min);
     var scaleY = axisScale(axis, frame);
@@ -557,15 +684,33 @@
         var value = series[s].values[i];
         if (typeof value !== 'number') continue;
         var x = frame.left + (categories.length === 1 ? frame.w / 2 : (frame.w * i) / (categories.length - 1));
-        coords.push({ x: x, y: scaleY(value), v: value });
+        coords.push({ x: x, y: scaleY(value), v: value, label: categories[i] });
       }
       if (!coords.length) continue;
       var path = coords.map(function (point, index) {
         return (index ? 'L' : 'M') + fixed(point.x, 1) + ' ' + fixed(point.y, 1);
       }).join(' ');
+      /* 面积渐变只在单系列时铺，多系列互相遮盖反而读不出趋势 */
+      if (single && coords.length > 1) {
+        var fillId = nextChartId('area');
+        lines.push('  <defs><linearGradient id="' + fillId + '" x1="0" y1="0" x2="0" y2="1">' +
+          '<stop offset="0%" stop-color="' + color + '" stop-opacity="0.26" />' +
+          '<stop offset="100%" stop-color="' + color + '" stop-opacity="0.02" /></linearGradient></defs>');
+        lines.push('  <path d="' + path + ' L' + fixed(coords[coords.length - 1].x, 1) + ' ' + fixed(frame.bottom, 1) +
+          ' L' + fixed(coords[0].x, 1) + ' ' + fixed(frame.bottom, 1) + ' Z" fill="url(#' + fillId + ')" stroke="none" />');
+      }
       lines.push('  <path d="' + path + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />');
       for (var k = 0; k < coords.length; k += 1) {
-        lines.push('  <circle cx="' + fixed(coords[k].x, 1) + '" cy="' + fixed(coords[k].y, 1) + '" r="3" fill="' + color + '" stroke="var(--surface-sunken)" stroke-width="1" />');
+        var isLast = single && k === coords.length - 1;
+        lines.push('  <circle cx="' + fixed(coords[k].x, 1) + '" cy="' + fixed(coords[k].y, 1) + '" r="' + (isLast ? 4 : 3) +
+          '" fill="' + color + '" stroke="var(--surface-sunken)" stroke-width="1">' +
+          titleNode(joinLabel([coords[k].label, series[s].name, valueText(coords[k].v) + (chart.yLabel ? ' ' + chart.yLabel : '')])) + '</circle>');
+      }
+      /* 末点直接标数值：最新一期 thickness/寿命是读图时最关心的一个数 */
+      if (single) {
+        var last = coords[coords.length - 1];
+        lines.push('  <text x="' + fixed(last.x + 7, 1) + '" y="' + fixed(last.y + 3.5, 1) + '" fill="' + color +
+          '" font-size="11" font-weight="700">' + esc(valueText(last.v)) + '</text>');
       }
     }
     if (chart.threshold && typeof num(chart.threshold.value) === 'number') {
@@ -592,6 +737,8 @@
     var groups = categories.length;
     var band = frame.w / Math.max(1, groups);
     var barW = Math.max(2, Math.min(28, (band * 0.62) / series.length));
+    /* 柱顶标数值：只在单系列且柱子不多时标，多系列靠悬停提示读数 */
+    var showValue = series.length === 1 && groups <= 12;
     for (var s = 0; s < series.length; s += 1) {
       var color = PALETTE[s % PALETTE.length];
       for (var i = 0; i < groups; i += 1) {
@@ -601,14 +748,21 @@
         var groupCenter = frame.left + band * (i + 0.5);
         var x = groupCenter - (barW * series.length) / 2 + barW * s;
         lines.push('  <rect x="' + fixed(x, 1) + '" y="' + fixed(frame.bottom - h, 1) + '" width="' + fixed(barW - 1, 1) + '" height="' + fixed(h, 1) +
-          '" rx="2" fill="' + color + '" opacity="0.92" />');
+          '" rx="2" fill="' + color + '" opacity="0.92">' +
+          titleNode(joinLabel([categories[i], series[s].name, valueText(value) + (chart.yLabel ? ' ' + chart.yLabel : '')])) + '</rect>');
+        if (showValue) {
+          lines.push('  <text x="' + fixed(groupCenter, 1) + '" y="' + fixed(frame.bottom - h - 5, 1) + '" text-anchor="middle" fill="var(--text-dim)" font-size="10">' +
+            esc(valueText(value)) + '</text>');
+        }
       }
     }
     var step = Math.max(1, Math.ceil(groups / 7));
+    var shownGroups = Math.ceil(groups / step);
+    var maxCatChars = Math.max(3, Math.floor((frame.w / Math.max(1, shownGroups)) / 5.6));
     for (var g = 0; g < groups; g += 1) {
       if (g % step !== 0 && g !== groups - 1) continue;
       lines.push('  <text x="' + fixed(frame.left + band * (g + 0.5), 1) + '" y="' + (frame.bottom + 16) +
-        '" text-anchor="middle" fill="var(--text-faint)" font-size="10">' + esc(categories[g]) + '</text>');
+        '" text-anchor="middle" fill="var(--text-faint)" font-size="10">' + esc(clipLabel(categories[g], maxCatChars)) + titleNode(categories[g]) + '</text>');
     }
     lines.push('  <line x1="' + frame.left + '" y1="' + frame.bottom + '" x2="' + frame.right + '" y2="' + frame.bottom + '" stroke="var(--line)" stroke-width="1" />');
     lines.push('</svg>');
@@ -624,18 +778,24 @@
     var barMax = width - barLeft - 52;
     var max = Math.max(1, maxOfSeries([series]));
     var lines = [head];
+    var totalValue = 0;
+    for (var t = 0; t < rows; t += 1) totalValue += Math.max(0, num(series.values[t]) || 0);
     for (var i = 0; i < rows; i += 1) {
       var value = num(series.values[i]) || 0;
       var y = top + rowH * i;
       var barH = Math.max(6, rowH - 8);
       var len = Math.max(value > 0 ? 3 : 0, (barMax * value) / max);
-      lines.push('  <text x="' + (labelW - 6) + '" y="' + fixed(y + barH - 2, 1) + '" text-anchor="end" fill="var(--text-dim)" font-size="10.5">' + esc(categories[i]) + '</text>');
+      /* 排行条带占比：一眼看出头部受热面占全部事件的权重 */
+      var shareText = totalValue > 0 ? ' · 占 ' + pct(value / totalValue, 1) : '';
+      lines.push('  <text x="' + (labelW - 6) + '" y="' + fixed(y + barH - 2, 1) + '" text-anchor="end" fill="var(--text-dim)" font-size="10.5">' +
+        esc(clipLabel(categories[i], Math.floor(labelW / 6))) + titleNode(categories[i]) + '</text>');
       lines.push('  <rect x="' + barLeft + '" y="' + fixed(y, 1) + '" width="' + fixed(barMax, 1) + '" height="' + fixed(barH, 1) + '" rx="3" fill="var(--surface-sunken)" />');
       if (value > 0) {
         lines.push('  <rect x="' + barLeft + '" y="' + fixed(y, 1) + '" width="' + fixed(len, 1) + '" height="' + fixed(barH, 1) +
-          '" rx="3" fill="' + PALETTE[0] + '" opacity="0.92" />');
+          '" rx="3" fill="' + PALETTE[0] + '" opacity="0.92">' +
+          titleNode(joinLabel([categories[i], valueText(value)]) + shareText) + '</rect>');
       }
-      lines.push('  <text x="' + fixed(barLeft + barMax + 6, 1) + '" y="' + fixed(y + barH - 2, 1) + '" fill="var(--text-dim)" font-size="10.5">' + esc(axisText(value)) + '</text>');
+      lines.push('  <text x="' + fixed(barLeft + barMax + 6, 1) + '" y="' + fixed(y + barH - 2, 1) + '" fill="var(--text-dim)" font-size="10.5">' + esc(valueText(value)) + '</text>');
     }
     lines.push('</svg>');
     return lines.join('\n');
@@ -658,7 +818,8 @@
         var len = (circumference * values[i]) / total;
         lines.push('  <circle cx="' + cx + '" cy="' + cy + '" r="' + fixed(r, 1) + '" fill="none" stroke="' + PALETTE[i % PALETTE.length] +
           '" stroke-width="' + fixed(stroke, 1) + '" stroke-dasharray="' + fixed(Math.max(0, len - 1.5), 1) + ' ' + fixed(circumference, 1) +
-          '" stroke-dashoffset="' + fixed(-offset, 1) + '" transform="rotate(-90 ' + cx + ' ' + cy + ')" stroke-linecap="butt" />');
+          '" stroke-dashoffset="' + fixed(-offset, 1) + '" transform="rotate(-90 ' + cx + ' ' + cy + ')" stroke-linecap="butt">' +
+          titleNode(joinLabel([categories[i], intText(values[i]), '占 ' + pct(values[i] / total, 1)])) + '</circle>');
         offset += len;
       }
     }
@@ -666,12 +827,24 @@
     lines.push('  <text x="' + cx + '" y="' + fixed(cy + 14, 1) + '" text-anchor="middle" fill="var(--text-faint)" font-size="9.5">合计</text>');
     var legendX = cx + r + 28;
     var maxItems = Math.max(1, Math.floor((height - 16) / 18));
-    for (var j = 0; j < categories.length && j < maxItems; j += 1) {
+    /* 图例放不下时不能静默丢类别：聚成一行「其余 N 类」，保证合计口径闭合 */
+    var overflow = categories.length > maxItems;
+    var shownItems = overflow ? Math.max(1, maxItems - 1) : maxItems;
+    for (var j = 0; j < categories.length && j < shownItems; j += 1) {
       var y = 18 + j * 18;
       var share = total > 0 ? values[j] / total : 0;
       lines.push('  <rect x="' + fixed(legendX, 1) + '" y="' + (y - 7) + '" width="8" height="8" rx="2" fill="' + PALETTE[j % PALETTE.length] + '" />');
       lines.push('  <text x="' + fixed(legendX + 13, 1) + '" y="' + y + '" fill="var(--text-dim)" font-size="10.5">' +
-        esc(categories[j]) + ' · ' + esc(intText(values[j])) + '（' + esc(pct(share, 0)) + '）</text>');
+        esc(clipLabel(categories[j], 14)) + ' · ' + esc(intText(values[j])) + '（' + esc(pct(share, 0)) + '）</text>');
+    }
+    if (overflow) {
+      var restValue = 0;
+      for (var m = shownItems; m < categories.length; m += 1) restValue += values[m] || 0;
+      var restNames = categories.slice(shownItems).join('、');
+      lines.push('  <rect x="' + fixed(legendX, 1) + '" y="' + (18 + shownItems * 18 - 7) + '" width="8" height="8" rx="2" fill="var(--text-ghost)" />');
+      lines.push('  <text x="' + fixed(legendX + 13, 1) + '" y="' + (18 + shownItems * 18) + '" fill="var(--text-dim)" font-size="10.5">' +
+        esc('其余 ' + (categories.length - shownItems) + ' 类') + ' · ' + esc(intText(restValue)) + '（' + esc(pct(total > 0 ? restValue / total : 0, 0)) + '）' +
+        titleNode(restNames) + '</text>');
     }
     lines.push('</svg>');
     return lines.join('\n');
@@ -708,13 +881,27 @@
       lines.push('  <line x1="' + frame.left + '" y1="' + fixed(yy, 1) + '" x2="' + frame.right + '" y2="' + fixed(yy, 1) + '" stroke="var(--line-subtle)" stroke-width="1" stroke-dasharray="2 4" />');
       lines.push('  <text x="' + (frame.left - 8) + '" y="' + fixed(yy + 3.5, 1) + '" text-anchor="end" fill="var(--text-faint)" font-size="10">' + esc(axisText(yv)) + '</text>');
     }
+    /* 低于阈值的区域铺一层淡色带，异常点落在带内，风险区间不用靠想象 */
+    var thresholdNum = chart.threshold ? num(chart.threshold.value) : null;
+    if (thresholdNum !== null && thresholdNum > minY && thresholdNum < maxY) {
+      var bandY = frame.bottom - frame.h * ((thresholdNum - minY) / (maxY - minY));
+      lines.push('  <rect x="' + frame.left + '" y="' + fixed(bandY, 1) + '" width="' + fixed(frame.w, 1) + '" height="' + fixed(frame.bottom - bandY, 1) +
+        '" fill="var(--danger)" opacity="0.06" />');
+    }
+    var xUnit = chart.xLabel ? ' ' + chart.xLabel : '';
+    var yUnit = chart.yLabel ? ' ' + chart.yLabel : '';
     for (var k = 0; k < points.length; k += 1) {
       var pxx = num(points[k].x);
       var pyy = num(points[k].y);
       if (pxx === null || pyy === null) continue;
       var cx = frame.left + frame.w * ((pxx - minX) / (maxX - minX));
       var cy = frame.bottom - frame.h * ((pyy - minY) / (maxY - minY));
-      lines.push('  <circle cx="' + fixed(cx, 1) + '" cy="' + fixed(cy, 1) + '" r="3.2" fill="var(--accent)" opacity="0.72" />');
+      var flagged = points[k].flagged === true || (thresholdNum !== null && pyy < thresholdNum);
+      /* 异常点放大并换危险色；提示里带管段编码/日期，才能直接定位到具体管段 */
+      lines.push('  <circle cx="' + fixed(cx, 1) + '" cy="' + fixed(cy, 1) + '" r="' + (flagged ? 4.6 : 3.2) +
+        '" fill="' + (flagged ? 'var(--danger)' : 'var(--accent)') + '" opacity="' + (flagged ? '0.95' : '0.72') + '"' +
+        (flagged ? ' stroke="var(--surface-sunken)" stroke-width="1"' : '') + '>' +
+        titleNode(joinLabel([points[k].label, valueText(pxx) + xUnit, valueText(pyy) + yUnit, flagged ? (points[k].flagNote || '异常点') : ''])) + '</circle>');
     }
     if (chart.threshold && typeof num(chart.threshold.value) === 'number') {
       var tv = num(chart.threshold.value);
@@ -1267,8 +1454,12 @@
 
   function analyzeCorrelation(rows) {
     var pairs = [];
+    var pairRows = [];
     for (var i = 0; i < rows.length; i += 1) {
-      if (rows[i].thickness !== null && rows[i].hardness !== null) pairs.push([rows[i].thickness, rows[i].hardness]);
+      if (rows[i].thickness !== null && rows[i].hardness !== null) {
+        pairs.push([rows[i].thickness, rows[i].hardness]);
+        pairRows.push(rows[i]);
+      }
     }
     if (pairs.length < 3) {
       return { empty: true, message: '同时有壁厚和硬度的记录只有 ' + pairs.length + ' 条，至少需要 3 条才能算相关性。' };
@@ -1288,7 +1479,10 @@
     return {
       chart: {
         type: 'scatter',
-        points: pairs.map(function (pair) { return { x: pair[0], y: pair[1] }; }),
+        points: pairs.map(function (pair, index) {
+          var row = pairRows[index] || {};
+          return { x: pair[0], y: pair[1], label: joinLabel([row.code, row.date, UNIT_LABEL[row.unit]]) };
+        }),
         xLabel: '壁厚(mm)',
         yLabel: '硬度(HB)',
         ariaLabel: '壁厚与硬度散点图'
@@ -1317,6 +1511,7 @@
     var lower = q1 - 1.5 * iqr;
     var flagged = [];
     var lowRatio = 0;
+    var flaggedMarks = {};
     for (var i = 0; i < withThickness.length; i += 1) {
       var row = withThickness[i];
       var reasons = [];
@@ -1327,6 +1522,7 @@
       }
       if (reasons.length) {
         flagged.push({ row: row, reasons: reasons });
+        flaggedMarks[i] = reasons.join('；');
       }
     }
     flagged.sort(function (a, b) {
@@ -1337,7 +1533,15 @@
     var title = '壁厚异常识别';
     var chart = {
       type: 'scatter',
-      points: withThickness.map(function (row, index) { return { x: index + 1, y: row.thickness }; }),
+      points: withThickness.map(function (row, index) {
+        return {
+          x: index + 1,
+          y: row.thickness,
+          label: joinLabel([row.code, row.date, UNIT_LABEL[row.unit]]),
+          flagged: Boolean(flaggedMarks[index]),
+          flagNote: flaggedMarks[index] || ''
+        };
+      }),
       yLabel: '壁厚(mm)',
       xLabel: '记录序号',
       threshold: { value: lower, label: 'IQR 下界 ' + fixed(lower, 2) },
@@ -2064,6 +2268,8 @@
     parseAnalysis: parseAnalysis,
     runAnalysis: runAnalysis,
     chartSvg: chartSvg,
+    chartTable: chartTable,
+    chartTableMarkup: chartTableMarkup,
     describeSpec: describeSpec,
     capabilities: capabilities,
     buildEvidence: buildEvidence,
