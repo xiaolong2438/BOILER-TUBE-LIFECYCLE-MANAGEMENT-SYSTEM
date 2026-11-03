@@ -1325,6 +1325,79 @@ main {
   margin-bottom: 0;
 }
 
+/* 只读查重报告：与当前筛选联动，保留每条源记录供核对。 */
+.dm-duplicate-report {
+  margin: 16px 0;
+  padding: 16px;
+  max-height: min(65vh, 520px);
+  overflow-y: auto;
+  background: var(--surface-glass-2, #fff);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.dm-duplicate-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
+.dm-duplicate-head span,
+.dm-duplicate-details,
+.dm-duplicate-empty {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.dm-duplicate-group {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.dm-duplicate-group summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.dm-duplicate-group summary strong {
+  margin-left: 8px;
+  color: var(--warn);
+}
+
+.dm-duplicate-details {
+  padding: 10px 0 0 18px;
+}
+
+.dm-duplicate-details ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.tl-sources {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.tl-sources summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.tl-sources ul {
+  margin: 6px 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
 .dm-filter-row .unit-switch {
   height: 50px;
   padding-block: 4px;

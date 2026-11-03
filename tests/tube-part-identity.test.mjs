@@ -34,7 +34,7 @@ const ctx = vm.createContext({
   Date, Set, Map
 });
 for (const name of [
-  'normalizeCodeDirection', 'normalizedTubeCode', 'tubePositionKey', 'sameTubeMeasurement',
+  'normalizeCodeDirection', 'normalizedTubeCode', 'dmDuplicateKey', 'tubePositionKey', 'sameTubeMeasurement',
   'isExactInspectionDate', 'tubeEvidenceEvents', 'currentTubeEvents', 'parseTubeCode',
   'matrixRowMatches', 'matchComponentFromCode', 'validateCodeAgainstMatrix', 'validateCodeAgainstRules',
   'extractThicknessData', 'getTubeProfileData', 'matrixExpandCodes', 'matrixRowCount',
@@ -82,6 +82,22 @@ ctx.userDB.events = [event(q, '2022-05-01', '测厚', { thickness: '7.2' }), eve
 const profile = ctx.getTubeProfileData(legacyW);
 assert.equal(profile.localEvents.length, 2, '历史数字尾与字母尾是同一部位');
 assert.equal(profile.data.status, 'warn', '同管异常观察应提升档案状态');
+const priorEvents = ctx.userDB.events;
+ctx.userDB.events = [
+  event(w, '2026-04', '方法：射线；结果：合格', { sourceId: '源记录A', batch: '2026年C修' }),
+  event(legacyW, '2026-04', '方法：射线；结果：合格', { sourceId: '源记录B', batch: '2026年C修' })
+];
+const folded = ctx.getTubeProfileData(w);
+assert.equal(folded.localEvents.length, 2, '原始证据不删除');
+assert.equal(folded.timeline.length, 1, '同日期同编码同检查与结果只显示一个时间线节点');
+assert.match(folded.timeline[0].d, /关联 2 条来源/);
+assert.match(folded.timeline[0].d, /源记录A[\s\S]*源记录B/, '折叠后可展开核对两条来源');
+ctx.userDB.events.push(
+  event(w, '2026-04', '方法：射线；结果：不合格', { sourceId: '源记录C' }),
+  event(w, '2026-04', '方法：射线；结果：合格', { sourceId: '源记录D', thickness: '6.8' })
+);
+assert.equal(ctx.getTubeProfileData(w).timeline.length, 3, '不同结果或测厚值不折叠');
+ctx.userDB.events = priorEvents;
 assert.ok(profile.data.spec.startsWith('回路4 底弯段 Φ51×8 SA-213TP304H'), '档案页规格材质按12回路基准显示确定值，不再整库罗列');
 // 高过Q直管按回路基准显示所在腿沿流程分段链（多种规格按顺序全部列出，邻底弯段打标）
 ctx.userDB.events.push(event('1G-GGRQ-GQ-L025-F002-Q', '2026-04', '测厚', { thickness: '7.4' }));

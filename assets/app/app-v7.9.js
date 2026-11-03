@@ -394,6 +394,47 @@ function dmRowInScope(boilerOf, codes, boilerFilter, sysFilter, codeQuery) {
   if (codeQuery && !codes.some(c => String(c || '').toUpperCase().includes(codeQuery))) return false;
   return true;
 }
+/* 查重口径：日期原文、规范管码（保留 Q/W 部位）、检查类型/内容及结果均相同。
+   规格材质和来源 ID 是追溯信息，不作为重复键；测厚/硬度值不同绝不合并。 */
+function dmDuplicateKey(record) {
+  const date = String(record.date || '').trim();
+  const code = normalizedTubeCode(record.code);
+  const text = value => String(value ?? '').trim().replace(/\s+/g, ' ');
+  const desc = text(record.desc);
+  const thickness = text(record.thickness);
+  const hardness = text(record.hardness);
+  if (!date || !code || (!desc && !thickness && !hardness)) return '';
+  const result = text(record.inspectionResult || record.result || (desc.match(/结果[：:]\s*([^；;，,]+)/) || [])[1]);
+  return JSON.stringify([date, code, text(record.type), desc, result, thickness, hardness]);
+}
+function dmDuplicateGroups(records) {
+  const groups = new Map();
+  records.forEach(record => {
+    const key = dmDuplicateKey(record);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(record);
+  });
+  return [...groups.values()].filter(group => group.length > 1).sort((a, b) => b.length - a.length || String(b[0].date).localeCompare(String(a[0].date)));
+}
+function dmToggleDuplicateReport() {
+  const report = document.getElementById('dm-duplicate-report');
+  if (!report) return;
+  report.hidden = !report.hidden;
+  renderDMTable();
+}
+function renderDmDuplicateReport(records) {
+  const report = document.getElementById('dm-duplicate-report');
+  if (!report || report.hidden) return;
+  const groups = dmDuplicateGroups(records);
+  const extra = groups.reduce((sum, group) => sum + group.length - 1, 0);
+  report.innerHTML = `<div class="dm-duplicate-head"><strong>当前筛选范围：${groups.length} 组重复、涉及 ${extra + groups.length} 条记录（超出 ${extra} 条）</strong><span>按相同日期、规范管码、检查类型/内容及结果查重；仅标记，不自动删除。</span></div>` +
+    (groups.length ? groups.map(group => {
+      const record = group[0];
+      const result = record.inspectionResult || record.result || (String(record.desc || '').match(/结果[：:]\s*([^；;，,]+)/) || [])[1] || '未单独记录';
+      return `<details class="dm-duplicate-group"><summary>${escapeHTML(record.date)} · ${escapeHTML(normalizedTubeCode(record.code))} · ${escapeHTML(record.type || '检查')} · ${escapeHTML(result)} <strong>× ${group.length}</strong></summary><div class="dm-duplicate-details"><div>${escapeHTML(record.desc || '测厚/硬度记录')} ${record.thickness ? `· 厚度 ${escapeHTML(record.thickness)} mm` : ''}${record.hardness ? `· 硬度 ${escapeHTML(record.hardness)} HB` : ''}</div><ul>${group.map(item => `<li>来源 ID：${escapeHTML(item.sourceId || '无（手工或旧版记录）')} · 批次：${escapeHTML(item.batch || '未记录')} · 原始管码：${escapeHTML(item.code || '')}</li>`).join('')}</ul></div></details>`;
+    }).join('') : '<div class="dm-duplicate-empty">当前筛选范围内未发现符合上述条件的重复记录。</div>');
+}
 /* 方向感知归一（与 AI 助手清洗同一口径）：现场可归近一端计数，落库统一为台账规范方向。
    依赖 assistant-core 的 canonicalTubeCode；组件未加载时原样返回，不阻断保存。 */
 function normalizeCodeDirection(code) {
@@ -542,10 +583,12 @@ function renderDMTable() {
   }
   const bar = document.getElementById('dm-batch-bar');
   if (bar) {
-    if (!manage) { bar.innerHTML = ''; }
+    const report = document.getElementById('dm-duplicate-report');
+    const checkButton = `<button type="button" class="btn btn-outline" style="padding:3px 12px; font-size:11px;" onclick="dmToggleDuplicateReport()">${report && !report.hidden ? '收起查重' : '🔍 查重'}</button>`;
+    if (!manage) { bar.innerHTML = checkButton; }
     else {
       const n = dmSelectedTs.size;
-      bar.innerHTML =
+      bar.innerHTML = checkButton +
         '<button class="btn btn-outline" style="padding:3px 12px; font-size:11px;" onclick="dmToggleAll(true)">全选</button>' +
         '<button class="btn btn-outline" style="padding:3px 12px; font-size:11px;" onclick="dmInvertSelection()">反选</button>' +
         '<button class="btn btn-outline" style="padding:3px 12px; font-size:11px;" onclick="dmClearSelection()">清除选择</button>' +
@@ -554,6 +597,7 @@ function renderDMTable() {
           : '<span style="font-size:11px; color:var(--text-dim);">勾选行后可全选/反选并批量删除</span>');
     }
   }
+  renderDmDuplicateReport(all);
   tbody.innerHTML = all.map(r => {
     const ts = Number(r.ts);
     const checked = dmSelectedTs.has(ts) ? ' checked' : '';
@@ -2054,7 +2098,21 @@ function getTubeProfileData(rawCode) {
   if(!d) return null;
   const adverse = localEvents.some(e => /发现异物|氧化皮|裂纹|不合格|泄漏/.test(`${e.type || ''} ${e.desc || ''}`));
   if(adverse) d = { ...d, status: d.status === 'danger' ? 'danger' : 'warn', risk: '同管检测记录存在异常观察，请核实处置及复检闭环' };
-  const localEvts = localEvents.map(e => ({date: e.date, t: e.type, d: `${escapeHTML(e.code)} · ${escapeHTML(e.desc)} <span style="color:var(--accent);font-size:10px;border:1px solid var(--accent);padding:1px 4px;border-radius:3px;">手工录入</span>`}));
+  /* 相同检查在时间线只占一个节点，但不删记录；每条来源可展开追溯。 */
+  const localGroups = new Map();
+  localEvents.forEach((event, index) => {
+    const key = dmDuplicateKey(event) || `__unique_${index}`;
+    if (!localGroups.has(key)) localGroups.set(key, []);
+    localGroups.get(key).push(event);
+  });
+  const localEvts = [...localGroups.values()].map(group => {
+    const e = group[0];
+    const badge = e.sourceId ? '导入记录' : '本地记录';
+    const sources = group.length > 1
+      ? `<details class="tl-sources"><summary>关联 ${group.length} 条来源（展开核对）</summary><ul>${group.map(item => `<li>来源 ID：${escapeHTML(item.sourceId || '无')} · 批次：${escapeHTML(item.batch || '未记录')} · 记录编码：${escapeHTML(item.code || '')}</li>`).join('')}</ul></details>`
+      : '';
+    return {date: e.date, t: e.type, d: `${escapeHTML(e.code)} · ${escapeHTML(e.desc)} <span style="color:var(--accent);font-size:10px;border:1px solid var(--accent);padding:1px 4px;border-radius:3px;">${badge}</span>${sources}`};
+  });
   const timeline = [...(d.timeline || []), ...localEvts].sort((a,b) => new Date(a.date) - new Date(b.date));
   const thicknessData = extractThicknessData(code, { includeSystem: false });
   return { code, data: d, source, badge, timeline, thicknessData, localEvents };
