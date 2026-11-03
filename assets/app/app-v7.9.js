@@ -430,6 +430,53 @@ function dmTypeInScope(type) {
   const wanted = getDmTypeFilter();
   return !wanted || String(type || '').trim() === wanted;
 }
+/* 日期筛选：开始/结束日期均为空 = 不限；只填一端 = 单边限制，两端都填 = 闭区间。
+   历史数据可能是 YYYY-MM / YYYY/MM/DD / YYYY年M月D日，统一折算到 YYYY-MM-DD 再比较。 */
+function dmDateKey(value) {
+  const text = String(value ?? '').trim();
+  const match = text.match(/^(\d{4})\s*[-/.年]\s*(\d{1,2})(?:\s*[-/.月]\s*(\d{1,2}))?/);
+  if (!match) return '';
+  return `${match[1]}-${match[2].padStart(2, '0')}-${(match[3] || '01').padStart(2, '0')}`;
+}
+function getDmDateFilter() {
+  return {
+    from: document.getElementById('dm-date-from')?.value || '',
+    to: document.getElementById('dm-date-to')?.value || ''
+  };
+}
+function dmDateFilterActive(range = getDmDateFilter()) {
+  return Boolean(range.from || range.to);
+}
+function dmDateInScope(value, range = getDmDateFilter()) {
+  if (!dmDateFilterActive(range)) return true;
+  const key = dmDateKey(value);
+  if (!key) return false;
+  if (range.from && key < range.from) return false;
+  if (range.to && key > range.to) return false;
+  return true;
+}
+function onDmDateFilterChange() {
+  const fromEl = document.getElementById('dm-date-from');
+  const toEl = document.getElementById('dm-date-to');
+  if (fromEl && toEl && fromEl.value && toEl.value && fromEl.value > toEl.value) {
+    const from = fromEl.value;
+    fromEl.value = toEl.value;
+    toEl.value = from;
+    showToast('开始日期晚于结束日期，已自动对调', 'warn');
+  }
+  localStorage.setItem('boiler_dm_date_from', fromEl?.value || '');
+  localStorage.setItem('boiler_dm_date_to', toEl?.value || '');
+  renderDataManagerTables();
+}
+function clearDmDateFilter() {
+  const fromEl = document.getElementById('dm-date-from');
+  const toEl = document.getElementById('dm-date-to');
+  if (fromEl) fromEl.value = '';
+  if (toEl) toEl.value = '';
+  localStorage.setItem('boiler_dm_date_from', '');
+  localStorage.setItem('boiler_dm_date_to', '');
+  renderDataManagerTables();
+}
 /* 查重口径：日期原文、规范管码（保留 Q/W 部位）、检查类型/内容及结果均相同。
    规格材质和来源 ID 是追溯信息，不作为重复键；测厚/硬度值不同绝不合并。 */
 function dmDuplicateKey(record) {
@@ -453,18 +500,50 @@ function dmDuplicateGroups(records) {
   });
   return [...groups.values()].filter(group => group.length > 1).sort((a, b) => b.length - a.length || String(b[0].date).localeCompare(String(a[0].date)));
 }
+/* 批量去重口径：每组保留最早录入的一条（ts 最小），其余全部列入待删除。
+   只计算不修改；保留对象引用，避免 ts 缺失/撞号时误删保留项。 */
+function dmDuplicateRemovals(records) {
+  const removals = [];
+  dmDuplicateGroups(records).forEach(group => {
+    const keeper = group.reduce((oldest, record) => (Number(record.ts) || 0) < (Number(oldest.ts) || 0) ? record : oldest, group[0]);
+    group.forEach(record => { if (record !== keeper) removals.push(record); });
+  });
+  return removals;
+}
 function dmToggleDuplicateReport() {
   const report = document.getElementById('dm-duplicate-report');
   if (!report) return;
   report.hidden = !report.hidden;
   renderDMTable();
 }
+/* 批量去重：仅处理当前筛选范围（批量范围/受热面/编码查询/事件类型）内的重复事件。 */
+function dmDedupeDuplicates() {
+  if (!canManageTubeData()) { showToast('当前权限为只读，不能删除数据。', 'warn'); return; }
+  const filter = getBatchBoilerFilter();
+  const sys = getDmSysFilter();
+  const codeQuery = getDmCodeQuery();
+  const dateRange = getDmDateFilter();
+  const scoped = userDB.events.filter(r => dmDateInScope(r.date, dateRange) && dmTypeInScope(r.type) && dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery));
+  const groups = dmDuplicateGroups(scoped);
+  const removals = dmDuplicateRemovals(scoped);
+  if (!removals.length) { showToast('当前筛选范围没有可清理的重复记录', 'info'); return; }
+  if (!confirm(`确定批量去重？将保留每组最早 1 条，删除 ${removals.length} 条重复记录（共 ${groups.length} 组）。删除后不可恢复，维护记录会留痕。`)) return;
+  const removeSet = new Set(removals);
+  userDB.events = userDB.events.filter(event => !removeSet.has(event));
+  removals.forEach(record => mlog('delete', { record, source: 'dedupe' }));
+  dmSelectedTs.clear();
+  saveDB();
+  showToast(`批量去重完成：已删除 ${removals.length} 条重复记录，保留 ${groups.length} 组原始记录`, 'ok');
+}
 function renderDmDuplicateReport(records) {
   const report = document.getElementById('dm-duplicate-report');
   if (!report || report.hidden) return;
   const groups = dmDuplicateGroups(records);
   const extra = groups.reduce((sum, group) => sum + group.length - 1, 0);
-  report.innerHTML = `<div class="dm-duplicate-head"><strong>当前筛选范围：${groups.length} 组重复、涉及 ${extra + groups.length} 条记录（超出 ${extra} 条）</strong><span>按相同日期、规范管码、检查类型/内容及结果查重；仅标记，不自动删除。</span></div>` +
+  const dedupeAction = groups.length && canManageTubeData()
+    ? `<div class="dm-duplicate-actions"><button type="button" class="btn" style="border-color:var(--danger); color:var(--danger);" onclick="dmDedupeDuplicates()">🧹 批量去重（删除 ${extra} 条，保留每组最早 1 条）</button></div>`
+    : '';
+  report.innerHTML = `<div class="dm-duplicate-head"><strong>当前筛选范围：${groups.length} 组重复、涉及 ${extra + groups.length} 条记录（超出 ${extra} 条）</strong><span>按相同日期、规范管码、检查类型/内容及结果查重；仅标记，不自动删除，可核对后手动批量去重。</span></div>` + dedupeAction +
     (groups.length ? groups.map(group => {
       const record = group[0];
       const result = record.inspectionResult || record.result || (String(record.desc || '').match(/结果[：:]\s*([^；;，,]+)/) || [])[1] || '未单独记录';
@@ -589,6 +668,14 @@ function renderDataManagerTables() {
     document.addEventListener('click', event => { if (!event.target.closest('#dm-sys-filter')) closeDmSysPanel(); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDmSysPanel(); });
   }
+  const dateHost = document.getElementById('dm-date-filter');
+  if (dateHost && !dateHost.dataset.init) {
+    dateHost.dataset.init = '1';
+    const fromEl = document.getElementById('dm-date-from');
+    const toEl = document.getElementById('dm-date-to');
+    if (fromEl) fromEl.value = localStorage.getItem('boiler_dm_date_from') || '';
+    if (toEl) toEl.value = localStorage.getItem('boiler_dm_date_to') || '';
+  }
   renderDMTable(); renderReplacementTable();
 }
 /* 数据录入记录表里的管段编码 → 点击打开管段档案（管段分析），与操作列的编辑/删除并存 */
@@ -605,7 +692,8 @@ function renderDMTable() {
   const filter = getBatchBoilerFilter();
   const sys = getDmSysFilter();
   const codeQuery = getDmCodeQuery();
-  const all = [...userDB.events].filter(r => dmTypeInScope(r.type) && dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
+  const dateRange = getDmDateFilter();
+  const all = [...userDB.events].filter(r => dmDateInScope(r.date, dateRange) && dmTypeInScope(r.type) && dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
   const manage = canManageTubeData();
   const visibleTs = new Set(all.map(r => Number(r.ts)));
   [...dmSelectedTs].forEach(ts => { if (!visibleTs.has(ts)) dmSelectedTs.delete(ts); });
@@ -777,7 +865,8 @@ function renderReplacementTable() {
   const sys = getDmSysFilter();
   const codeQuery = getDmCodeQuery();
   const typeFilter = getDmTypeFilter();
-  const all = [...userDB.replacements].filter(r => !typeFilter && dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
+  const dateRange = getDmDateFilter();
+  const all = [...userDB.replacements].filter(r => dmDateInScope(r.date, dateRange) && !typeFilter && dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
   const manage = canManageTubeData();
   tbody.innerHTML = all.map(r => {
     const action = manage
@@ -785,7 +874,7 @@ function renderReplacementTable() {
          <button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteReplacement(${Number(r.ts)})">删除</button>`
       : '<span style="font-size:11px; color:var(--text-dim);">只读</span>';
     return `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(replacementBoiler(r) || '-')}号</td>${dmCodeCell(r.oldCode)}${dmCodeCell(r.newCode, 'var(--ok)')}<td style="font-family:inherit; max-width:260px; white-space:normal;">${escapeHTML(r.reason || '-')}</td><td style="white-space:nowrap;">${action}</td></tr>`;
-  }).join('') || `<tr><td colspan="6" style="text-align:center; padding:20px;">${typeFilter ? '事件类型筛选生效中，更换登记记录不参与事件类型筛选。' : '暂无更换记录。可在上方“管段更换登记”表单或批量导入中登记。'}</td></tr>`;
+  }).join('') || `<tr><td colspan="6" style="text-align:center; padding:20px;">${typeFilter ? '事件类型筛选生效中，更换登记记录不参与事件类型筛选。' : (dmDateFilterActive(dateRange) ? '当前日期范围内没有更换记录。' : '暂无更换记录。可在上方“管段更换登记”表单或批量导入中登记。')}</td></tr>`;
 }
 function isReplacementAutoEvent(event, replacement) {
   if(!event || !replacement) return false;
@@ -874,11 +963,12 @@ function exportCSV() {
   const sys = getDmSysFilter();
   const codeQuery = getDmCodeQuery();
   const typeFilter = getDmTypeFilter();
+  const dateRange = getDmDateFilter();
   let csvContent = '\uFEFF' + EVENT_CSV_COLUMNS.join(',') + '\n';
-  userDB.events.filter(e => dmTypeInScope(e.type) && dmRowInScope(eventBoiler(e), [e.code], filter, sys, codeQuery)).forEach(e => {
+  userDB.events.filter(e => dmDateInScope(e.date, dateRange) && dmTypeInScope(e.type) && dmRowInScope(eventBoiler(e), [e.code], filter, sys, codeQuery)).forEach(e => {
     csvContent += ['事件', eventBoiler(e), e.date, e.code, e.spec, e.material, e.thickness, e.hardness, e.type, '', e.desc].map(csvEscape).join(',') + '\n';
   });
-  if(!typeFilter) userDB.replacements.filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).forEach(r => {
+  if(!typeFilter) userDB.replacements.filter(r => dmDateInScope(r.date, dateRange) && dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).forEach(r => {
     csvContent += ['更换', replacementBoiler(r), r.date, r.oldCode, '', '', '', '', r.reason, r.newCode, r.reason].map(csvEscape).join(',') + '\n';
   });
   const scope = (filter === 'all' ? '全厂' : `${filter}号机组`) + (typeFilter ? `_${typeFilter.replace(/[\\/:*?"<>|]/g, '')}` : '');

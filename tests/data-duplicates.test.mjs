@@ -13,13 +13,15 @@ function functionSource(name) {
 }
 const report = { hidden: false, innerHTML: '' };
 let renders = 0;
+let canManage = true;
 const ctx = vm.createContext({
   normalizeCodeDirection: () => null,
   document: { getElementById: () => report },
   renderDMTable: () => { renders++; },
+  canManageTubeData: () => canManage,
   escapeHTML: value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
 });
-for (const name of ['normalizedTubeCode', 'dmDuplicateKey', 'dmDuplicateGroups', 'dmToggleDuplicateReport', 'renderDmDuplicateReport']) {
+for (const name of ['normalizedTubeCode', 'dmDuplicateKey', 'dmDuplicateGroups', 'dmDuplicateRemovals', 'dmToggleDuplicateReport', 'renderDmDuplicateReport']) {
   vm.runInContext(functionSource(name), ctx);
 }
 const base = { date: '2026-04', code: '1G-GGRQ-GQ-L028-F001-W', type: '无损检测', desc: '方法：射线；结果：合格', inspectionResult: '合格' };
@@ -43,10 +45,28 @@ const groups = ctx.dmDuplicateGroups(records);
 assert.equal(groups.length, 1);
 assert.equal(groups[0].length, 3);
 assert.equal(JSON.stringify(records), before, '查重不得修改记录或元数据');
+const withTs = [
+  { ...base, ts: 300, sourceId: '最新' },
+  { ...base, ts: 100, sourceId: '最早' },
+  { ...base, ts: 200, sourceId: '中间' },
+  { ...base, date: '2022-10', ts: 50 }
+];
+const withTsSnapshot = JSON.stringify(withTs);
+const removals = ctx.dmDuplicateRemovals(withTs);
+assert.equal(removals.length, 2);
+assert.equal(removals.map(r => r.ts).sort((a, b) => a - b).join(','), '200,300', '每组保留最早一条');
+assert.ok(!removals.includes(withTs[1]), '保留项不被列入待删除');
+assert.equal(JSON.stringify(withTs), withTsSnapshot, '批量去重计算不得修改原记录');
 ctx.renderDmDuplicateReport(records);
 assert.match(report.innerHTML, /1 组重复、涉及 3 条记录（超出 2 条）/);
 assert.match(report.innerHTML, /另一来源/);
 assert.match(report.innerHTML, /仅标记，不自动删除/);
+assert.match(report.innerHTML, /批量去重（删除 2 条，保留每组最早 1 条）/, '重复组提供批量去重入口');
+assert.match(report.innerHTML, /onclick="dmDedupeDuplicates\(\)"/);
+canManage = false;
+ctx.renderDmDuplicateReport(records);
+assert.doesNotMatch(report.innerHTML, /dmDedupeDuplicates/, '只读权限不显示批量去重按钮');
+canManage = true;
 ctx.renderDmDuplicateReport([{ ...base, sourceId: '<img src=x onerror=alert(1)>' }, base]);
 assert.doesNotMatch(report.innerHTML, /<img/);
 assert.match(report.innerHTML, /&lt;img/);
@@ -58,5 +78,9 @@ assert.equal(renders, 1);
 assert.match(html, /id="dm-duplicate-report"[^>]*hidden/);
 assert.match(app, /onclick="dmToggleDuplicateReport\(\)"/);
 assert.match(app, /renderDmDuplicateReport\(all\)/, '报告从表格相同的筛选结果计算');
+assert.match(app, /function dmDedupeDuplicates\(\)/);
+assert.match(app, /mlog\('delete', \{ record, source: 'dedupe' \}\)/, '批量去重逐条留痕');
+assert.match(app, /确定批量去重？将保留每组最早 1 条/, '批量去重需确认并说明保留口径');
+assert.match(app, /if \(!canManageTubeData\(\)\) \{ showToast\('当前权限为只读，不能删除数据。', 'warn'\); return; \}/, '只读权限禁止批量去重');
 assert.doesNotMatch(functionSource('renderDmDuplicateReport') + functionSource('dmDuplicateGroups'), /saveDB|\.splice\(|\.push\(eventRecord|localStorage|cloudStorage/);
 console.log('ok - duplicate audit groups date/code/inspection/result matches without changing records');

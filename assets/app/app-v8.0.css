@@ -1344,6 +1344,18 @@ main {
   color: var(--text);
 }
 
+.dm-duplicate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: -4px 0 12px;
+}
+
+.dm-duplicate-actions .btn {
+  padding: 5px 14px;
+  font-size: 12px;
+}
+
 .dm-duplicate-head span,
 .dm-duplicate-details,
 .dm-duplicate-empty {
@@ -1421,6 +1433,48 @@ main {
 .dm-filter-row .dm-filter-type {
   flex: 1 1 180px;
   max-width: 240px;
+}
+
+.dm-filter-row .dm-filter-date {
+  flex: 1 1 280px;
+  max-width: 360px;
+}
+
+.dm-date-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dm-filter-row .dm-date-range input {
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.dm-date-sep {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.dm-date-clear {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dm-date-clear:hover {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 /* 受热面多选下拉：触发器与同行输入控件等高同色，浮层复用主题化面板变量 */

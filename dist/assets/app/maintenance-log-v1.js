@@ -41,6 +41,7 @@
     manual: '手工操作',
     assistant: 'AI 助手',
     import: '文件导入',
+    dedupe: '批量去重',
     system: '系统'
   };
 

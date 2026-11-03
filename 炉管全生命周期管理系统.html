@@ -569,6 +569,15 @@
             <option value="">全部类型</option>
           </select>
         </div>
+        <div class="form-group dm-filter-date" id="dm-date-filter">
+          <label for="dm-date-from">日期范围</label>
+          <div class="dm-date-range">
+            <input type="date" id="dm-date-from" aria-label="开始日期" onchange="onDmDateFilterChange()" />
+            <span class="dm-date-sep" aria-hidden="true">至</span>
+            <input type="date" id="dm-date-to" aria-label="结束日期" onchange="onDmDateFilterChange()" />
+            <button type="button" class="dm-date-clear" onclick="clearDmDateFilter()" title="清除日期筛选" aria-label="清除日期筛选">×</button>
+          </div>
+        </div>
       </div>
       <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
         <button class="btn" onclick="downloadXLSXTemplate()">📗 下载 Excel 录入模板</button>
@@ -627,6 +636,7 @@
             <option value="manual">手工操作</option>
             <option value="assistant">AI 助手</option>
             <option value="import">文件导入</option>
+            <option value="dedupe">批量去重</option>
             <option value="system">系统</option>
           </select>
         </div>

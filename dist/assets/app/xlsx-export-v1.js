@@ -93,12 +93,13 @@
     const sys = getDmSysFilter();
     const codeQuery = getDmCodeQuery();
     const typeFilter = getDmTypeFilter();
-    const events = userDB.events.filter(item => dmTypeInScope(item.type) && dmRowInScope(eventBoiler(item), [item.code], filter, sys, codeQuery)).map(item => ({
+    const dateRange = getDmDateFilter();
+    const events = userDB.events.filter(item => dmDateInScope(item.date, dateRange) && dmTypeInScope(item.type) && dmRowInScope(eventBoiler(item), [item.code], filter, sys, codeQuery)).map(item => ({
       '炉号': eventBoiler(item), '日期': item.date, '管段编码': item.code, '规格': item.spec,
       '材质': item.material, '厚度(mm)': item.thickness, '硬度(HB)': item.hardness,
       '事件类型': item.type, '详细描述/结论': item.desc
     }));
-    const replacements = userDB.replacements.filter(item => !typeFilter && dmRowInScope(replacementBoiler(item), [item.oldCode, item.newCode], filter, sys, codeQuery)).map(item => ({
+    const replacements = userDB.replacements.filter(item => dmDateInScope(item.date, dateRange) && !typeFilter && dmRowInScope(replacementBoiler(item), [item.oldCode, item.newCode], filter, sys, codeQuery)).map(item => ({
       '炉号': replacementBoiler(item), '更换日期': item.date, '旧管段编码': item.oldCode,
       '新管段编码': item.newCode, '更换原因': item.reason
     }));
