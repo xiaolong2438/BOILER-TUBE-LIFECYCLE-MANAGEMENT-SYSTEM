@@ -394,6 +394,42 @@ function dmRowInScope(boilerOf, codes, boilerFilter, sysFilter, codeQuery) {
   if (codeQuery && !codes.some(c => String(c || '').toUpperCase().includes(codeQuery))) return false;
   return true;
 }
+/* 事件类型查询：单选，选项 = 内置事件类型 + 台账中已出现的类型，空值 = 全部类型。
+   与批量范围/受热面/编码查询叠加，作用于事件表、查重报告与 CSV/XLSX 导出；
+   更换登记不属于事件类型口径，开启类型筛选时不参与展示与导出。 */
+function readDmTypeSaved() {
+  return localStorage.getItem('boiler_dm_type_filter') || '';
+}
+function getDmTypeFilter() {
+  return String(document.getElementById('dm-type-search')?.value || '');
+}
+function dmTypeOptions() {
+  const saved = readDmTypeSaved();
+  return [...new Set([...DATA_EDIT_TYPES, ...userDB.events.map(e => String(e.type || '').trim()), saved])].filter(Boolean);
+}
+function syncDmTypeOptions() {
+  const select = document.getElementById('dm-type-search');
+  if (!select) return;
+  const options = dmTypeOptions();
+  const signature = options.join('\u0001');
+  const current = select.value || readDmTypeSaved();
+  if (select.dataset.signature !== signature) {
+    select.innerHTML = '<option value="">全部类型</option>' + options.map(type => `<option value="${escapeHTML(type)}">${escapeHTML(type)}</option>`).join('');
+    select.dataset.signature = signature;
+  }
+  select.value = options.includes(current) ? current : '';
+  if (select.value !== readDmTypeSaved()) localStorage.setItem('boiler_dm_type_filter', select.value);
+}
+function setDmTypeFilter(value) {
+  const select = document.getElementById('dm-type-search');
+  if (select && select.value !== (value || '')) select.value = value || '';
+  localStorage.setItem('boiler_dm_type_filter', value || '');
+  renderDataManagerTables();
+}
+function dmTypeInScope(type) {
+  const wanted = getDmTypeFilter();
+  return !wanted || String(type || '').trim() === wanted;
+}
 /* 查重口径：日期原文、规范管码（保留 Q/W 部位）、检查类型/内容及结果均相同。
    规格材质和来源 ID 是追溯信息，不作为重复键；测厚/硬度值不同绝不合并。 */
 function dmDuplicateKey(record) {
@@ -565,10 +601,11 @@ function dmCodeCell(code, tone) {
 let dmSelectedTs = new Set();
 function renderDMTable() {
   const tbody = document.getElementById('dm-table-body'); if(!tbody) return;
+  syncDmTypeOptions();
   const filter = getBatchBoilerFilter();
   const sys = getDmSysFilter();
   const codeQuery = getDmCodeQuery();
-  const all = [...userDB.events].filter(r => dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
+  const all = [...userDB.events].filter(r => dmTypeInScope(r.type) && dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
   const manage = canManageTubeData();
   const visibleTs = new Set(all.map(r => Number(r.ts)));
   [...dmSelectedTs].forEach(ts => { if (!visibleTs.has(ts)) dmSelectedTs.delete(ts); });
@@ -739,7 +776,8 @@ function renderReplacementTable() {
   const filter = getBatchBoilerFilter();
   const sys = getDmSysFilter();
   const codeQuery = getDmCodeQuery();
-  const all = [...userDB.replacements].filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
+  const typeFilter = getDmTypeFilter();
+  const all = [...userDB.replacements].filter(r => !typeFilter && dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
   const manage = canManageTubeData();
   tbody.innerHTML = all.map(r => {
     const action = manage
@@ -747,7 +785,7 @@ function renderReplacementTable() {
          <button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteReplacement(${Number(r.ts)})">删除</button>`
       : '<span style="font-size:11px; color:var(--text-dim);">只读</span>';
     return `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(replacementBoiler(r) || '-')}号</td>${dmCodeCell(r.oldCode)}${dmCodeCell(r.newCode, 'var(--ok)')}<td style="font-family:inherit; max-width:260px; white-space:normal;">${escapeHTML(r.reason || '-')}</td><td style="white-space:nowrap;">${action}</td></tr>`;
-  }).join('') || '<tr><td colspan="6" style="text-align:center; padding:20px;">暂无更换记录。可在上方“管段更换登记”表单或批量导入中登记。</td></tr>';
+  }).join('') || `<tr><td colspan="6" style="text-align:center; padding:20px;">${typeFilter ? '事件类型筛选生效中，更换登记记录不参与事件类型筛选。' : '暂无更换记录。可在上方“管段更换登记”表单或批量导入中登记。'}</td></tr>`;
 }
 function isReplacementAutoEvent(event, replacement) {
   if(!event || !replacement) return false;
@@ -835,14 +873,15 @@ function exportCSV() {
   const filter = getBatchBoilerFilter();
   const sys = getDmSysFilter();
   const codeQuery = getDmCodeQuery();
+  const typeFilter = getDmTypeFilter();
   let csvContent = '\uFEFF' + EVENT_CSV_COLUMNS.join(',') + '\n';
-  userDB.events.filter(e => dmRowInScope(eventBoiler(e), [e.code], filter, sys, codeQuery)).forEach(e => {
+  userDB.events.filter(e => dmTypeInScope(e.type) && dmRowInScope(eventBoiler(e), [e.code], filter, sys, codeQuery)).forEach(e => {
     csvContent += ['事件', eventBoiler(e), e.date, e.code, e.spec, e.material, e.thickness, e.hardness, e.type, '', e.desc].map(csvEscape).join(',') + '\n';
   });
-  userDB.replacements.filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).forEach(r => {
+  if(!typeFilter) userDB.replacements.filter(r => dmRowInScope(replacementBoiler(r), [r.oldCode, r.newCode], filter, sys, codeQuery)).forEach(r => {
     csvContent += ['更换', replacementBoiler(r), r.date, r.oldCode, '', '', '', '', r.reason, r.newCode, r.reason].map(csvEscape).join(',') + '\n';
   });
-  const scope = filter === 'all' ? '全厂' : `${filter}号机组`;
+  const scope = (filter === 'all' ? '全厂' : `${filter}号机组`) + (typeFilter ? `_${typeFilter.replace(/[\\/:*?"<>|]/g, '')}` : '');
   downloadBlob(`锅炉寿命数据_${scope}_${new Date().toISOString().slice(0,10)}.csv`, csvContent, 'text/csv;charset=utf-8;');
 }
 

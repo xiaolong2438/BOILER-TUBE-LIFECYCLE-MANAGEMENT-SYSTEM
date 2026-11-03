@@ -45,6 +45,22 @@ assert.match(js, /dmRowInScope\(replacementBoiler\(r\), \[r\.oldCode, r\.newCode
 assert.match(js, /dmRowInScope\(eventBoiler\(e\), \[e\.code\], filter, sys, codeQuery\)/, "CSV导出应用受热面与编码查询过滤");
 assert.match(xlsxExport, /dmRowInScope\(eventBoiler\(item\), \[item\.code\], filter, sys, codeQuery\)/, "XLSX导出应用受热面与编码查询过滤");
 assert.match(xlsxExport, /\(sys\.length \? `_\$\{sys\.join\('\+'\)\}` : ''\)/, "XLSX文件名带多选受热面范围");
+
+// 事件类型查询：下拉选项=内置类型+台账已出现类型，与批量范围/受热面/编码查询叠加。
+assert.match(html, /<label for="dm-type-search">事件类型<\/label>/, "筛选行提供事件类型查询");
+assert.match(html, /id="dm-type-search"[^>]*onchange="setDmTypeFilter\(this\.value\)"/, "事件类型下拉切换即刷新表格");
+assert.match(html, /<option value="">全部类型<\/option>/, "默认全部类型");
+assert.match(js, /function getDmTypeFilter\(\)/);
+assert.match(js, /function dmTypeOptions\(\)/);
+assert.match(js, /\[\.\.\.DATA_EDIT_TYPES, \.\.\.userDB\.events\.map\(e => String\(e\.type \|\| ''\)\.trim\(\)\), saved\]/, "类型选项来自内置类型与台账已有类型");
+assert.match(js, /localStorage\.setItem\('boiler_dm_type_filter', value \|\| ''\)/, "事件类型选择记忆在本地");
+assert.match(js, /select\.dataset\.signature !== signature/, "类型选项变化时才重建下拉，保留当前选择");
+assert.match(js, /function dmTypeInScope\(type\)/);
+assert.match(js, /dmTypeInScope\(r\.type\) && dmRowInScope\(eventBoiler\(r\), \[r\.code\], filter, sys, codeQuery\)/, "事件表应用事件类型筛选");
+assert.match(js, /!typeFilter && dmRowInScope\(replacementBoiler\(r\)/, "开启事件类型筛选时更换登记不参与展示");
+assert.match(js, /dmTypeInScope\(e\.type\) && dmRowInScope\(eventBoiler\(e\), \[e\.code\], filter, sys, codeQuery\)/, "CSV 导出应用事件类型筛选");
+assert.match(xlsxExport, /dmTypeInScope\(item\.type\) && dmRowInScope\(eventBoiler\(item\), \[item\.code\], filter, sys, codeQuery\)/, "XLSX 导出应用事件类型筛选");
+assert.match(css, /\.dm-filter-row \.dm-filter-type \{/, "事件类型下拉与筛选行统一布局");
 assert.match(html, /导出筛选范围数据 \(CSV\)/, "导出按钮文案与筛选语义一致");
 assert.match(html, /导出筛选范围 Excel/);
 assert.match(css, /\.dm-filter-row \{/, "筛选行使用统一对齐布局");

@@ -1418,6 +1418,11 @@ main {
   max-width: 380px;
 }
 
+.dm-filter-row .dm-filter-type {
+  flex: 1 1 180px;
+  max-width: 240px;
+}
+
 /* 受热面多选下拉：触发器与同行输入控件等高同色，浮层复用主题化面板变量 */
 .dm-multi {
   position: relative;
