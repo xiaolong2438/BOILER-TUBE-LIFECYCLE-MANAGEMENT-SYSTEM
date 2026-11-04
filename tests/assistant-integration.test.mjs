@@ -31,11 +31,18 @@ const has = (source, needle, label) => {
 
 /* ---------------- 1. 页面挂载 ---------------- */
 check("页面按依赖顺序加载助手资源", () => {
+  const lazyJs = read("assets/app/lazy-v1.js");
+  // 首屏仍加载基础样式与助手样式
+  const cssOrder = ["assets/app/app-v8.0.css", "assets/app/assistant-v1.css"];
+  const cssPositions = cssOrder.map((asset) => {
+    const index = html.indexOf(asset);
+    assert.notEqual(index, -1, `页面缺少资源引用：${asset}`);
+    return index;
+  });
+  assert.ok(cssPositions[1] > cssPositions[0], "助手样式必须晚于基础样式");
+
+  // 助手模块改为懒加载：清单顺序就是加载顺序
   const order = [
-    "assets/app/app-v8.0.css",
-    "assets/app/assistant-v1.css",
-    "assets/app/app-v7.9.js",
-    "assets/app/xlsx-export-v1.js",
     "assets/app/assistant-core-v1.js",
     "assets/app/assistant-analysis-v1.js",
     "assets/app/assistant-docs-v1.js",
@@ -44,16 +51,18 @@ check("页面按依赖顺序加载助手资源", () => {
     "assets/app/assistant-v1.js"
   ];
   const positions = order.map((asset) => {
-    const index = html.indexOf(asset);
-    assert.notEqual(index, -1, `页面缺少资源引用：${asset}`);
+    const index = lazyJs.indexOf(asset);
+    assert.notEqual(index, -1, `懒加载清单缺少资源：${asset}`);
     return index;
   });
   for (let i = 1; i < positions.length; i += 1) {
     assert.ok(positions[i] > positions[i - 1], `资源顺序错误：${order[i]} 必须晚于 ${order[i - 1]}`);
   }
-  for (const asset of ["assistant-core-v1.js", "assistant-analysis-v1.js", "assistant-ui-v1.js", "assistant-v1.js"]) {
-    has(html, `<script src="assets/app/${asset}" defer></script>`, `${asset} 必须以 defer 加载`);
+  for (const asset of order) {
+    assert.ok(!html.includes(`<script src="${asset}"`), `${asset} 不应再随首屏静态加载，应由 lazy-v1.js 管理`);
   }
+  has(html, '<script src="assets/app/lazy-v1.js" defer></script>', "页面缺少懒加载器");
+  assert.ok(html.indexOf("assets/app/lazy-v1.js") < html.indexOf("assets/app/app-v7.9.js"), "懒加载器必须早于主应用执行（主应用 INIT 会调用 BTLazy.idle）");
   has(html, '<link rel="stylesheet" href="assets/app/assistant-v1.css">');
   // 面板由 assistant-ui-v1.js 动态挂载，HTML 里不应硬编码，避免与既有结构冲突
   assert.ok(!html.includes('id="assistantPanel"'), "面板不应硬编码进 HTML");
@@ -197,9 +206,12 @@ check("助手样式只用已定义的设计令牌且括号配平", () => {
 check("部署工作流校验并发布助手资源", () => {
   for (const asset of ["assistant-core-v1.js", "assistant-analysis-v1.js", "assistant-ui-v1.js", "assistant-v1.js", "assistant-v1.css"]) {
     has(workflow, `test -f dist/assets/app/${asset}`, `工作流缺少 ${asset} 存在性校验`);
-    has(workflow, `grep -q 'assets/app/${asset}' dist/index.html`, `工作流缺少 ${asset} 引用校验`);
   }
-  has(workflow, "cp -R assets/. dist/assets/", "工作流必须整体拷贝 assets");
+  for (const asset of ["assistant-core-v1.js", "assistant-analysis-v1.js", "assistant-ui-v1.js", "assistant-v1.js"]) {
+    has(workflow, `grep -q 'assets/app/${asset}' dist/assets/app/lazy-v1.js`, `工作流缺少 ${asset} 懒加载清单校验`);
+  }
+  has(workflow, `grep -q 'assets/app/assistant-v1.css' dist/index.html`, "工作流缺少助手样式引用校验");
+  has(workflow, "node scripts/sync-dist.mjs", "工作流必须用 sync-dist 生成部署产物（包含 _headers / _routes.json）");
 });
 
 /* ---------------- 7. dist 产物与源码一致 ---------------- */

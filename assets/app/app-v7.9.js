@@ -1132,9 +1132,21 @@ function normalizeImportDate(value) {
   }
   return String(value ?? '').trim();
 }
-function importXLSX(event) {
+/* SheetJS 不再随首屏加载：导入/导出首次使用时由 BTLazy 注入。 */
+async function ensureXLSXComponent() {
+  if (typeof XLSX !== 'undefined') return true;
+  try {
+    if (window.BTLazy) await window.BTLazy.ensure('xlsx');
+  } catch (err) {
+    console.warn('[Excel] 组件加载失败：', err);
+  }
+  if (typeof XLSX !== 'undefined') return true;
+  showToast('Excel 组件加载失败，请检查网络后重试。', 'error', 6000);
+  return false;
+}
+async function importXLSX(event) {
   const file = event.target.files[0]; if (!file) return;
-  if (typeof XLSX === 'undefined') { showToast('Excel 组件未加载，请检查网络后刷新页面。', 'error', 6000); event.target.value = ''; return; }
+  if (typeof XLSX === 'undefined' && !(await ensureXLSXComponent())) { event.target.value = ''; return; }
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
@@ -1159,8 +1171,8 @@ function importXLSX(event) {
   };
   reader.readAsArrayBuffer(file); event.target.value = '';
 }
-function downloadXLSXTemplate() {
-  if (typeof XLSX === 'undefined') { showToast('Excel 组件未加载，请检查网络后刷新页面。', 'error', 6000); return; }
+async function downloadXLSXTemplate() {
+  if (typeof XLSX === 'undefined' && !(await ensureXLSXComponent())) return;
   const headers = EVENT_CSV_COLUMNS;
   const rows = [
     { '数据分类': '事件', '炉号': '1', '日期': '2022-04-15', '管段编码': '1G-SLB-WB-F000-R015-Q001', '规格': 'Φ63.5×7.5', '材质': 'SA-210C', '厚度(mm)': '7.10', '硬度(HB)': '185', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '标高18m处壁厚7.10mm' },
@@ -2118,9 +2130,33 @@ function switchView(viewId, { updateHash = true } = {}) {
   document.body.classList.remove('rail-open');
   if(btn) btn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   if(viewId === 'maintainlog' && window.BTMaintenanceLog && typeof window.BTMaintenanceLog.render === 'function') window.BTMaintenanceLog.render();
-  if(viewId === 'overtemperature') window.BTOvertemperature?.refresh();
-  if(viewId === 'tube-analysis') window.BTTemperatureEvidence?.hydrate({ force: true });
+  if(viewId === 'overtemperature') activateOvertemperatureView();
+  if(viewId === 'tube-analysis') activateTemperatureEvidence();
   if(updateHash && location.hash !== '#view-' + viewId) history.replaceState(null, '', '#view-' + viewId);
+}
+
+/* ---------- 超温分析模块按需加载（首屏不再预载，视图打开时确保就绪） ---------- */
+function loadOvertemperatureBundle(onReady) {
+  if(!window.BTLazy) {
+    const host = document.getElementById('ot-app');
+    if(host) host.innerHTML = '<div class="llm-note">超温分析模块未加载，请刷新页面。</div>';
+    return;
+  }
+  window.BTLazy.ensure('overtemperature').then(onReady).catch((err) => {
+    console.warn('[超温分析] 模块加载失败：', err);
+    const host = document.getElementById('ot-app');
+    if(host) host.innerHTML = '<div class="llm-note">超温分析模块加载失败，请检查网络后刷新页面。</div>';
+  });
+}
+function activateOvertemperatureView() {
+  if(window.BTOvertemperature?.refresh) { window.BTOvertemperature.refresh(); return; }
+  const host = document.getElementById('ot-app');
+  if(host) host.innerHTML = '<div class="llm-note">超温分析模块加载中…</div>';
+  loadOvertemperatureBundle(() => window.BTOvertemperature?.refresh());
+}
+function activateTemperatureEvidence() {
+  if(window.BTTemperatureEvidence?.hydrate) { window.BTTemperatureEvidence.hydrate({ force: true }); return; }
+  loadOvertemperatureBundle(() => window.BTTemperatureEvidence?.hydrate({ force: true }));
 }
 function initNav() {
   const btns = [...document.querySelectorAll('.nav-btn')];
@@ -3835,12 +3871,35 @@ function clearLLMResult() {
 
 /* 总览深度分析面板：本地可视化分析（复用助手分析引擎，图表作为大模型解读的数据依据） */
 let lastLLMVisualInsights = [];
-function runLLMVisualAnalysis() {
+let pendingLLMVizRerun = false;
+function runLLMVisualAnalysis(forceLoad = false) {
   const view = document.getElementById('llm-viz-view');
   const module = window.BTAssistantAnalysis;
   if(!view) return;
   if(!module || typeof module.runAnalysis !== 'function') {
-    view.innerHTML = '<div class="llm-note">可视化分析组件未加载，请刷新页面。</div>';
+    if(!window.BTLazy) {
+      view.innerHTML = '<div class="llm-note">可视化分析组件未加载，请刷新页面。</div>';
+      return;
+    }
+    // 初始化时不抢首屏流量：占位并等待空闲预载就绪后自动重跑；
+    // 用户主动点“刷新”（forceLoad=true）则立即加载模块。
+    if(!pendingLLMVizRerun) {
+      if(!window.BTLazy.isReady('assistant')) {
+        pendingLLMVizRerun = true;
+        view.innerHTML = '<div class="llm-note">可视化分析组件加载中…</div>';
+        window.BTLazy.onReady('assistant', () => { pendingLLMVizRerun = false; runLLMVisualAnalysis(); });
+      } else {
+        // 模块组已加载但分析模块缺失（发布包不完整），明确提示而不是一直显示“加载中”
+        view.innerHTML = '<div class="llm-note">可视化分析组件未加载，请刷新页面。</div>';
+      }
+    }
+    if(forceLoad) {
+      window.BTLazy.ensure('assistant').catch((err) => {
+        pendingLLMVizRerun = false;
+        view.innerHTML = '<div class="llm-note">可视化分析组件加载失败，请检查网络后刷新页面。</div>';
+        console.warn('[可视化分析] 模块加载失败：', err);
+      });
+    }
     return;
   }
   const query = document.getElementById('llm-viz-type')?.value || '壁厚趋势';
@@ -5154,3 +5213,5 @@ bootstrapCloudStorage();
 refreshLLMServerStatus();
 runLLMVisualAnalysis();
 applyDemoDataToggle();
+/* 首屏渲染完成后空闲预载 AI 助手与超温分析模块，用户点开时通常已就绪 */
+if(window.BTLazy) window.BTLazy.idle();

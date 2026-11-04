@@ -65,7 +65,7 @@ check("assets 全量同步，且 dist 没有残留旧文件", () => {
 
 check("dist 根目录只有部署需要的入口文件", () => {
   const entries = readdirSync(resolve(root, "dist")).sort();
-  assert.deepEqual(entries, ["assets", "index.html", "login.html"], "dist 根目录出现意外文件：" + entries.join(", "));
+  assert.deepEqual(entries, ["_headers", "_routes.json", "assets", "index.html", "login.html"], "dist 根目录出现意外文件：" + entries.join(", "));
 });
 
 check("同步脚本自身可解析且支持 --check", () => {

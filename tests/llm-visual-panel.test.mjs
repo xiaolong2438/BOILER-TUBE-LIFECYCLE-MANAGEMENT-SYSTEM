@@ -11,10 +11,11 @@ const css = read("assets/app/app-v8.0.css");
 
 // 总览深度分析面板挂载本地可视化区块，复用助手分析引擎（图 → 大模型解读同一数据）。
 assert.match(html, /class="llm-viz" id="llm-viz"/, "面板应有可视化分析区块");
-assert.match(html, /id="llm-viz-type" onchange="runLLMVisualAnalysis\(\)"/, "类型切换应触发分析");
+assert.match(html, /id="llm-viz-type" onchange="runLLMVisualAnalysis\(true\)"/, "类型切换应触发分析并立即加载模块");
 assert.match(html, /id="llm-viz-view"/, "应有渲染容器");
 
-assert.match(app, /function runLLMVisualAnalysis\(\)/, "渲染函数应存在");
+assert.match(app, /function runLLMVisualAnalysis\(forceLoad = false\)/, "渲染函数应存在且支持强制加载");
+assert.match(app, /BTLazy\.onReady\('assistant'/, "模块未就绪时应等待懒加载完成再渲染");
 assert.match(app, /window\.BTAssistantAnalysis/, "必须复用助手分析引擎而不是另写一套");
 assert.match(app, /collectAssistantSnapshot\(\)/, "数据口径与助手快照一致");
 assert.match(app, /lastLLMVisualInsights/, "洞察应暂存供大模型引用");

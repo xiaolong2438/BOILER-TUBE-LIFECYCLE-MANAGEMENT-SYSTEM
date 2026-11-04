@@ -225,9 +225,12 @@
     return rows;
   }
 
-  function parseXlsxRows(buffer) {
+  async function parseXlsxRows(buffer) {
+    if (!global.XLSX && global.BTLazy) {
+      try { await global.BTLazy.ensure('xlsx'); } catch (err) { /* 下面统一报错 */ }
+    }
     var sheetjs = global.XLSX;
-    if (!sheetjs || typeof sheetjs.read !== 'function') throw new Error('Excel 解析组件未加载，请改用 CSV 文件。');
+    if (!sheetjs || typeof sheetjs.read !== 'function') throw new Error('Excel 组件加载失败，请检查网络后重试，或改用 CSV 文件。');
     var workbook = sheetjs.read(new Uint8Array(buffer), { type: 'array' });
     var sheetName = workbook.SheetNames && workbook.SheetNames[0] ? workbook.SheetNames[0] : '';
     var sheet = workbook.Sheets ? workbook.Sheets[sheetName] : null;
@@ -1809,7 +1812,10 @@
     return false;
   }
 
-  function downloadXlsx(sheetName, columns, rows, fileName) {
+  async function downloadXlsx(sheetName, columns, rows, fileName) {
+    if (!global.XLSX && global.BTLazy) {
+      try { await global.BTLazy.ensure('xlsx'); } catch (err) { /* 下面统一返回 false */ }
+    }
     var sheetjs = global.XLSX;
     if (!sheetjs || !sheetjs.utils) return false;
     try {
@@ -1843,7 +1849,7 @@
     return boiler === scope || code.indexOf(scope + '-') === 0;
   }
 
-  function executeExport(params) {
+  async function executeExport(params) {
     var scope = params && params.exportScope === 'all' ? 'all' : currentFilterScope();
     var format = params && params.format === 'xlsx' ? 'xlsx' : 'csv';
     var datasetType = params && params.datasetType === 'material_library' ? 'material_library' : 'events';
@@ -1892,7 +1898,7 @@
     }
     var ok = false;
     if (format === 'xlsx') {
-      ok = downloadXlsx(sheetName, columns, rows, fileName + '.xlsx');
+      ok = await downloadXlsx(sheetName, columns, rows, fileName + '.xlsx');
       if (!ok) {
         format = 'csv';
         ok = downloadCsv(columns, rows, fileName + '.csv');

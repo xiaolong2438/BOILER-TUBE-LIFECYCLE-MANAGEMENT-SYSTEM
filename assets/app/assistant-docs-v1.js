@@ -547,7 +547,19 @@
       }
       return Promise.resolve(global.pdfjsLib);
     }
-    return Promise.reject(new Error('PDF 组件未加载（pdf.js），请检查网络后刷新页面；也可以把报告截图后用图片识别。'));
+    /* pdf.js 不再随首屏加载：首次识别 PDF 时由 BTLazy 注入，之后走浏览器缓存。 */
+    var load = (global.BTLazy && typeof global.BTLazy.ensure === 'function')
+      ? global.BTLazy.ensure('pdf')
+      : Promise.reject(new Error('PDF 组件加载器未就绪'));
+    return load.then(function () {
+      if(!global.pdfjsLib) throw new Error('PDF 组件未就绪');
+      if(!global.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        global.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_CDN_BASE + 'pdf.worker.min.js';
+      }
+      return global.pdfjsLib;
+    }, function () {
+      throw new Error('PDF 组件加载失败（pdf.js），请检查网络后重试；也可以把报告截图后用图片识别。');
+    });
   }
 
   function readFileAsArrayBuffer(file) {

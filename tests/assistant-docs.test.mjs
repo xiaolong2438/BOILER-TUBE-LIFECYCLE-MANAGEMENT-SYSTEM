@@ -53,8 +53,10 @@ assert.ok(chat.indexOf("/^data:image\\/(png|jpe?g|webp);base64,/i") >= 0, "serve
 assert.match(chat, /6 \* 1024 \* 1024/, "vision requests need a larger body cap");
 
 // 页面接线与拖拽视觉反馈。
-assert.match(html, /assistant-docs-v1\.js/, "docs module should be loaded");
-assert.match(html, /pdf\.js\/3\.11\.174\/pdf\.min\.js/, "pdf.js should be loaded from CDN");
+const lazy = read("assets/app/lazy-v1.js");
+assert.match(lazy, /assistant-docs-v1\.js/, "docs module should be in the lazy manifest");
+assert.match(lazy, /pdf\.js\/3\.11\.174\/pdf\.min\.js/, "pdf.js should be lazy-loaded from CDN on first PDF use");
+assert.match(html, /assets\/app\/lazy-v1\.js/, "page should load the lazy loader");
 assert.match(css, /\.assistant-panel\.is-dragover/, "drag-over highlight should be styled");
 
 /* ---------------- v3 契约：Word 识别 + 智能字段/编码匹配 ---------------- */

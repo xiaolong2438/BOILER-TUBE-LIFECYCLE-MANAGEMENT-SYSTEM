@@ -38,17 +38,19 @@ export async function onRequest(context) {
   const { env, request, next } = context;
   const url = new URL(request.url);
   const pathname = url.pathname === '/' ? '/' : url.pathname.replace(/\/+$/, '');
-  const session = await getSession(env, request);
+  const isLoginPage = pathname === '/login' || pathname === '/login.html';
 
-  if((pathname === '/login' || pathname === '/login.html') && session) {
-    return Response.redirect(new URL('/', url.origin), 302);
-  }
-
-  if(PUBLIC_PATHS.has(pathname)) {
+  // 公开路径（静态资源、登录/登出接口）不需要会话信息：
+  // 先放行，避免浏览器带 cookie 请求每个资源时都查一次 D1。
+  if(!isLoginPage && (PUBLIC_PATHS.has(pathname) || PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix)))) {
     return next();
   }
 
-  if(PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix))) {
+  const session = await getSession(env, request);
+
+  // 登录页：已登录直接回首页，未登录正常展示
+  if(isLoginPage) {
+    if(session) return Response.redirect(new URL('/', url.origin), 302);
     return next();
   }
 

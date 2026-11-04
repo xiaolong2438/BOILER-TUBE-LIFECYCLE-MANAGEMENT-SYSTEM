@@ -16,6 +16,9 @@
 })();
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='2' width='20' height='20' rx='5' fill='%23001122' stroke='%2300d4ff' stroke-width='1.5'/%3E%3Cpath d='M12 4.5L5.5 8v8L12 19.5 18.5 16V8z' fill='none' stroke='%2300d4ff' stroke-width='1.4'/%3E%3Cpath d='M12 4.5V12l6.5 3M12 12L5.5 8' fill='none' stroke='%2348cae4' stroke-width='1.1'/%3E%3C/svg%3E">
+<!-- SheetJS 与 pdf.js 首次使用时才加载，提前握手省去 DNS/TLS 时间 -->
+<link rel="preconnect" href="https://cdn.sheetjs.com">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="stylesheet" href="assets/app/app-v8.0.css">
 <link rel="stylesheet" href="assets/app/assistant-v1.css">
 <link rel="stylesheet" href="assets/app/maintenance-log-v1.css">
@@ -213,14 +216,14 @@
           <div class="llm-viz-head">
             <strong>可视化分析</strong>
             <span class="llm-note">本地规则计算，图表数据可作为大模型解读的依据</span>
-            <select id="llm-viz-type" onchange="runLLMVisualAnalysis()">
+            <select id="llm-viz-type" onchange="runLLMVisualAnalysis(true)">
               <option value="壁厚趋势">壁厚趋势</option>
               <option value="各受热面事件数排行">受热面事件排行</option>
               <option value="各受热面最薄壁厚排行">最薄壁厚排行</option>
               <option value="壁厚分布">壁厚分布</option>
               <option value="数据整体画像">数据整体画像</option>
             </select>
-            <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;" onclick="runLLMVisualAnalysis()">刷新</button>
+            <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;" onclick="runLLMVisualAnalysis(true)">刷新</button>
             <button class="btn btn-outline" style="padding:5px 12px;font-size:12px;" onclick="addLLMVizToReport()">加入报告</button>
           </div>
           <div class="llm-viz-view" id="llm-viz-view"></div>
@@ -1001,22 +1004,16 @@
 
 <div class="toast-host" id="toast-host" aria-live="polite"></div>
 
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" defer></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
+<!-- 首屏必需：核心应用、维护记录、界面外壳、主题、Excel 导出、报告导出 -->
+<!-- lazy-v1.js 必须最先加载：app-v7.9.js 的 INIT 会调用 BTLazy.idle() 做空闲预载 -->
+<script src="assets/app/lazy-v1.js" defer></script>
 <script src="assets/app/app-v7.9.js" defer></script>
 <script src="assets/app/maintenance-log-v1.js" defer></script>
 <script src="assets/app/ui-shell-v8.js" defer></script>
 <script src="assets/app/theme-toggle-v1.js" defer></script>
 <script src="assets/app/xlsx-export-v1.js" defer></script>
-<script src="assets/app/assistant-core-v1.js" defer></script>
-<script src="assets/app/overtemperature-core-v1.js" defer></script>
-<script src="assets/app/overtemperature-v1.js" defer></script>
-<script src="assets/app/overtemperature-evidence-v1.js" defer></script>
-<script src="assets/app/assistant-analysis-v1.js" defer></script>
-<script src="assets/app/assistant-docs-v1.js" defer></script>
-<script src="assets/app/assistant-attachments-v1.js" defer></script>
-<script src="assets/app/assistant-ui-v1.js" defer></script>
-<script src="assets/app/assistant-v1.js" defer></script>
 <script src="assets/app/report-pro-v1.js" defer></script>
+<!-- 按需/空闲加载（清单见 assets/app/lazy-v1.js，改清单时同步 tests/lazy-loader.test.mjs）：
+     AI 助手 6 个模块、超温分析 3 个模块由 BTLazy 预载；SheetJS 与 pdf.js 首次使用时加载 -->
 </body>
 </html>

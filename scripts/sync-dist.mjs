@@ -13,6 +13,7 @@
  *   炉管全生命周期管理系统.html → dist/index.html
  *   login.html                  → dist/login.html
  *   assets/**                   → dist/assets/**
+ *   _headers、_routes.json      → dist/（Cloudflare Pages 缓存与 Functions 路由配置）
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, copyFileSync } from 'node:fs';
@@ -27,6 +28,9 @@ const HTML_PAIRS = [
   ['炉管全生命周期管理系统.html', 'dist/index.html'],
   ['login.html', 'dist/login.html']
 ];
+
+/* Cloudflare Pages 配置：静态资源缓存头与 Functions 路由范围 */
+const PAGES_CONFIG_FILES = ['_headers', '_routes.json'];
 
 function walk(dir, base = dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -62,7 +66,23 @@ for (const [from, to] of HTML_PAIRS) {
   }
 }
 
-/* 2. assets 目录整体同步 */
+/* 2. Cloudflare Pages 配置（_headers / _routes.json），缺失视为错误 */
+for (const name of PAGES_CONFIG_FILES) {
+  const src = join(ROOT, name);
+  const dst = join(DIST, name);
+  if (!existsSync(src)) {
+    actions.push({ kind: 'missing-source', path: name });
+    continue;
+  }
+  if (sameFile(src, dst)) continue;
+  actions.push({ kind: existsSync(dst) ? 'update' : 'create', path: 'dist/' + name, from: name });
+  if (!CHECK_ONLY) {
+    mkdirSync(dirname(dst), { recursive: true });
+    copyFileSync(src, dst);
+  }
+}
+
+/* 3. assets 目录整体同步 */
 const srcAssets = join(ROOT, 'assets');
 const dstAssets = join(DIST, 'assets');
 const srcFiles = walk(srcAssets);
@@ -79,7 +99,7 @@ for (const rel of srcFiles) {
   }
 }
 
-/* 3. 清理 dist 里已被删除的旧文件（只动 dist/assets，避免误删） */
+/* 4. 清理 dist 里已被删除的旧文件（只动 dist/assets，避免误删） */
 const srcSet = new Set(srcFiles);
 for (const rel of dstFiles) {
   if (srcSet.has(rel)) continue;

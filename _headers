@@ -1,0 +1,21 @@
+# Cloudflare Pages 缓存策略（源码真相：本文件由 scripts/sync-dist.mjs 复制到 dist/_headers）
+#
+# 静态资源：5 分钟内直接命中本地缓存；超过后先返回旧副本并在后台校验
+# （stale-while-revalidate），改代码最多 5 分钟生效延迟。
+# 注意：assets 下的文件名带版本号（如 app-v7.9.js / assistant-v1.js），
+# 修改文件内容时建议同时递增文件名版本，可显著改善回访命中率。
+/assets/*
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+
+# 入口页面：始终向服务器校验，保证发版即时生效
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/login
+  Cache-Control: no-cache
+
+/login.html
+  Cache-Control: no-cache

@@ -13,9 +13,16 @@
     Object.entries(row).map(([key, value]) => [key, safeCell(value)])
   ));
 
-  function requireXLSX() {
+  /* SheetJS 不再随首屏加载：首次导出时由 BTLazy 注入，之后走浏览器缓存。 */
+  async function requireXLSX() {
     if (typeof XLSX !== 'undefined') return true;
-    showToast('Excel 组件加载失败，请检查网络后刷新页面。', 'error', 6000);
+    try {
+      if (window.BTLazy) await window.BTLazy.ensure('xlsx');
+    } catch (err) {
+      console.warn('[Excel] 组件加载失败：', err);
+    }
+    if (typeof XLSX !== 'undefined') return true;
+    showToast('Excel 组件加载失败，请检查网络后重试。', 'error', 6000);
     return false;
   }
 
@@ -33,8 +40,8 @@
     XLSX.utils.book_append_sheet(workbook, makeSheet(rows, headers, widths), name.slice(0, 31));
   }
 
-  function writeWorkbook(workbook, filename) {
-    if (!requireXLSX()) return;
+  async function writeWorkbook(workbook, filename) {
+    if (!(await requireXLSX())) return;
     workbook.Props = {
       Title: filename,
       Subject: '锅炉炉管全生命周期管理系统导出数据',
@@ -50,8 +57,8 @@
     return item ? item.label : String(sys || '');
   }
 
-  window.exportMaterialLibraryToXLSX = function () {
-    if (!requireXLSX()) return;
+  window.exportMaterialLibraryToXLSX = async function () {
+    if (!(await requireXLSX())) return;
     const rows = getMaterialLibrary();
     const wb = XLSX.utils.book_new();
     const headers = ['部件名称', '系统代码', '分段/位置', '结构形式', '规格型号', '管径(mm)', '壁厚(mm)', '材质', '库存根数', '库存总长度(m)', '预留位置', '备注'];
@@ -84,11 +91,11 @@
       };
     });
     appendSheet(wb, '库存汇总', summary, ['系统代码', '受热面', '规格记录数', '已维护库存根数记录', '已维护总长度记录', '库存总长度(m)'], [12, 18, 14, 20, 20, 18]);
-    writeWorkbook(wb, `受热面材料库_${today()}`);
+    await writeWorkbook(wb, `受热面材料库_${today()}`);
   };
 
-  window.exportLifecycleDataToXLSX = function () {
-    if (!requireXLSX()) return;
+  window.exportLifecycleDataToXLSX = async function () {
+    if (!(await requireXLSX())) return;
     const filter = getBatchBoilerFilter();
     const sys = getDmSysFilter();
     const codeQuery = getDmCodeQuery();
@@ -107,11 +114,11 @@
     appendSheet(wb, '检测检修事件', events, ['炉号', '日期', '管段编码', '规格', '材质', '厚度(mm)', '硬度(HB)', '事件类型', '详细描述/结论'], [10, 14, 28, 18, 18, 14, 14, 16, 46]);
     appendSheet(wb, '更换记录', replacements, ['炉号', '更换日期', '旧管段编码', '新管段编码', '更换原因'], [10, 14, 28, 28, 46]);
     const scope = (filter === 'all' ? '全厂' : `${filter}号机组`) + (sys.length ? `_${sys.join('+')}` : '') + (typeFilter ? `_${typeFilter.replace(/[\\/:*?"<>|]/g, '')}` : '');
-    writeWorkbook(wb, `锅炉寿命数据_${scope}_${today()}`);
+    await writeWorkbook(wb, `锅炉寿命数据_${scope}_${today()}`);
   };
 
-  window.exportInventoryToXLSX = function (boiler = 'all') {
-    if (!requireXLSX()) return;
+  window.exportInventoryToXLSX = async function (boiler = 'all') {
+    if (!(await requireXLSX())) return;
     const normalized = boiler === 0 || boiler === 'all' ? 'all' : String(boiler);
     const rows = getGeneratedTubeLedgerRows(normalized).map(item => ({
       '炉号': item.boiler, '管段编码': item.code, '系统代码': item.sys, '受热面': item.label,
@@ -126,11 +133,11 @@
     })).filter(item => item['管段数量'] > 0);
     appendSheet(wb, '台账汇总', summary, ['系统代码', '受热面', '管段数量'], [12, 20, 16]);
     const scope = normalized === 'all' ? '全厂合并' : `${normalized}号炉`;
-    writeWorkbook(wb, `全量管段台账_${scope}_${today()}`);
+    await writeWorkbook(wb, `全量管段台账_${scope}_${today()}`);
   };
 
-  window.exportMaintenanceOverdueXLSX = function () {
-    if (!requireXLSX()) return;
+  window.exportMaintenanceOverdueXLSX = async function () {
+    if (!(await requireXLSX())) return;
     const year = Number(document.getElementById('maintenanceCycleStart')?.value) || new Date().getFullYear();
     const boiler = document.getElementById('maintenanceBoiler')?.value || 'all';
     const threshold = document.getElementById('maintenanceOverdueThreshold')?.value || '6';
@@ -145,11 +152,11 @@
     const wb = XLSX.utils.book_new();
     const headers = ['优先级', '炉号', '管段编码', '受热面代码', '受热面', '位置', '规格', '材质', '上次检查日期', '上次检查类型', '记录来源', '距今年限', '分层', '建议动作'];
     appendSheet(wb, '超期漏检清单', rows, headers, [10, 8, 30, 12, 18, 26, 40, 24, 16, 18, 18, 12, 14, 60]);
-    writeWorkbook(wb, `漏检超期炉管清单_${year}_${today()}`);
+    await writeWorkbook(wb, `漏检超期炉管清单_${year}_${today()}`);
   };
 
-  window.exportMaintenancePlanToXLSX = function () {
-    if (!requireXLSX()) return;
+  window.exportMaintenancePlanToXLSX = async function () {
+    if (!(await requireXLSX())) return;
     const year = Number(document.getElementById('maintenanceCycleStart')?.value) || new Date().getFullYear();
     const boiler = document.getElementById('maintenanceBoiler')?.value || 'all';
     const plan = buildMaintenanceOutagePlan(year, boiler);
@@ -167,11 +174,11 @@
     const wb = XLSX.utils.book_new();
     appendSheet(wb, 'A-C-C检修计划', planRows, ['停炉序号', '周期年', '计划年份', '检修类型', '工期(天)', '工作量占比(%)', '系统代码', '受热面', '台账管数', '执行项目', '历史风险分', '重点与扩大检查范围', '综合计划依据'], [12, 12, 14, 12, 12, 18, 12, 20, 14, 34, 14, 70, 70]);
     appendSheet(wb, '受热面覆盖矩阵', coverageRows, ['系统代码', '受热面', '计划年份', '检修类型', '割管取样', '射线', '测厚', '硬度', '防磨防爆检查'], [12, 20, 14, 12, 14, 12, 12, 12, 18]);
-    writeWorkbook(wb, `检修模块_A-C-C计划_${year}_${today()}`);
+    await writeWorkbook(wb, `检修模块_A-C-C计划_${year}_${today()}`);
   };
 
-  window.exportLLMReportXLSX = function () {
-    if (!requireXLSX()) return;
+  window.exportLLMReportXLSX = async function () {
+    if (!(await requireXLSX())) return;
     const report = document.getElementById('llm-report-view');
     const raw = document.getElementById('llm-raw-view');
     const reportText = report?.innerText?.trim() || '';
@@ -192,6 +199,6 @@
       '分析问题': document.getElementById('llm-prompt')?.value || '',
       '导出时间': new Date().toLocaleString('zh-CN')
     }], ['服务商', '模型', '分析问题', '导出时间'], [18, 28, 80, 24]);
-    writeWorkbook(wb, `LLM分析报告_${today()}`);
+    await writeWorkbook(wb, `LLM分析报告_${today()}`);
   };
 })();

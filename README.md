@@ -96,12 +96,22 @@
 | 数据库 | Cloudflare D1（SQLite）：`users` / `sessions` / `app_kv`，见 `migrations/0001_init.sql` |
 | 测试 | `tests/*.test.mjs`（Node）+ Python 单测，CI 逐个执行 |
 
+### 加载与缓存策略（首屏优化）
+
+- 首屏只 `defer` 核心模块；AI 助手与超温分析由 `assets/app/lazy-v1.js` 在空闲时预载，用户点开时通常已就绪。
+- SheetJS（Excel）与 pdf.js（PDF 识别）**首次使用时才从 CDN 加载**，首屏不再引用这两个库。
+- `_routes.json` 让 `/assets/*` 直接走 Cloudflare 静态边缘服务，不再经过 Functions（登录态下每个资源省去一次 D1 会话查询）。
+- `_headers` 为静态资源启用 `max-age=300, stale-while-revalidate=86400`，入口页 `no-cache`。
+- 修改 `assets` 文件建议递增文件名版本号（如 `app-v7.9.js` → `app-v8.0.js`），可立即击穿缓存；新增模块的登记要求见 [docs/dev-workflow.md](docs/dev-workflow.md)。
+
 ## 目录结构
 
 ```
 ├── 炉管全生命周期管理系统.html   # 主页面（部署时复制为 dist/index.html）
 ├── login.html                   # 登录页
-├── assets/app/                  # 样式与各模块 JS
+├── _headers                     # Cloudflare Pages 缓存策略（sync-dist 复制进 dist）
+├── _routes.json                 # Functions 路由范围：/assets/* 走纯静态
+├── assets/app/                  # 样式与各模块 JS（lazy-v1.js 管理按需加载清单）
 ├── functions/                   # Pages Functions（认证、云存储、LLM 代理）
 ├── migrations/                  # D1 初始化 SQL
 ├── scripts/                     # dist 同步、密码哈希、D1 ID 解析
@@ -155,7 +165,7 @@ python tests/resolve_d1_id.test.py
 python tests/run-assistant-browser.py            # 可选：真实 Edge 冒烟测试
 ```
 
-> **约定**：根目录 HTML 与 `assets/` 是唯一源码真相，改动后必须执行 `node scripts/sync-dist.mjs` 同步 `dist/`；CI 每次部署前会从零重建 `dist/`。详见 [docs/dev-workflow.md](docs/dev-workflow.md)。
+> **约定**：根目录 HTML、`assets/`、`_headers`、`_routes.json` 是唯一源码真相，改动后必须执行 `node scripts/sync-dist.mjs` 同步 `dist/`；CI 每次部署前会从零重建 `dist/`。详见 [docs/dev-workflow.md](docs/dev-workflow.md)。
 
 ## 超温分析（手工登记 / 多设备共享）
 

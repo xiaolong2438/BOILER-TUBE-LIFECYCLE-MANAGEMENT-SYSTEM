@@ -54,14 +54,17 @@ jobs:
           set -euo pipefail
           # dist is a tracked local artifact, so always rebuild it from scratch.
           # Otherwise stale app.css/app.js can survive and be published by Pages.
+          # 统一走 sync-dist：产物与本地一致，并带上 _headers / _routes.json。
           rm -rf dist
-          mkdir -p dist/assets
-          cp "炉管全生命周期管理系统.html" dist/index.html
-          cp "login.html" dist/login.html
-          cp -R assets/. dist/assets/
+          node scripts/sync-dist.mjs
 
+          test -f dist/index.html
+          test -f dist/login.html
+          test -f dist/_headers
+          test -f dist/_routes.json
           test -f dist/assets/app/app-v8.0.css
           test -f dist/assets/app/app-v7.9.js
+          test -f dist/assets/app/lazy-v1.js
           test -f dist/assets/app/maintenance-log-v1.css
           test -f dist/assets/app/ui-shell-v8.js
           test -f dist/assets/app/xlsx-export-v1.js
@@ -74,18 +77,21 @@ jobs:
           test -f dist/assets/app/assistant-v1.css
           grep -q 'assets/app/app-v8.0.css' dist/index.html
           grep -q 'assets/app/app-v7.9.js' dist/index.html
+          grep -q 'assets/app/lazy-v1.js' dist/index.html
           grep -q 'assets/app/ui-shell-v8.js' dist/index.html
           grep -q 'assets/app/xlsx-export-v1.js' dist/index.html
           grep -q 'assets/app/maintenance-log-v1.js' dist/index.html
-          grep -q 'assets/app/assistant-core-v1.js' dist/index.html
-          grep -q 'assets/app/assistant-analysis-v1.js' dist/index.html
-          grep -q 'assets/app/assistant-docs-v1.js' dist/index.html
-          grep -q 'assets/app/assistant-ui-v1.js' dist/index.html
-          grep -q 'assets/app/assistant-v1.js' dist/index.html
           grep -q 'assets/app/assistant-v1.css' dist/index.html
           grep -q 'assets/app/maintenance-log-v1.css' dist/index.html
-          grep -q 'pdf.js/3.11.174/pdf.min.js' dist/index.html
-          grep -q 'xlsx-0.20.3/package/dist/xlsx.full.min.js' dist/index.html
+          # 助手/超温模块改为懒加载：模块清单在 lazy-v1.js，不再静态引用在 index.html
+          grep -q 'assets/app/assistant-core-v1.js' dist/assets/app/lazy-v1.js
+          grep -q 'assets/app/assistant-analysis-v1.js' dist/assets/app/lazy-v1.js
+          grep -q 'assets/app/assistant-docs-v1.js' dist/assets/app/lazy-v1.js
+          grep -q 'assets/app/assistant-ui-v1.js' dist/assets/app/lazy-v1.js
+          grep -q 'assets/app/assistant-v1.js' dist/assets/app/lazy-v1.js
+          grep -q 'overtemperature-core-v1.js' dist/assets/app/lazy-v1.js
+          grep -q 'pdf.js/3.11.174/pdf.min.js' dist/assets/app/lazy-v1.js
+          grep -q 'xlsx-0.20.3/package/dist/xlsx.full.min.js' dist/assets/app/lazy-v1.js
           test ! -e dist/assets/app/app.css
           test ! -e dist/assets/app/app.js
 

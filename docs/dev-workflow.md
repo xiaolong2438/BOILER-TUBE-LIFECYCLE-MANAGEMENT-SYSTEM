@@ -10,13 +10,15 @@ node scripts/sync-dist.mjs          # 同步：复制改动 + 清理 dist 中已
 node scripts/sync-dist.mjs --check  # 只检查，有漂移时退出码 1（CI/提交前用）
 ```
 
-同步范围（与 `.github/workflows/deploy-cloudflare-pages.yml` 一致）：
+同步范围（与 `.github/workflows/deploy-cloudflare-pages.yml` 一致，CI 直接调用本脚本）：
 
 | 源 | 目标 |
 | --- | --- |
 | `炉管全生命周期管理系统.html` | `dist/index.html` |
 | `login.html` | `dist/login.html` |
 | `assets/**` | `dist/assets/**` |
+| `_headers` | `dist/_headers` |
+| `_routes.json` | `dist/_routes.json` |
 
 为什么必须做：`tests/release-artifacts.test.mjs` 会逐字节比对 `dist` 与源码，部署工作流也会校验文件存在性。
 手工 `cp` 漏一次，症状是"本地好好的，线上还是旧代码"，极难定位。
@@ -76,3 +78,31 @@ INIT 时 `loadLLMConfigToForm()` 负责回填表单并刷新 `#llm-status` 状�
 - 本机静态预览没有共享 API。验证共享能力应使用本地 D1 或隔离 SQLite 测试适配器；不得把模拟接口通过描述为真实云端部署完成。
 - 运行 `node tests/overtemperature-core.test.mjs`、`node tests/overtemperature-api.test.mjs`、`node tests/overtemperature-evidence.test.mjs` 和 UI 接线测试；再同步 `dist` 并执行全量回归。
 - 测试仅使用明确标注的合成测点和记录，不向生产数据库或用户业务库写验收数据。
+
+## 7. 模块加载与缓存策略
+
+首屏只加载核心模块，其余按空闲预载或按需加载（实现：`assets/app/lazy-v1.js`）：
+
+| 时机 | 模块 |
+| --- | --- |
+| 首屏 `defer` | `lazy-v1.js`、`app-v7.9.js`、`maintenance-log-v1.js`、`ui-shell-v8.js`、`theme-toggle-v1.js`、`xlsx-export-v1.js`、`report-pro-v1.js` |
+| `BTLazy.idle()`（空闲 / 2s 兜底） | AI 助手 6 个模块、超温分析 3 个模块 |
+| 首次使用时加载 | SheetJS（Excel 导入/导出）、pdf.js（PDF 识别） |
+
+约定：
+
+- 新增助手/超温模块，必须登记到 `lazy-v1.js` 的 `GROUPS` 清单；顺序就是加载顺序，
+  `assistant-core` 必须排在最前、`assistant-v1`（接线层 mount）排在最后，
+  `overtemperature-core` 加载时会校验 `assistant-core` 已存在（否则抛错）。
+- 新增内联 `onclick` 引用的全局函数，不能放在懒加载模块里；否则首次点击可能 ReferenceError。
+  确需懒加载时，在 `switchView()` 或对应入口先用 `BTLazy.ensure(...)` 确保就绪。
+- `tests/lazy-loader.test.mjs` 校验清单顺序、按需注入、失败重试与空闲预载，改清单必须同步跑。
+
+缓存与路由（`_headers` / `_routes.json` 是源码文件，由 sync-dist 复制进 dist）：
+
+- `/assets/*` 走纯静态边缘服务，不再经过 `functions/_middleware.js`（登录态下也不查 D1）。
+  浏览器缓存 `max-age=300, stale-while-revalidate=86400`：5 分钟内零请求，之后后台校验。
+- **修改 `assets` 文件内容时建议递增文件名版本**（如 `app-v7.9.js` → `app-v8.0.js`）。
+  版本号变化会立即击穿缓存；不递增则最多有 5 分钟的旧副本窗口。
+- 入口页 `no-cache`，发版即时生效；`_routes.json` 只把 `/`、`/login*`、`/api/*` 交给 Functions，
+  新增需要登录保护的页面路径时必须同步加入 `include`。
