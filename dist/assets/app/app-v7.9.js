@@ -606,7 +606,7 @@ function syncReplacementBoilerFromCode() {
   if(boiler && select) select.value = boiler;
 }
 function addUserEvent() {
-  const boiler = document.getElementById('dm-boiler').value;
+  let boiler = document.getElementById('dm-boiler').value;
   let code = normalizedTubeCode(document.getElementById('dm-code').value.trim().toUpperCase());
   const spec = document.getElementById('dm-spec').value.trim();
   const material = document.getElementById('dm-material').value.trim();
@@ -615,8 +615,11 @@ function addUserEvent() {
   const type = document.getElementById('dm-type').value;
   const date = document.getElementById('dm-date').value;
   const desc = document.getElementById('dm-desc').value.trim();
-  if(!boiler || !code || !date || !desc) { showToast('请填写机组、管段编码、日期和详细数据/结论', 'warn'); return; }
-  if(getBoilerFromCode(code) && getBoilerFromCode(code) !== boiler) { showToast('所选机组与管段编码开头不一致，请核对。', 'warn'); return; }
+  if(!code || !date || !desc) { showToast('请填写管段编码、日期和详细数据/结论', 'warn'); return; }
+  /* 炉号可选：未指定时按编码前缀推断；两侧都有值时才做一致性校验 */
+  const codeBoiler = getBoilerFromCode(code);
+  if(!boiler && codeBoiler) boiler = codeBoiler;
+  if(boiler && codeBoiler && codeBoiler !== boiler) { showToast('所选机组与管段编码开头不一致，请核对。', 'warn'); return; }
   const normalized = normalizeCodeDirection(code);
   if(normalized) code = normalized.code;
   const newEvent = {boiler, code, spec, material, thickness, hardness, type, date, desc, ts: Date.now()};
@@ -627,13 +630,16 @@ function addUserEvent() {
   ['dm-code','dm-spec','dm-material','dm-thickness','dm-hardness','dm-desc'].forEach(id => document.getElementById(id).value = '');
 }
 function addReplacement() {
-  const boiler = document.getElementById('dm-rep-boiler').value;
+  let boiler = document.getElementById('dm-rep-boiler').value;
   let oldCode = normalizedTubeCode(document.getElementById('dm-oldcode').value.trim().toUpperCase());
   let newCode = normalizedTubeCode(document.getElementById('dm-newcode').value.trim().toUpperCase());
   const reason = document.getElementById('dm-reason').value.trim();
   const date = document.getElementById('dm-rep-date').value;
-  if(!boiler || !oldCode || !newCode || !date) { showToast('请填写机组、旧管段编码、新管段编码和更换日期', 'warn'); return; }
-  if((getBoilerFromCode(oldCode) && getBoilerFromCode(oldCode) !== boiler) || (getBoilerFromCode(newCode) && getBoilerFromCode(newCode) !== boiler)) { showToast('所选机组与旧/新管段编码开头不一致，请核对。', 'warn'); return; }
+  if(!oldCode || !newCode || !date) { showToast('请填写旧管段编码、新管段编码和更换日期', 'warn'); return; }
+  /* 炉号可选：未指定时按编码前缀推断；两侧都有值时才做一致性校验 */
+  const oldBoiler = getBoilerFromCode(oldCode), newBoiler = getBoilerFromCode(newCode);
+  if(!boiler) boiler = oldBoiler || newBoiler;
+  if(boiler && ((oldBoiler && oldBoiler !== boiler) || (newBoiler && newBoiler !== boiler))) { showToast('所选机组与旧/新管段编码开头不一致，请核对。', 'warn'); return; }
   const normalizedOld = normalizeCodeDirection(oldCode);
   if(normalizedOld) oldCode = normalizedOld.code;
   const normalizedNew = normalizeCodeDirection(newCode);
@@ -731,7 +737,7 @@ function renderDMTable() {
          <button class="btn btn-outline" style="padding:2px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteEvent(${ts})">删除</button>`
       : '<span style="font-size:11px; color:var(--text-dim);">只读</span>';
     const selectCell = manage ? `<td><input type="checkbox" class="dm-row-check" data-ts="${ts}"${checked} aria-label="选择该行" onchange="dmSetSelected(${ts}, this.checked)"></td>` : '';
-    return `<tr${checked ? ' style="background:var(--bg);"' : ''}>${selectCell}<td>${escapeHTML(r.date)}</td><td>${escapeHTML(eventBoiler(r) || '-')}号</td>${dmCodeCell(r.code)}<td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td style="white-space:nowrap;">${action}</td></tr>`;
+    return `<tr${checked ? ' style="background:var(--bg);"' : ''}>${selectCell}<td>${escapeHTML(r.date)}</td><td>${eventBoiler(r) ? escapeHTML(eventBoiler(r)) + '号' : '-'}</td>${dmCodeCell(r.code)}<td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td style="white-space:nowrap;">${action}</td></tr>`;
   }).join('') || `<tr><td colspan="${manage ? 11 : 10}" style="text-align:center; padding:20px;">暂无数据</td></tr>`;
 }
 function dmSetSelected(ts, checked) {
@@ -791,7 +797,9 @@ function closeDataEditModal() {
   host.innerHTML = '';
 }
 function dataEditBoilerSelect(selectId, current) {
-  return `<select id="${selectId}"><option value="1" ${String(current) === '1' ? 'selected' : ''}>1号机组</option><option value="2" ${String(current) === '2' ? 'selected' : ''}>2号机组</option></select>`;
+  const value = String(current);
+  const unset = value !== '1' && value !== '2';
+  return `<select id="${selectId}"><option value="" ${unset ? 'selected' : ''}>未指定（按编码推断）</option><option value="1" ${value === '1' ? 'selected' : ''}>1号机组</option><option value="2" ${value === '2' ? 'selected' : ''}>2号机组</option></select>`;
 }
 function openEditEvent(ts) {
   const record = userDB.events.find(e => Number(e.ts) === Number(ts));
@@ -805,10 +813,10 @@ function openEditEvent(ts) {
         <button type="button" class="data-edit-close" onclick="closeDataEditModal()" aria-label="关闭">×</button>
       </div>
       <p class="data-edit-sub">${escapeHTML(record.code)} · 记录编号 ${Number(record.ts)}</p>
-      <div class="form-group"><label>机组/炉号</label>${dataEditBoilerSelect('de-boiler', eventBoiler(record))}</div>
+      <div class="form-group"><label>机组/炉号（可选）</label>${dataEditBoilerSelect('de-boiler', eventBoiler(record))}</div>
       <div class="form-group"><label>管段编码</label><input type="text" id="de-code" value="${escapeHTML(record.code)}" oninput="syncEditEventBoiler()" /></div>
       <div class="form-group"><label>规格</label><input type="text" id="de-spec" value="${escapeHTML(record.spec || '')}" /></div>
-      <div class="form-group"><label>材质</label><input type="text" id="de-material" value="${escapeHTML(record.material || '')}" /></div>
+      <div class="form-group"><label>材质（可选）</label><input type="text" id="de-material" value="${escapeHTML(record.material || '')}" /></div>
       <div class="form-group"><label>厚度(mm)</label><input type="number" id="de-thickness" min="0" step="0.01" value="${escapeHTML(record.thickness || '')}" /></div>
       <div class="form-group"><label>硬度(HB)</label><input type="number" id="de-hardness" min="0" step="1" value="${escapeHTML(record.hardness || '')}" /></div>
       <div class="form-group"><label>事件类型</label><input type="text" id="de-type" list="de-type-options" value="${escapeHTML(record.type || '')}" /><datalist id="de-type-options">${typeOptions}</datalist></div>
@@ -828,7 +836,7 @@ function syncEditEventBoiler() {
 function saveEventEdit(ts) {
   const target = userDB.events.find(e => Number(e.ts) === Number(ts));
   if(!target) { showToast('没有找到这条记录，可能已被删除。', 'warn'); closeDataEditModal(); return; }
-  const boiler = document.getElementById('de-boiler').value;
+  let boiler = document.getElementById('de-boiler').value;
   const code = normalizedTubeCode(document.getElementById('de-code').value.trim().toUpperCase());
   const spec = document.getElementById('de-spec').value.trim();
   const material = document.getElementById('de-material').value.trim();
@@ -837,8 +845,10 @@ function saveEventEdit(ts) {
   const type = document.getElementById('de-type').value.trim();
   const date = document.getElementById('de-date').value;
   const desc = document.getElementById('de-desc').value.trim();
-  if(!boiler || !code || !date || !desc) { showToast('机组、管段编码、日期和详细数据/结论不能为空', 'warn'); return; }
-  if(getBoilerFromCode(code) && getBoilerFromCode(code) !== boiler) { showToast('所选机组与管段编码开头不一致，请核对。', 'warn'); return; }
+  if(!code || !date || !desc) { showToast('管段编码、日期和详细数据/结论不能为空', 'warn'); return; }
+  const codeBoiler = getBoilerFromCode(code);
+  if(!boiler && codeBoiler) boiler = codeBoiler;
+  if(boiler && codeBoiler && codeBoiler !== boiler) { showToast('所选机组与管段编码开头不一致，请核对。', 'warn'); return; }
   if(thickness !== '') {
     const num = Number(thickness);
     if(!Number.isFinite(num) || num < 0.1 || num > 100) { showToast('厚度必须是 0.1 ~ 100 之间的数字（mm），或留空', 'warn'); return; }
@@ -909,7 +919,7 @@ function openEditReplacement(ts) {
         <button type="button" class="data-edit-close" onclick="closeDataEditModal()" aria-label="关闭">×</button>
       </div>
       <p class="data-edit-sub">${escapeHTML(record.oldCode)} → ${escapeHTML(record.newCode)}</p>
-      <div class="form-group"><label>机组/炉号</label>${dataEditBoilerSelect('dr-boiler', replacementBoiler(record))}</div>
+      <div class="form-group"><label>机组/炉号（可选）</label>${dataEditBoilerSelect('dr-boiler', replacementBoiler(record))}</div>
       <div class="form-group"><label>旧管段编码</label><input type="text" id="dr-oldcode" value="${escapeHTML(record.oldCode)}" oninput="syncEditReplacementBoiler()" /></div>
       <div class="form-group"><label>新管段编码</label><input type="text" id="dr-newcode" value="${escapeHTML(record.newCode)}" oninput="syncEditReplacementBoiler()" /></div>
       <div class="form-group"><label>更换原因</label><input type="text" id="dr-reason" value="${escapeHTML(record.reason || '')}" /></div>
@@ -929,13 +939,15 @@ function syncEditReplacementBoiler() {
 function saveReplacementEdit(ts) {
   const target = userDB.replacements.find(r => Number(r.ts) === Number(ts));
   if(!target) { showToast('没有找到这条更换记录，可能已被删除。', 'warn'); closeDataEditModal(); return; }
-  const boiler = document.getElementById('dr-boiler').value;
+  let boiler = document.getElementById('dr-boiler').value;
   const oldCode = normalizedTubeCode(document.getElementById('dr-oldcode').value.trim().toUpperCase());
   const newCode = normalizedTubeCode(document.getElementById('dr-newcode').value.trim().toUpperCase());
   const reason = document.getElementById('dr-reason').value.trim();
   const date = document.getElementById('dr-rep-date').value;
-  if(!boiler || !oldCode || !newCode || !date) { showToast('机组、旧管段编码、新管段编码和更换日期不能为空', 'warn'); return; }
-  if((getBoilerFromCode(oldCode) && getBoilerFromCode(oldCode) !== boiler) || (getBoilerFromCode(newCode) && getBoilerFromCode(newCode) !== boiler)) { showToast('所选机组与旧/新管段编码开头不一致，请核对。', 'warn'); return; }
+  if(!oldCode || !newCode || !date) { showToast('旧管段编码、新管段编码和更换日期不能为空', 'warn'); return; }
+  const oldBoiler = getBoilerFromCode(oldCode), newBoiler = getBoilerFromCode(newCode);
+  if(!boiler) boiler = oldBoiler || newBoiler;
+  if(boiler && ((oldBoiler && oldBoiler !== boiler) || (newBoiler && newBoiler !== boiler))) { showToast('所选机组与旧/新管段编码开头不一致，请核对。', 'warn'); return; }
   const changes = [['boiler', boiler], ['oldCode', oldCode], ['newCode', newCode], ['reason', reason], ['date', date]]
     .filter(([key, next]) => String(target[key] ?? '') !== next);
   if(!changes.length) { closeDataEditModal(); showToast('内容未变化，无需保存', 'info'); return; }
@@ -952,9 +964,9 @@ const EVENT_CSV_COLUMNS = ['数据分类','炉号','日期','管段编码','规�
 function downloadCSVTemplate() {
   const rows = [
     EVENT_CSV_COLUMNS.join(','),
-    ['事件','1','2022-04-15','1G-SLB-WB-F000-R015-Q001','Φ63.5×7.5','SA-210C','7.10','185','测厚','','标高18m处壁厚7.10mm'].map(csvEscape).join(','),
-    ['事件','2','2024-05-20','2G-GGRQ-GQ-L012-F005-Q002','Φ51×8','SA-213T91','6.90','210','测厚','','高过炉左往右第12排炉前往后第5根测厚6.90mm'].map(csvEscape).join(','),
-    ['更换','1','2026-05-22','1G-DZRQ-GQ-4KJ-L065-Q001','','','','','爆管更换','1G-DZRQ-GQ-4KJ-L065-Q002','运行中发生泄漏，紧急割管更换'].map(csvEscape).join(',')
+    ['事件','1','2022-04-15','1G-SLB-WB-F000-R015-Q','Φ63.5×7.5','SA-210C','7.10','185','测厚','','标高18m处壁厚7.10mm'].map(csvEscape).join(','),
+    ['事件','2','2024-05-20','2G-GGRQ-GQ-L012-F005-Q','Φ51×8','SA-213T91','6.90','210','测厚','','高过炉左往右第12排炉前往后第5根测厚6.90mm'].map(csvEscape).join(','),
+    ['更换','1','2026-05-22','1G-DZRQ-GQ-4KJ-L065-Q','','','','','爆管更换','1G-DZRQ-GQ-4KJ-L065-Q','运行中发生泄漏，紧急割管更换'].map(csvEscape).join(',')
   ].join('\n');
   downloadBlob('锅炉寿命数据_录入模板.csv', '\uFEFF' + rows, 'text/csv;charset=utf-8;');
 }
@@ -1175,9 +1187,9 @@ async function downloadXLSXTemplate() {
   if (typeof XLSX === 'undefined' && !(await ensureXLSXComponent())) return;
   const headers = EVENT_CSV_COLUMNS;
   const rows = [
-    { '数据分类': '事件', '炉号': '1', '日期': '2022-04-15', '管段编码': '1G-SLB-WB-F000-R015-Q001', '规格': 'Φ63.5×7.5', '材质': 'SA-210C', '厚度(mm)': '7.10', '硬度(HB)': '185', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '标高18m处壁厚7.10mm' },
-    { '数据分类': '事件', '炉号': '2', '日期': '2024-05-20', '管段编码': '2G-GGRQ-GQ-L012-F005-Q002', '规格': 'Φ51×8', '材质': 'SA-213T91', '厚度(mm)': '6.90', '硬度(HB)': '210', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '高过炉左往右第12排炉前往后第5根测厚6.90mm' },
-    { '数据分类': '更换', '炉号': '1', '日期': '2026-05-22', '管段编码': '1G-DZRQ-GQ-4KJ-L065-Q001', '规格': '', '材质': '', '厚度(mm)': '', '硬度(HB)': '', '事件类型/更换原因': '爆管更换', '关联新管码': '1G-DZRQ-GQ-4KJ-L065-Q002', '详细描述/结论': '运行中发生泄漏，紧急割管更换' }
+    { '数据分类': '事件', '炉号': '1', '日期': '2022-04-15', '管段编码': '1G-SLB-WB-F000-R015-Q', '规格': 'Φ63.5×7.5', '材质': 'SA-210C', '厚度(mm)': '7.10', '硬度(HB)': '185', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '标高18m处壁厚7.10mm' },
+    { '数据分类': '事件', '炉号': '2', '日期': '2024-05-20', '管段编码': '2G-GGRQ-GQ-L012-F005-Q', '规格': 'Φ51×8', '材质': 'SA-213T91', '厚度(mm)': '6.90', '硬度(HB)': '210', '事件类型/更换原因': '测厚', '关联新管码': '', '详细描述/结论': '高过炉左往右第12排炉前往后第5根测厚6.90mm' },
+    { '数据分类': '更换', '炉号': '1', '日期': '2026-05-22', '管段编码': '1G-DZRQ-GQ-4KJ-L065-Q', '规格': '', '材质': '', '厚度(mm)': '', '硬度(HB)': '', '事件类型/更换原因': '爆管更换', '关联新管码': '1G-DZRQ-GQ-4KJ-L065-Q', '详细描述/结论': '运行中发生泄漏，紧急割管更换' }
   ];
   const sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
   sheet['!cols'] = headers.map(name => ({ wch: name.length > 8 ? 22 : 14 }));

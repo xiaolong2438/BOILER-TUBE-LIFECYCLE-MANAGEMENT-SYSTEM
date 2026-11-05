@@ -1056,7 +1056,7 @@
       for (var k = 0; k < examples.length && prompts.length < 6; k += 1) prompts.push(examples[k]);
     }
     if (prompts.length < 3) {
-      prompts = prompts.concat(['现在数据质量怎么样', '查询 1 号炉 HSH 的测厚记录', '帮助']).slice(0, 6);
+      prompts = prompts.concat(['现在数据质量怎么样', '查询 1 号炉 GGRQ 的测厚记录', '帮助']).slice(0, 6);
     }
     return prompts;
   }

@@ -645,7 +645,7 @@
       '  <ul class="assistant-empty-list">',
       '    <li>「近两年壁厚趋势」出一张折线图</li>',
       '    <li>「现在数据质量怎么样」查看统计与问题清单</li>',
-      '    <li>「查询 1 号炉 HSH 的测厚记录」</li>',
+      '    <li>「查询 1 号炉 GGRQ 的测厚记录」</li>',
       '    <li>「帮我检查这份 CSV 能不能导入」</li>',
       '  </ul>',
       '  <p class="assistant-empty-role">当前权限：' + escapeHtml(roleLabel(role)) + '</p>',

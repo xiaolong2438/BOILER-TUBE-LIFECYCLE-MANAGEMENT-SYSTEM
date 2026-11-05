@@ -80,9 +80,10 @@ assert.match(js, /removed\.forEach\(e => mlog\('delete', \{ record: e, source: '
 assert.match(js, /class="dm-row-check" data-ts="\$\{ts\}"/, "行复选框带ts标识");
 assert.match(js, /allBox\.indeterminate = selectedCount > 0 && selectedCount < all\.length/, "全选框支持半选态");
 
-// 编辑校验与新增口径一致：机组/编码/日期/结论必填，编码与机组前缀联动校验。
-assert.match(js, /if\(!boiler \|\| !code \|\| !date \|\| !desc\) \{ showToast\('机组、管段编码、日期和详细数据\/结论不能为空', 'warn'\); return; \}/);
-assert.match(js, /if\(getBoilerFromCode\(code\) && getBoilerFromCode\(code\) !== boiler\) \{ showToast\('所选机组与管段编码开头不一致，请核对。', 'warn'\); return; \}/);
+// 编辑校验与新增口径一致：编码/日期/结论必填；炉号可选（留空按编码推断），两侧都有值时校验前缀。
+assert.match(js, /if\(!code \|\| !date \|\| !desc\) \{ showToast\('管段编码、日期和详细数据\/结论不能为空', 'warn'\); return; \}/);
+assert.match(js, /const codeBoiler = getBoilerFromCode\(code\);\s*\r?\n\s*if\(!boiler && codeBoiler\) boiler = codeBoiler;/);
+assert.match(js, /if\(boiler && codeBoiler && codeBoiler !== boiler\) \{ showToast\('所选机组与管段编码开头不一致，请核对。', 'warn'\); return; \}/);
 assert.match(js, /厚度必须是 0\.1 ~ 100 之间的数字（mm），或留空/);
 assert.match(js, /硬度必须是 1 ~ 600 之间的数字（HB），或留空/);
 

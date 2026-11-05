@@ -271,7 +271,7 @@
       <div class="form-grid" id="generatorFields"></div>
       <div class="code-output">
         <div class="label">GENERATED CODE</div>
-        <div class="code" id="codeOut">1G-SLB-WB-F000-R015-Q001</div>
+        <div class="code" id="codeOut">1G-SLB-WB-F000-R015-Q</div>
         <div id="codeDesc" style="margin-top:15px; font-size:12px; color:var(--text-dim);"></div>
         <button class="btn" style="margin-top:15px;" onclick="copyCode()">📋 复制编码</button>
       </div>
@@ -303,7 +303,7 @@
         </div>
         <div class="form-group">
           <label>手动输入管段编码/测点</label>
-          <input type="text" id="ai-custom-target" placeholder="例: 1G-SLB-WB-F000-R015-Q001" onkeypress="if(event.key==='Enter')runAIAnalysis()" />
+          <input type="text" id="ai-custom-target" placeholder="例: 1G-SLB-WB-F000-R015-Q" onkeypress="if(event.key==='Enter')runAIAnalysis()" />
         </div>
         <div class="form-group">
           <label>分析模型</label>
@@ -396,16 +396,16 @@
           <label>受热面</label>
           <select id="maintenanceSurfaceFilter" onchange="renderMaintenancePlan()">
             <option value="all">全部受热面</option>
-            <option value="HRH">高温再热器</option>
-            <option value="HSH">高温过热器</option>
-            <option value="ISH">屏式过热器</option>
-            <option value="PSH">全大屏过热器</option>
-            <option value="LRH">低温再热器</option>
-            <option value="LSH">低温过热器</option>
-            <option value="WW">水冷壁</option>
+            <option value="GZRQ">高温再热器</option>
+            <option value="GGRQ">高温过热器</option>
+            <option value="HPGRQ">屏式过热器</option>
+            <option value="DPGRQ">全大屏过热器</option>
+            <option value="DZRQ">低温再热器</option>
+            <option value="DGRQ">低温过热器</option>
+            <option value="SLB">水冷壁</option>
             <option value="RSH">顶棚过热器</option>
             <option value="WSH">包墙过热器</option>
-            <option value="ECO">省煤器</option>
+            <option value="SMQ">省煤器</option>
           </select>
         </div>
         <div class="form-group">
@@ -508,10 +508,10 @@
     <div class="grid-2">
       <div class="card">
         <div class="card-title">新增寿命事件 / 检测记录 <button class="btn btn-outline" style="float:right; padding:4px 12px; font-size:12px;" onclick="openDrawingsForSys('')">📄 设计图纸</button></div>
-        <div class="form-group"><label>机组/炉号</label><select id="dm-boiler"><option value="1">1号机组</option><option value="2">2号机组</option></select></div>
-        <div class="form-group"><label>管段编码</label><input type="text" id="dm-code" placeholder="例: 1G-SLB-WB-F000-R015-Q001" oninput="syncDataEntryBoilerFromCode()" /></div>
+        <div class="form-group"><label>机组/炉号（可选）</label><select id="dm-boiler"><option value="">未指定（按编码推断）</option><option value="1">1号机组</option><option value="2">2号机组</option></select></div>
+        <div class="form-group"><label>管段编码</label><input type="text" id="dm-code" placeholder="例: 1G-SLB-WB-F000-R015-Q" oninput="syncDataEntryBoilerFromCode()" /></div>
         <div class="form-group"><label>规格</label><input type="text" id="dm-spec" placeholder="例: Φ63.5×7.5" /></div>
-        <div class="form-group"><label>材质</label><input type="text" id="dm-material" placeholder="例: SA-210C" /></div>
+        <div class="form-group"><label>材质（可选）</label><input type="text" id="dm-material" placeholder="例: SA-210C（可不填）" /></div>
         <div class="form-group"><label>厚度(mm)</label><input type="number" id="dm-thickness" min="0" step="0.01" placeholder="例: 7.10" /></div>
         <div class="form-group"><label>硬度(HB)</label><input type="number" id="dm-hardness" min="0" step="1" placeholder="例: 185" /></div>
         <div class="form-group"><label>事件类型</label><select id="dm-type"><option>测厚</option><option>金相分析</option><option>无损检测</option><option>割管取样</option><option>检修维护</option></select></div>
@@ -521,10 +521,10 @@
       </div>
       <div class="card">
         <div class="card-title">管段更换登记</div>
-        <div class="alert alert-info"><div>ℹ</div><div>旧码报废，新管获新码(加-R1)，自动关联历史。</div></div>
-        <div class="form-group"><label>机组/炉号</label><select id="dm-rep-boiler"><option value="1">1号机组</option><option value="2">2号机组</option></select></div>
-        <div class="form-group"><label>旧管段编码</label><input type="text" id="dm-oldcode" oninput="syncReplacementBoilerFromCode()" /></div>
-        <div class="form-group"><label>新管段编码（同位置新流水号）</label><input type="text" id="dm-newcode" oninput="syncReplacementBoilerFromCode()" /></div>
+        <div class="alert alert-info"><div>ℹ</div><div>旧管报废，新管延续同一管位编码，按更换日期自动关联历史。</div></div>
+        <div class="form-group"><label>机组/炉号（可选）</label><select id="dm-rep-boiler"><option value="">未指定（按编码推断）</option><option value="1">1号机组</option><option value="2">2号机组</option></select></div>
+        <div class="form-group"><label>旧管段编码</label><input type="text" id="dm-oldcode" placeholder="例: 1G-DZRQ-GQ-4KJ-L065-Q" oninput="syncReplacementBoilerFromCode()" /></div>
+        <div class="form-group"><label>新管段编码（同管位）</label><input type="text" id="dm-newcode" placeholder="例: 1G-DZRQ-GQ-4KJ-L065-Q" oninput="syncReplacementBoilerFromCode()" /></div>
         <div class="form-group"><label>更换原因</label><input type="text" id="dm-reason" /></div>
         <div class="form-group"><label>更换日期</label><input type="date" id="dm-rep-date" /></div>
         <button class="btn" style="width:100%;" onclick="addReplacement()">🔄 登记更换</button>
@@ -671,7 +671,7 @@
     <div class="section-title"><h2>全量管段台账</h2><span class="sub">TUBE INVENTORY · CSV / XLSX EXPORT</span></div>
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">单炉管理单元</div><div class="stat-value" id="invTotal">9,512</div></div>
-      <div class="stat-card"><div class="stat-label">水冷壁 (WW)</div><div class="stat-value" id="invWW" style="color:var(--ok)">1,106</div></div>
+      <div class="stat-card"><div class="stat-label">水冷壁 (SLB)</div><div class="stat-value" id="invWW" style="color:var(--ok)">1,106</div></div>
       <div class="stat-card"><div class="stat-label">过热器 (SH)</div><div class="stat-value" id="invSH" style="color:var(--warn)">4,226</div></div>
       <div class="stat-card"><div class="stat-label">再热+省煤器</div><div class="stat-value" id="invRhEco" style="color:var(--accent-3)">4,180</div></div>
     </div>
@@ -751,53 +751,53 @@
         <rect x="206" y="168" width="1138" height="18" fill="url(#tubeH)" opacity=".5" stroke="var(--dg-ceil-stroke)" stroke-width="1.4"/>
         <text x="240" y="163" font-size="11" fill="var(--dg-ceil-text)">顶棚过热器 RSH</text>
 
-        <!-- 全大屏 PSH -->
+        <!-- 全大屏过热器 DPGRQ -->
         <g class="boiler-zone" onclick="showZone('qdp')">
-          <title>全大屏过热器 PSH · 点击查看运行参数</title>
+          <title>全大屏过热器 DPGRQ · 点击查看运行参数</title>
           <rect x="228" y="204" width="188" height="7" fill="#ef4444" opacity=".8"/>
           <g fill="rgba(239,68,68,.14)" stroke="#ef4444" stroke-width="1.8">
             <rect x="232" y="211" width="15" height="222" rx="3"/><rect x="260" y="211" width="15" height="222" rx="3"/><rect x="288" y="211" width="15" height="222" rx="3"/>
             <rect x="316" y="211" width="15" height="222" rx="3"/><rect x="344" y="211" width="15" height="222" rx="3"/><rect x="372" y="211" width="15" height="222" rx="3"/>
           </g>
           <circle cx="239" cy="207" r="4" fill="#ef4444"/><circle cx="295" cy="207" r="4" fill="#ef4444"/><circle cx="351" cy="207" r="4" fill="#ef4444"/><circle cx="379" cy="207" r="4" fill="#ef4444"/>
-          <text x="322" y="462" font-size="13" font-weight="700" fill="var(--dg-psh-text)" text-anchor="middle">全大屏 PSH</text>
+          <text x="322" y="462" font-size="13" font-weight="700" fill="var(--dg-psh-text)" text-anchor="middle">全大屏 DPGRQ</text>
         </g>
 
-        <!-- 屏式(后屏) ISH -->
+        <!-- 屏式(后屏) HPGRQ -->
         <g class="boiler-zone" onclick="showZone('hp')">
-          <title>屏式过热器 ISH · 点击查看运行参数</title>
+          <title>屏式过热器 HPGRQ · 点击查看运行参数</title>
           <rect x="438" y="216" width="158" height="7" fill="#f97316" opacity=".8"/>
           <g fill="rgba(249,115,22,.13)" stroke="#f97316" stroke-width="1.8">
             <rect x="442" y="223" width="13" height="192" rx="3"/><rect x="466" y="223" width="13" height="192" rx="3"/><rect x="490" y="223" width="13" height="192" rx="3"/>
             <rect x="514" y="223" width="13" height="192" rx="3"/><rect x="538" y="223" width="13" height="192" rx="3"/><rect x="562" y="223" width="13" height="192" rx="3"/>
           </g>
-          <text x="520" y="446" font-size="13" font-weight="700" fill="var(--dg-ish-text)" text-anchor="middle">后屏 ISH</text>
+          <text x="520" y="446" font-size="13" font-weight="700" fill="var(--dg-ish-text)" text-anchor="middle">后屏 HPGRQ</text>
         </g>
 
         <!-- ═══ 水平烟道 ═══ -->
         <path d="M 618 186 H 1040 M 618 356 H 1040 M 1040 186 V 830" stroke="var(--dg-structure)" stroke-width="3" fill="none"/>
         <text x="830" y="392" font-size="12" fill="#5d7593" text-anchor="middle" letter-spacing="4">水 平 烟 道</text>
 
-        <!-- 高温过热器 HSH -->
+        <!-- 高温过热器 GGRQ -->
         <g class="boiler-zone" onclick="showZone('gg')">
-          <title>高温过热器 HSH · 点击查看运行参数</title>
+          <title>高温过热器 GGRQ · 点击查看运行参数</title>
           <rect x="668" y="196" width="152" height="6" fill="#f59e0b" opacity=".8"/>
           <g fill="rgba(245,158,11,.13)" stroke="#f59e0b" stroke-width="1.8">
             <rect x="672" y="202" width="11" height="128" rx="3"/><rect x="691" y="202" width="11" height="128" rx="3"/><rect x="710" y="202" width="11" height="128" rx="3"/><rect x="729" y="202" width="11" height="128" rx="3"/>
             <rect x="748" y="202" width="11" height="128" rx="3"/><rect x="767" y="202" width="11" height="128" rx="3"/><rect x="786" y="202" width="11" height="128" rx="3"/><rect x="805" y="202" width="11" height="128" rx="3"/>
           </g>
-          <text x="744" y="348" font-size="13" font-weight="700" fill="var(--dg-hsh-text)" text-anchor="middle">高过 HSH</text>
+          <text x="744" y="348" font-size="13" font-weight="700" fill="var(--dg-hsh-text)" text-anchor="middle">高过 GGRQ</text>
         </g>
 
-        <!-- 高温再热器 HRH -->
+        <!-- 高温再热器 GZRQ -->
         <g class="boiler-zone" onclick="showZone('gz')">
-          <title>高温再热器 HRH · 点击查看运行参数</title>
+          <title>高温再热器 GZRQ · 点击查看运行参数</title>
           <rect x="852" y="196" width="152" height="6" fill="#a855f7" opacity=".8"/>
           <g fill="rgba(168,85,247,.13)" stroke="#a855f7" stroke-width="1.8">
             <rect x="856" y="202" width="11" height="128" rx="3"/><rect x="875" y="202" width="11" height="128" rx="3"/><rect x="894" y="202" width="11" height="128" rx="3"/><rect x="913" y="202" width="11" height="128" rx="3"/>
             <rect x="932" y="202" width="11" height="128" rx="3"/><rect x="951" y="202" width="11" height="128" rx="3"/><rect x="970" y="202" width="11" height="128" rx="3"/><rect x="989" y="202" width="11" height="128" rx="3"/>
           </g>
-          <text x="928" y="348" font-size="13" font-weight="700" fill="var(--dg-hrh-text)" text-anchor="middle">高再 HRH</text>
+          <text x="928" y="348" font-size="13" font-weight="700" fill="var(--dg-hrh-text)" text-anchor="middle">高再 GZRQ</text>
         </g>
 
         <!-- ═══ 尾部竖井（双烟道平行布置）═══ -->
@@ -808,23 +808,23 @@
         <rect x="1202" y="210" width="14" height="160" fill="url(#wallHatch)" stroke="#475569" stroke-width="1.5"/>
         <text transform="rotate(90 1209 290)" x="1209" y="294" font-size="11" fill="var(--dg-annot)" text-anchor="middle" letter-spacing="3">分隔墙</text>
 
-        <!-- 低再（靠锅炉侧·左烟道）LRH -->
+        <!-- 低再（靠锅炉侧·左烟道）DZRQ -->
         <g class="boiler-zone" onclick="showZone('dwzr')">
-          <title>低温再热器 LRH（锅炉侧烟道，挡板调温）· 点击查看运行参数</title>
+          <title>低温再热器 DZRQ（锅炉侧烟道，挡板调温）· 点击查看运行参数</title>
           <rect x="1078" y="222" width="118" height="130" rx="6" fill="rgba(139,92,246,.12)" stroke="#8b5cf6" stroke-width="2"/>
           <rect x="1078" y="222" width="118" height="130" rx="6" fill="url(#tubeH)"/>
           <text x="1137" y="278" font-size="13" font-weight="700" fill="var(--dg-lrh-text)" text-anchor="middle">低温再热器</text>
-          <text x="1137" y="297" font-size="10" fill="var(--dg-lrh-sub)" text-anchor="middle">LRH</text>
+          <text x="1137" y="297" font-size="10" fill="var(--dg-lrh-sub)" text-anchor="middle">DZRQ</text>
           <text x="1137" y="338" font-size="10" fill="#64748b" text-anchor="middle">◀ 靠锅炉侧</text>
         </g>
 
-        <!-- 低过（靠尾部侧·右烟道）LSH -->
+        <!-- 低过（靠尾部侧·右烟道）DGRQ -->
         <g class="boiler-zone" onclick="showZone('dwgr')">
-          <title>低温过热器 LSH（尾部侧烟道，挡板调温）· 点击查看运行参数</title>
+          <title>低温过热器 DGRQ（尾部侧烟道，挡板调温）· 点击查看运行参数</title>
           <rect x="1222" y="222" width="118" height="130" rx="6" fill="rgba(6,182,212,.12)" stroke="#06b6d4" stroke-width="2"/>
           <rect x="1222" y="222" width="118" height="130" rx="6" fill="url(#tubeH)"/>
           <text x="1281" y="278" font-size="13" font-weight="700" fill="var(--dg-cyan-text)" text-anchor="middle">低温过热器</text>
-          <text x="1281" y="297" font-size="10" fill="var(--dg-cyan-sub)" text-anchor="middle">LSH</text>
+          <text x="1281" y="297" font-size="10" fill="var(--dg-cyan-sub)" text-anchor="middle">DGRQ</text>
           <text x="1281" y="338" font-size="10" fill="#64748b" text-anchor="middle">靠尾部侧 ▶</text>
         </g>
 
