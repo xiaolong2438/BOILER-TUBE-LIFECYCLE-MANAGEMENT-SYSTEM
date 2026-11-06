@@ -96,10 +96,12 @@ async function bootstrapCloudStorage() {
         conflictNotice = '云端数据比本机新（本机 ' + localCount + ' 条 / 云端 ' + remoteCount +
           ' 条），已载入云端版本；本机原数据已备份到本地，可在「维护记录」查看这条记录。';
       }
-      userDB = remoteUserDB.value;
-      localStorage.setItem('boiler_user_db', remoteRaw);
+      if(localRaw !== remoteRaw) {
+        userDB = remoteUserDB.value;
+        localStorage.setItem('boiler_user_db', remoteRaw);
+        changed = true;
+      }
       localStorage.setItem(LOCAL_DB_AT_KEY, new Date(remoteAt || Date.now()).toISOString());
-      changed = true;
     }
   }
   if(remoteMaterialLibrary?.found && Array.isArray(remoteMaterialLibrary.value)) {
@@ -112,8 +114,10 @@ async function bootstrapCloudStorage() {
         data: localMatRaw
       }));
     }
-    localStorage.setItem('boiler_material_library', remoteMatRaw);
-    changed = true;
+    if(localMatRaw !== remoteMatRaw) {
+      localStorage.setItem('boiler_material_library', remoteMatRaw);
+      changed = true;
+    }
   }
   if(remoteUserDB?.found === false && ((userDB.events || []).length || (userDB.replacements || []).length)) {
     queueCloudStorageSave('boiler_user_db', userDB);
@@ -122,17 +126,7 @@ async function bootstrapCloudStorage() {
     const localMaterials = JSON.parse(localStorage.getItem('boiler_material_library') || '[]');
     if(Array.isArray(localMaterials) && localMaterials.length) queueCloudStorageSave('boiler_material_library', localMaterials);
   }
-  if(changed) {
-    renderDataManagerTables();
-    updateLifecycleDropdown();
-    populateAIThicknessTargets();
-    renderDashboardWarnings();
-    syncDashboardSnapshot();
-    renderMaintenancePlan();
-    renderComponent('ww');
-    const activeComp = document.querySelector('.comp-tab.active')?.dataset.comp || 'ww';
-    renderMaterialLibrary(activeComp);
-  }
+  if(changed) invalidateTubeViews();
   if(conflictNotice) {
     showToast(conflictNotice, 'warn', 9000);
     try {
@@ -299,7 +293,7 @@ function parseCSVLine(line) {
   result.push(current); return result;
 }
 function csvEscape(value) { return `"${String(value ?? '').replace(/"/g, '""')}"`; }
-function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); localStorage.setItem(LOCAL_DB_AT_KEY, new Date().toISOString()); queueCloudStorageSave('boiler_user_db', userDB); renderDMTable(); renderReplacementTable(); updateLifecycleDropdown(); populateAIThicknessTargets(); renderDashboardWarnings(); syncDashboardSnapshot(); if(typeof runLLMVisualAnalysis === 'function') runLLMVisualAnalysis(); if(typeof nudgeDemoToggleOnce === 'function') nudgeDemoToggleOnce(); if(typeof applyDemoDataToggle === 'function') applyDemoDataToggle(); }
+function saveDB() { localStorage.setItem('boiler_user_db', JSON.stringify(userDB)); localStorage.setItem(LOCAL_DB_AT_KEY, new Date().toISOString()); queueCloudStorageSave('boiler_user_db', userDB); invalidateTubeViews(); if(typeof nudgeDemoToggleOnce === 'function') nudgeDemoToggleOnce(); if(typeof applyDemoDataToggle === 'function') applyDemoDataToggle(); }
 /* 维护记录（操作日志）统一入口：日志失败绝不影响主流程 */
 function mlog(kind, payload) {
   try {
@@ -656,6 +650,7 @@ function canManageTubeData() {
   try { return getAssistantRole() !== 'viewer'; } catch (err) { return true; }
 }
 function renderDataManagerTables() {
+  if(deferViewRender('datamgr')) return;
   const boilerHost = document.getElementById('dm-batch-boiler');
   if (boilerHost && boilerHost.classList.contains('unit-switch') && !boilerHost.dataset.init) {
     boilerHost.dataset.init = '1';
@@ -693,6 +688,7 @@ function dmCodeCell(code, tone) {
 /* 批量选择：勾选行→全选/反选→批量删除（viewer 只读不可见） */
 let dmSelectedTs = new Set();
 function renderDMTable() {
+  if(deferViewRender('datamgr')) return;
   const tbody = document.getElementById('dm-table-body'); if(!tbody) return;
   syncDmTypeOptions();
   const filter = getBatchBoilerFilter();
@@ -870,6 +866,7 @@ function saveEventEdit(ts) {
   showToast(`已保存修改（${changes.map(([key]) => DATA_EDIT_FIELD_LABELS[key] || key).join('、')}），维护记录已留痕`, 'ok');
 }
 function renderReplacementTable() {
+  if(deferViewRender('datamgr')) return;
   const tbody = document.getElementById('dm-rep-table-body'); if(!tbody) return;
   const filter = getBatchBoilerFilter();
   const sys = getDmSysFilter();
@@ -1289,11 +1286,7 @@ function applyDemoDataToggle() {
     : pref === 'on' ? '演示数据：强制显示（与真实数据并存），点击强制隐藏' : '演示数据：已强制隐藏，点击恢复自动';
 }
 function refreshAfterDemoToggle() {
-  renderDashboardWarnings();
-  syncDashboardSnapshot();
-  renderMaintenancePlan();
-  updateLifecycleDropdown();
-  renderComponent(document.querySelector('.comp-tab.active')?.dataset.comp || 'ww');
+  invalidateTubeViews();
 }
 function toggleDemoData() {
   const order = ['auto', 'on', 'off'];
@@ -1322,9 +1315,9 @@ const LIFECYCLE_DATA = {
   '2G-SLB-WB-F000-R025-Q001': { name: '2号炉水冷壁前墙炉右往左第25根', spec: 'Φ63.5×7.5 · SA-210C', install: '2016-03-10', hours: 72540, status: 'ok', risk: '状态良好', timeline: [{date:'2016-03-10',t:'安装',d:'壁厚7.5'},{date:'2025-11-11',t:'测厚',d:'壁厚6.8'}] },
   '1G-GGRQ-GQ-L012-F005-Q001': { name: '1号炉高温过热器炉左往右第12排炉前往后第5根', spec: 'Φ51×8 · SA-213T91', install: '2018-06-15', hours: 58720, status: 'warn', risk: '蠕变损伤68%', timeline: [{date:'2018-06-15',t:'安装',d:'合格'},{date:'2025-12-15',t:'评估',d:'剩余寿命8.2万h'}] },
   '2G-GZRQ-GQ-L032-F004-Q001': { name: '2号炉高温再热器炉左往右第32排炉前往后第4根', spec: 'Φ60×4 · SA-213TP304H', install: '2017-11-05', hours: 65830, status: 'danger', risk: '壁厚减薄至3.3mm', timeline: [{date:'2017-11-05',t:'安装',d:'壁厚4.0'},{date:'2025-09-15',t:'测厚',d:'壁厚3.3'}] },
-  '1G-DPGRQ-GQ-L001-L002-F007-Q001': { name: '1号炉全大屏过热器第1片第2小屏炉前往后第7根', spec: 'Φ51×7 · 12Cr1MoVG', install: '2017-05-20', hours: 68900, status: 'warn', risk: '屏底结渣区需关注', timeline: [{date:'2017-05-20',t:'安装',d:'合格'},{date:'2026-01-10',t:'测厚',d:'壁厚6.2'}] },
+  '1G-DPGRQ-GQ-L001-F002-F007-Q001': { name: '1号炉全大屏过热器第1片第2小屏炉前往后第7根', spec: 'Φ51×7 · 12Cr1MoVG', install: '2017-05-20', hours: 68900, status: 'warn', risk: '屏底结渣区需关注', timeline: [{date:'2017-05-20',t:'安装',d:'合格'},{date:'2026-01-10',t:'测厚',d:'壁厚6.2'}] },
   '2G-HPGRQ-GQ-L015-F009-Q001': { name: '2号炉后屏过热器炉左往右第15屏炉前往后第9根', spec: 'Φ54×9 · SA-213TP347H', install: '2018-03-18', hours: 60110, status: 'warn', risk: '高温腐蚀区金相复查', timeline: [{date:'2018-03-18',t:'安装',d:'合格'},{date:'2025-10-20',t:'金相',d:'组织轻度球化'}] },
-  '1G-DGRQ-GQ-2KJ-L045-F003-Q001': { name: '1号炉低温过热器第2检修空间第45排炉前往后第3根', spec: 'Φ57×6 · 15CrMoG', install: '2016-08-02', hours: 71230, status: 'ok', risk: '状态良好', timeline: [{date:'2016-08-02',t:'安装',d:'壁厚6.0'},{date:'2025-06-18',t:'测厚',d:'壁厚5.4'}] },
+  '1G-DGRQ-GQ-2KJ-L045-D003-Q001': { name: '1号炉低温过热器第2检修空间第45排自下而上第3根', spec: 'Φ57×6 · 15CrMoG', install: '2016-08-02', hours: 71230, status: 'ok', risk: '状态良好', timeline: [{date:'2016-08-02',t:'安装',d:'壁厚6.0'},{date:'2025-06-18',t:'测厚',d:'壁厚5.4'}] },
   '1G-DZRQ-GQ-4KJ-L065-Q001': { name: '1号炉低温再热器第4检修空间炉左往右第65排', spec: 'Φ63.5×4 · SA-210C', install: '2015-12-11', hours: 76850, status: 'ok', risk: '状态良好', timeline: [{date:'2015-12-11',t:'安装',d:'壁厚4.0'},{date:'2025-04-05',t:'测厚',d:'壁厚3.7'}] },
   '2G-SMQ-EXIN-L012-U001-Q001': { name: '2号炉省煤器进口集箱炉左往右第12排', spec: 'Φ159×18 · 20G', install: '2016-03-10', hours: 72540, status: 'ok', risk: '状态良好', timeline: [{date:'2016-03-10',t:'安装',d:'合格'},{date:'2025-11-11',t:'测厚',d:'壁厚17.2'}] },
   '2G-SLB-LHD-F000-L016-Q001': { name: '2号炉冷灰斗前坡炉左往右第16根', spec: 'Φ63.5×7.5 · SA-210C', install: '2016-03-10', hours: 72540, status: 'warn', risk: '灰斗冲刷区磨损', timeline: [{date:'2016-03-10',t:'安装',d:'壁厚7.5'},{date:'2025-08-22',t:'测厚',d:'壁厚5.9'}] },
@@ -1338,8 +1331,9 @@ const matrix = [
   { name:'冷灰斗-前坡', sys:'SLB', comp:'LHD', pos:'F000', dirs:['L','R'], tMax:96, spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'冷灰斗-后坡', sys:'SLB', comp:'LHD', pos:'B000', dirs:['L','R'], tMax:96, spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
   { name:'燃烧器区域', sys:'SLB', comp:'RSQ', special:'rsq', corners:[1,4], layers:['A','B','C','D','E','F'], nozzles:[1,8], spec:'Φ63.5×7.5 SA-210C', mat:'按材料库分项', badge:'badge-ww' },
-  /* 大屏：编号数回路（148M216-0，2026-11-01确认）——每片4小屏×14回路，入口段F00k/出口段B00k/底弯W记入口段位 */
-  { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['L','R'], p2Max:4, dirs:['F','B'], tMax:14, loopPairing: true, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
+  /* 大屏：编号数回路（148M216-0，2026-11-01确认）——每片4小屏×14回路，小屏号台账固定炉前起算 F001~F004，
+     现场炉后起算的 B001~B004 由归一闪镜为 F004~F001；入口段F00k/出口段B00k/底弯W记入口段位 */
+  { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['F','B'], p2Max:4, dirs:['F','B'], tMax:14, loopPairing: true, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
   /* 后屏：编号数腿，回路k=F00k+F(27−k)，13回路/26管位（图纸148M215-0，2026-11-01确认） */
   /* 后屏：编号数回路（148M215-0，2026-11-01确认），入口段F00k/出口段B00k/底弯W记入口段位，13回路 */
   { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing: true, spec:'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat:'按材料库分项', badge:'badge-sh' },
@@ -1347,8 +1341,12 @@ const matrix = [
   { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:12, loopPairing: true, spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
   /* 高再每屏管数未确认：台账只展开 F1~7，B 与 F8+ 码走 fieldDirs 宽松校验、不镜像（保留原方向待核） */
   { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['F'], tMax:7, fieldDirs:['F','B'], spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh' },
-  { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,4], posLetters:['L','R'], pMax:112, dirs:['F','B'], tMax:5, spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
-  { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['F','B'], tMax:6, tubeOptional:true, spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-rh' },
+  /* 低过：5根蛇形管自下而上 D001~D005，排号沿烟道宽度 L001~L112；
+     水平段 5 个检修空间 1KJ~5KJ（省略默认第1空间），现场上往下计数 U 自动镜像 */
+  { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:5, spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
+  /* 低再：6根管圈自下而上 D001~D006，排号沿炉宽 L001~L112；水平段 6 个检修空间 1KJ~6KJ，
+     出口垂直段每两排合并为一排（56片），仍按水平段排号标识；管号可省略到排 */
+  { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,6], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:6, tubeOptional:true, spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-rh' },
   { name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1, spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', mat:'按材料库分项', badge:'badge-eco' },
   { name:'省煤器进口集箱', sys:'SMQ', comp:'EXIN', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1, spec:'Φ159×18 20G', mat:'按材料库分项', badge:'badge-eco' },
   { name:'省煤器出口集箱', sys:'SMQ', comp:'EXOUT', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1, spec:'Φ159×18 20G', mat:'按材料库分项', badge:'badge-eco' }
@@ -1538,7 +1536,7 @@ function renderGeneratorFields() {
     html = `${row.spaces ? `<div class="form-group"><label>检修空间（低过/低再）</label><select id="f-space"><option value="">省略 · 默认第1空间</option>${Array.from({length: row.spaces[1] - row.spaces[0] + 1}, (_, i) => { const n = row.spaces[0] + i; return n === 1 ? '' : `<option value="${n}KJ">${n}KJ · 第${n}检修空间</option>`; }).join('')}</select></div>` : ''}
       <div class="form-group"><label>${row.pos2Letters ? '片号方位' : '排/屏号方位'}</label><select id="f-pos-letter">${dirOptions(row.posLetters)}</select></div>
       <div class="form-group"><label>${row.pos2Letters ? '片号 (3位, 1~' + row.pMax + ')' : '排/屏号 (3位, 1~' + row.pMax + ')'}</label><select id="f-pos-num">${posNums(row.pMax)}</select></div>
-      ${row.pos2Letters ? `<div class="form-group"><label>小屏号方位</label><select id="f-pos2-letter">${dirOptions(row.pos2Letters)}</select></div>
+      ${row.pos2Letters ? `<div class="form-group"><label>小屏号方位（规范 F）</label><select id="f-pos2-letter">${dirOptions(row.pos2Letters)}</select></div>
       <div class="form-group"><label>小屏号 (3位, 1~${row.p2Max})</label><select id="f-pos2-num">${posNums(row.p2Max)}</select></div>` : ''}
       <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...new Set([...row.fieldDirs, ...row.dirs])] : row.dirs)}</select></div>
       <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? (row.fieldTMax ? '现场F/B 1~' + row.fieldTMax : '台账F 1~' + row.tMax + ' · B/超出待核') : '1~'}${row.fieldDirs && row.fieldTMax ? '；U/D管圈参考1~' + row.tMax : ''})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? (row.fieldTMax || 999) : row.tMax}" value="1" /></div>`;
@@ -2017,6 +2015,7 @@ function renderDashboardHealthCore(stats) {
   right.innerHTML = `<div class="health-side-metric hl" style="--metric-color:${stats.delta >= 0 ? 'var(--ok)' : 'var(--danger)'};grid-column:1;grid-row:1;align-self:center"><span>较上次检修</span><strong>${stats.delta >= 0 ? '+' : '-'}${stats.delta}%</strong></div><div class="health-side-metric" style="--metric-color:var(--ok);grid-column:3;grid-row:1;align-self:center"><span>生命周期闭环率</span><strong>83%</strong></div>`;
 }
 function syncDashboardSnapshot() {
+  if(deferViewRender('dashboard')) return;
   const updateTime = document.getElementById('dashboard-update-time');
   if(updateTime) updateTime.textContent = new Date().toLocaleString('zh-CN', { hour12: false });
   const unitLabel = getDashboardUnitLabel();
@@ -2070,6 +2069,7 @@ function syncDashboardSnapshot() {
   renderDashboardSurfaceList();
 }
 function renderDashboardWarnings() {
+  if(deferViewRender('dashboard')) return;
   const box = document.getElementById('dashboard-warning-list');
   if(!box) return;
   const warnings = getDashboardScopedWarnings(8);
@@ -2129,6 +2129,73 @@ function extractThicknessData(code, options = {}) {
   return [...byTime.values()].sort((a,b) => a.year - b.year);
 }
 
+/* 页面首次进入才挂载；数据变化只刷新当前页，其余页面下次进入时刷新。 */
+const viewLifecycle = {
+  dashboard: { init() { animateCounters(); buildBarChart(); }, refresh() { renderDashboardWarnings(); syncDashboardSnapshot(); runLLMVisualAnalysis(); } },
+  generator: { init() { populateCodeGeneratorOptions(); genCode(); } },
+  components: { refresh() { renderComponent(document.querySelector('.comp-tab.active')?.dataset.comp || 'ww'); } },
+  headers: { init: renderHeaders },
+  inventory: { init: renderMatrix },
+  datamgr: { refresh: renderDataManagerTables },
+  drawings: { refresh: renderDesignDrawings },
+  'maintenance-plan': { refresh: renderMaintenancePlan },
+  'tube-analysis': { refresh: refreshTubeAnalysisView }
+};
+function refreshTubeAnalysisView() {
+  updateLifecycleDropdown();
+  populateAIThicknessTargets();
+  for(const id of ['searchResult', 'lcContent']) {
+    const host = document.getElementById(id);
+    const code = host?.querySelector('.tube-detail h3')?.textContent.trim().split(/\s/)[0];
+    if(code) host.innerHTML = buildTubeProfileHTML(code, { context: id === 'lcContent' ? 'lifecycle' : 'search' });
+    else if(host) host.innerHTML = '';
+  }
+  if(window.__activeTubeAnalysis) {
+    const previous = window.__activeTubeAnalysis;
+    const data = predictThicknessTrendFromHistory(previous.target, extractThicknessData(previous.target, { includeSystem: false }), selectedTubePipeType(previous.target));
+    window.__activeTubeAnalysis = data;
+    renderAIResults(data);
+    const report = document.getElementById('ai-llm-report');
+    if(report) report.textContent = '数据已更新，本地预测已重新计算；需要最新大模型解读时请主动运行分析。';
+  }
+}
+function activeViewId() {
+  return document.querySelector('.view.active')?.id.replace(/^view-/, '') || '';
+}
+function deferViewRender(viewId) {
+  if(activeViewId() === viewId) return false;
+  if(viewLifecycle[viewId]) viewLifecycle[viewId].dirty = true;
+  return true;
+}
+function refreshView(viewId) {
+  const state = viewLifecycle[viewId];
+  if(!state || state.rendering || activeViewId() !== viewId) return;
+  state.rendering = true;
+  try {
+    if(!state.initialized) {
+      if(state.init) state.init();
+      state.initialized = true;
+      state.dirty = true;
+    }
+    if(state.dirty) {
+      state.dirty = false;
+      if(state.refresh) state.refresh();
+    }
+  } catch(err) {
+    state.dirty = true;
+    throw err;
+  } finally {
+    state.rendering = false;
+  }
+}
+function invalidateViews(viewIds) {
+  viewIds.forEach(viewId => { if(viewLifecycle[viewId]) viewLifecycle[viewId].dirty = true; });
+  refreshView(activeViewId());
+}
+function invalidateTubeViews() {
+  invalidateViews(['dashboard', 'tube-analysis', 'maintenance-plan', 'datamgr', 'components']);
+}
+
 function switchView(viewId, { updateHash = true } = {}) {
   const target = document.getElementById('view-' + viewId);
   if(!target) return;
@@ -2141,6 +2208,7 @@ function switchView(viewId, { updateHash = true } = {}) {
   if(window.scrollY > 8) window.scrollTo({ top: 0, behavior: 'smooth' });
   document.body.classList.remove('rail-open');
   if(btn) btn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  refreshView(viewId);
   if(viewId === 'maintainlog' && window.BTMaintenanceLog && typeof window.BTMaintenanceLog.render === 'function') window.BTMaintenanceLog.render();
   if(viewId === 'overtemperature') activateOvertemperatureView();
   if(viewId === 'tube-analysis') activateTemperatureEvidence();
@@ -2164,11 +2232,11 @@ function activateOvertemperatureView() {
   if(window.BTOvertemperature?.refresh) { window.BTOvertemperature.refresh(); return; }
   const host = document.getElementById('ot-app');
   if(host) host.innerHTML = '<div class="llm-note">超温分析模块加载中…</div>';
-  loadOvertemperatureBundle(() => window.BTOvertemperature?.refresh());
+  loadOvertemperatureBundle(() => { if(activeViewId() === 'overtemperature') window.BTOvertemperature?.refresh(); });
 }
 function activateTemperatureEvidence() {
   if(window.BTTemperatureEvidence?.hydrate) { window.BTTemperatureEvidence.hydrate({ force: true }); return; }
-  loadOvertemperatureBundle(() => window.BTTemperatureEvidence?.hydrate({ force: true }));
+  loadOvertemperatureBundle(() => { if(activeViewId() === 'tube-analysis') window.BTTemperatureEvidence?.hydrate({ force: true }); });
 }
 function initNav() {
   const btns = [...document.querySelectorAll('.nav-btn')];
@@ -2185,6 +2253,7 @@ function initNav() {
   });
   const fromHash = (location.hash || '').replace('#view-', '');
   if(fromHash && document.getElementById('view-' + fromHash)) switchView(fromHash, { updateHash: false });
+  else refreshView(activeViewId());
 }
 function toggleRail() {
   if (window.matchMedia('(min-width: 961px)').matches && document.body.classList.contains('rail-collapsed') && typeof window.toggleRailCollapse === 'function') {
@@ -2635,8 +2704,7 @@ function saveMaterialLibrary(items, options = {}) {
   const beforeRows = getMaterialLibrary();
   localStorage.setItem(MATERIAL_LIBRARY_KEY, JSON.stringify(items));
   queueCloudStorageSave(MATERIAL_LIBRARY_KEY, items);
-  const active = document.querySelector('.comp-tab.active')?.dataset.comp || 'ww';
-  renderMaterialLibrary(active);
+  invalidateViews(['components', 'dashboard', 'tube-analysis', 'maintenance-plan']);
   try {
     const beforeMap = new Map(beforeRows.map(item => [materialKey(item), item]));
     const afterMap = new Map((Array.isArray(items) ? items : []).map(item => [materialKey(item), item]));
@@ -2796,6 +2864,7 @@ function saveMaterialStockEdit(encodedKey) {
   showToast('材料记录已更新并同步（若已登录云端）。', 'ok');
 }
 function renderMaterialLibrary(key) {
+  if(deferViewRender('components')) return;
   const c = COMPONENTS[key];
   const componentName = MATERIAL_COMPONENT_BY_TAB[key] || c?.name || '';
   const allRows = getMaterialLibrary();
@@ -2845,7 +2914,14 @@ function renderMaterialLibrary(key) {
 function renderComponent(key) { renderMaterialLibrary(key); }
 function renderHeaders() { document.getElementById('shHeaders').innerHTML = SH_HEADERS.map(h => `<tr><td>${h.n}</td><td>${h.name}</td><td>${h.spec}</td><td>${h.mat}</td></tr>`).join(''); document.getElementById('rhHeaders').innerHTML = RH_HEADERS.map(h => `<tr><td>${h.n}</td><td>${h.name}</td><td>${h.spec}</td><td>${h.mat}</td></tr>`).join(''); }
 
-function updateLifecycleDropdown() { const sel = document.getElementById('lcSelect'); const codes = [...new Set(userDB.events.map(e => e.code))]; sel.innerHTML = '<option value="">-- 请选择管码 --</option>' + codes.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join(''); }
+function updateLifecycleDropdown() {
+  if(deferViewRender('tube-analysis')) return;
+  const sel = document.getElementById('lcSelect');
+  const previous = sel.value;
+  const codes = [...new Set(userDB.events.map(e => e.code))];
+  sel.innerHTML = '<option value="">-- 请选择管码 --</option>' + codes.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
+  if(codes.includes(previous)) sel.value = previous;
+}
 function loadLifecycle(customCode) {
   const code = customCode || document.getElementById('lcSelect').value || document.getElementById('lcCustomCode').value.trim().toUpperCase();
   if(!code) return;
@@ -3329,6 +3405,7 @@ function renderMaintenanceAgingBuckets(stats) {
   target.innerHTML = buckets.map(item => `<div class="aging-bucket ${item.cls}"><div class="k">${escapeHTML(item.label)}</div><div class="v">${item.value.toLocaleString()}</div><div class="d">${escapeHTML(item.desc)}</div></div>`).join('');
 }
 function renderMaintenancePlan() {
+  if(deferViewRender('maintenance-plan')) return;
   const body = document.getElementById('maintenanceOutagePlanBody');
   const coverageBody = document.getElementById('maintenanceCoverageBody');
   const overdueBody = document.getElementById('maintenanceOverdueBody');
@@ -3885,6 +3962,7 @@ function clearLLMResult() {
 let lastLLMVisualInsights = [];
 let pendingLLMVizRerun = false;
 function runLLMVisualAnalysis(forceLoad = false) {
+  if(deferViewRender('dashboard')) return;
   const view = document.getElementById('llm-viz-view');
   const module = window.BTAssistantAnalysis;
   if(!view) return;
@@ -4096,6 +4174,7 @@ function collectAIThicknessTargets() {
     .sort((a, b) => a.code.localeCompare(b.code));
 }
 function populateAIThicknessTargets() {
+  if(deferViewRender('tube-analysis')) return;
   const sel = document.getElementById('ai-target');
   if(!sel) return;
   const targets = collectAIThicknessTargets();
@@ -4942,6 +5021,26 @@ const DPGRQ_LOOP_BASELINE = [
   { loop: 13, frontSegs: [['Φ51×7', '12Cr1MoVG']], rearSegs: [['Φ51×7', '12Cr1MoVG']] },
   { loop: 14, frontSegs: [['Φ51×7', '12Cr1MoVG'], ['Φ51×7', 'SA-213T91'], ['Φ51×7', 'SA-213T91']], rearSegs: [['Φ51×7', 'SA-213T91'], ['Φ51×7', '12Cr1MoVG']] }
 ];
+// 低温再热器 6 回路材质分段基准（图纸148M221-0 + 用户确认2026-11-05）。
+// 每回路 = 一根管圈（D001~D006，自下而上）；沿蒸汽流程：水平段1~3组 → 4组 → 5组 → 出口垂直段。
+// D001/D006 为外圈支撑耳板管，水平段 Φ63.5×6；D002~D005 为 Φ63.5×4；垂直段全部 Φ63.5×4 12Cr1MoVG。
+const DZRQ_LOOP_BASELINE = [
+  { loop: 1, tube: 'D001', outer: true, segs: [['1~3组', 'Φ63.5×6', 'SA-210C'], ['4组', 'Φ63.5×6', 'SA-210C/15CrMoG'], ['5组', 'Φ63.5×6', '15CrMoG'], ['垂直段', 'Φ63.5×4', '12Cr1MoVG']] },
+  { loop: 2, tube: 'D002', outer: false, segs: [['1~3组', 'Φ63.5×4', 'SA-210C'], ['4组', 'Φ63.5×4', 'SA-210C/15CrMoG'], ['5组', 'Φ63.5×4', '15CrMoG'], ['垂直段', 'Φ63.5×4', '12Cr1MoVG']] },
+  { loop: 3, tube: 'D003', outer: false, segs: [['1~3组', 'Φ63.5×4', 'SA-210C'], ['4组', 'Φ63.5×4', 'SA-210C/15CrMoG'], ['5组', 'Φ63.5×4', '15CrMoG'], ['垂直段', 'Φ63.5×4', '12Cr1MoVG']] },
+  { loop: 4, tube: 'D004', outer: false, segs: [['1~3组', 'Φ63.5×4', 'SA-210C'], ['4组', 'Φ63.5×4', 'SA-210C/15CrMoG'], ['5组', 'Φ63.5×4', '15CrMoG'], ['垂直段', 'Φ63.5×4', '12Cr1MoVG']] },
+  { loop: 5, tube: 'D005', outer: false, segs: [['1~3组', 'Φ63.5×4', 'SA-210C'], ['4组', 'Φ63.5×4', 'SA-210C/15CrMoG'], ['5组', 'Φ63.5×4', '15CrMoG'], ['垂直段', 'Φ63.5×4', '12Cr1MoVG']] },
+  { loop: 6, tube: 'D006', outer: true, segs: [['1~3组', 'Φ63.5×6', 'SA-210C'], ['4组', 'Φ63.5×6', 'SA-210C/15CrMoG'], ['5组', 'Φ63.5×6', '15CrMoG'], ['垂直段', 'Φ63.5×4', '12Cr1MoVG']] }
+];
+// 低温过热器 5 回路材质分段基准（图纸148M212-0 + 材料库序号11~14 + 用户确认2026-11-06）。
+// 5根管圈自下而上 D001~D005，5个回路材质规格相同；沿蒸汽流程：入口段 → 水平1~3组 → 4组 → 出口垂直段。
+const DGRQ_LOOP_BASELINE = [
+  { loop: 1, tube: 'D001', segs: [['入口段', 'Φ60×8.5 15CrMoG/Φ57×6 15CrMoG'], ['1~3组', 'Φ57×6 15CrMoG'], ['4组', 'Φ57×6 12Cr1MoVG'], ['垂直段', 'Φ57×8 12Cr1MoVG']] },
+  { loop: 2, tube: 'D002', segs: [['入口段', 'Φ60×8.5 15CrMoG/Φ57×6 15CrMoG'], ['1~3组', 'Φ57×6 15CrMoG'], ['4组', 'Φ57×6 12Cr1MoVG'], ['垂直段', 'Φ57×8 12Cr1MoVG']] },
+  { loop: 3, tube: 'D003', segs: [['入口段', 'Φ60×8.5 15CrMoG/Φ57×6 15CrMoG'], ['1~3组', 'Φ57×6 15CrMoG'], ['4组', 'Φ57×6 12Cr1MoVG'], ['垂直段', 'Φ57×8 12Cr1MoVG']] },
+  { loop: 4, tube: 'D004', segs: [['入口段', 'Φ60×8.5 15CrMoG/Φ57×6 15CrMoG'], ['1~3组', 'Φ57×6 15CrMoG'], ['4组', 'Φ57×6 12Cr1MoVG'], ['垂直段', 'Φ57×8 12Cr1MoVG']] },
+  { loop: 5, tube: 'D005', segs: [['入口段', 'Φ60×8.5 15CrMoG/Φ57×6 15CrMoG'], ['1~3组', 'Φ57×6 15CrMoG'], ['4组', 'Φ57×6 12Cr1MoVG'], ['垂直段', 'Φ57×8 12Cr1MoVG']] }
+];
 // 悬挂屏回路系统配置：统一回路编号——回路k = 入口段F00k + 底弯W(F00k-W) + 出口段B00k；历史腿号由归一自动迁移。
 const PLATEN_LOOP_SYSTEMS = {
   GGRQ: { loops: 12, baseline: GGRQ_LOOP_BASELINE },
@@ -5071,6 +5170,31 @@ function renderGGRQLoopBaseline() {
     platenLoopBaselineTable(HPGRQ_LOOP_BASELINE, '屏式过热器 13 回路材质分段基准（图纸 148M215-0）') +
     platenLoopBaselineTable(DPGRQ_LOOP_BASELINE, '全大屏过热器 14 回路材质分段基准（图纸 148M216-0）');
 }
+function tubeLoopBaselineTable(baseline, caption) {
+  const chip = seg => '<span style="display:inline-block; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; white-space:nowrap;">' + escapeHTML(seg.filter(Boolean).join(' ')) + '</span>';
+  const arrow = '<span style="color:var(--text-dim); margin:0 2px;">→</span>';
+  const rows = baseline.map(l => '<tr>' +
+    '<td style="padding:6px 10px; white-space:nowrap; font-weight:700;">回路' + l.loop + '</td>' +
+    '<td style="padding:6px 10px; white-space:nowrap;">' + escapeHTML(l.tube + (l.outer ? '（外圈/支撑耳板管）' : '')) + '</td>' +
+    '<td style="padding:6px 10px;">' + l.segs.map(chip).join(arrow) + '</td>' +
+    '</tr>').join('');
+  return '<div style="font-weight:700; font-size:12px; margin:12px 0 6px;">' + escapeHTML(caption) + '</div>' +
+    '<table style="width:100%; border-collapse:collapse; font-size:12px;">' +
+    '<thead><tr style="color:var(--text-dim); text-align:left; border-bottom:1px solid var(--border);">' +
+    '<th style="padding:6px 10px; font-weight:600;">回路</th><th style="padding:6px 10px; font-weight:600;">管组</th>' +
+    '<th style="padding:6px 10px; font-weight:600;">沿蒸汽流程分段（入口联箱 → 出口垂直段）</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+function renderDZRQLoopBaseline() {
+  const host = document.getElementById('dzrqLoopBaseline');
+  if (!host) return;
+  host.innerHTML = tubeLoopBaselineTable(DZRQ_LOOP_BASELINE, '低温再热器 6 回路材质分段基准（图纸 148M221-0）');
+}
+function renderDGRQLoopBaseline() {
+  const host = document.getElementById('dgrqLoopBaseline');
+  if (!host) return;
+  host.innerHTML = tubeLoopBaselineTable(DGRQ_LOOP_BASELINE, '低温过热器 5 回路材质分段基准（图纸 148M212-0）');
+}
 let designDrawings = [];
 try { designDrawings = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '[]'); } catch (err) { designDrawings = []; }
 if (!Array.isArray(designDrawings)) designDrawings = [];
@@ -5130,7 +5254,10 @@ function drawingSurfaceLabel(sys) {
   return rule ? rule.sys + ' · ' + rule.label : (sys || '通用');
 }
 function renderDesignDrawings() {
+  if(deferViewRender('drawings')) return;
   renderGGRQLoopBaseline();
+  renderDZRQLoopBaseline();
+  renderDGRQLoopBaseline();
   const grid = document.getElementById('drawingsGrid');
   if (!grid) return;
   const filter = document.getElementById('drawingSysFilter');
@@ -5204,26 +5331,11 @@ function closeDrawingViewer() {
 }
 
 // ========== INIT ==========
-initNav();
-animateCounters();
-buildBarChart();
-populateCodeGeneratorOptions();
-genCode();
-renderComponent('ww');
-renderHeaders();
-loadLifecycle();
-renderMatrix();
-renderDataManagerTables();
-renderDesignDrawings();
-updateLifecycleDropdown();
-populateAIThicknessTargets();
 loadLLMConfigToForm();
-renderDashboardWarnings(); syncDashboardSnapshot();
-renderMaintenancePlan();
+initNav();
 loadAuthSession();
 bootstrapCloudStorage();
 refreshLLMServerStatus();
-runLLMVisualAnalysis();
 applyDemoDataToggle();
 /* 首屏渲染完成后空闲预载 AI 助手与超温分析模块，用户点开时通常已就绪 */
 if(window.BTLazy) window.BTLazy.idle();

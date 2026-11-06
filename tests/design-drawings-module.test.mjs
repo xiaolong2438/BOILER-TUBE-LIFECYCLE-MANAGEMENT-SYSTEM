@@ -70,6 +70,15 @@ assert.match(js, /function ggrqLoopForTube\(/);
 assert.match(js, /function ggrqBottomBendAttrs\(/);
 assert.match(js, /function renderGGRQLoopBaseline\(\)/);
 assert.match(js, /const DPGRQ_LOOP_BASELINE = \[/, "全大屏14回路分段基准应存在");
+assert.match(html, /id="dzrqLoopBaseline"/, "低再分段基准表容器应存在");
+assert.match(html, /低温再热器材质分段基准（6回路）/, "低再分段基准卡片标题应存在");
+assert.match(js, /const DZRQ_LOOP_BASELINE = \[/, "低再6回路分段基准应存在");
+assert.match(js, /function renderDZRQLoopBaseline\(\)/, "低再分段基准渲染函数应存在");
+assert.match(html, /id="dgrqLoopBaseline"/, "低过分段基准表容器应存在");
+assert.match(html, /低温过热器材质分段基准（5回路）/, "低过分段基准卡片标题应存在");
+assert.match(js, /const DGRQ_LOOP_BASELINE = \[/, "低过5回路分段基准应存在");
+assert.match(js, /function renderDGRQLoopBaseline\(\)/, "低过分段基准渲染函数应存在");
+assert.match(js, /function renderDZRQLoopBaseline\(\)/, "低再分段基准渲染函数应存在");
 
 // 行为验证：回路号即入口段F00k/出口段B00k编号（JSON 序列化取出，避免跨 realm 原型差异）
 const baselineCtx = vm.createContext({});
@@ -85,6 +94,35 @@ assert.deepEqual(
   [["Φ51×8", "SA-213T91"], ["Φ51×9", "12Cr1MoVG"], ["Φ51×8", "SA-213T91"], ["Φ54×7.5", "SA-213TP347H"]],
   "底弯件=入口段末段：回路5-7/12=Φ51×8 T91、8-11=Φ51×9 12Cr1MoVG、回路1=Φ54×7.5 TP347H"
 );
+const dzrqBaseline = JSON.parse(vm.runInContext("JSON.stringify(DZRQ_LOOP_BASELINE)", baselineCtx));
+assert.equal(dzrqBaseline.length, 6, "低再应包含6个回路");
+assert.deepEqual(dzrqBaseline.map(l => l.tube), ['D001', 'D002', 'D003', 'D004', 'D005', 'D006'], "管组按自下而上连续编号");
+for (const l of dzrqBaseline) {
+  assert.equal(l.loop, dzrqBaseline.indexOf(l) + 1, "低再回路号连续1..6");
+  assert.deepEqual(l.segs.map(s => s[0]), ['1~3组', '4组', '5组', '垂直段'], "分段顺序沿蒸汽流程");
+  assert.deepEqual(l.segs[3], ['垂直段', 'Φ63.5×4', '12Cr1MoVG'], "垂直段统一Φ63.5×4 12Cr1MoVG");
+}
+for (const l of [dzrqBaseline[0], dzrqBaseline[5]]) {
+  assert.equal(l.outer, true, `${l.tube} 应为外圈/支撑耳板管`);
+  assert.deepEqual(l.segs.map(s => s[1]), ['Φ63.5×6', 'Φ63.5×6', 'Φ63.5×6', 'Φ63.5×4'], "外圈水平段Φ63.5×6、垂直段Φ63.5×4");
+  assert.deepEqual(l.segs.map(s => s[2]), ['SA-210C', 'SA-210C/15CrMoG', '15CrMoG', '12Cr1MoVG'], "外圈材质分段");
+}
+for (const l of dzrqBaseline.slice(1, 5)) {
+  assert.equal(l.outer, false, `${l.tube} 应为内圈管`);
+  assert.deepEqual(l.segs.map(s => s[1]), ['Φ63.5×4', 'Φ63.5×4', 'Φ63.5×4', 'Φ63.5×4'], "内圈全段Φ63.5×4");
+}
+const dgrqBaseline = JSON.parse(vm.runInContext("JSON.stringify(DGRQ_LOOP_BASELINE)", baselineCtx));
+assert.equal(dgrqBaseline.length, 5, "低过应包含5个回路");
+assert.deepEqual(dgrqBaseline.map(l => l.tube), ['D001', 'D002', 'D003', 'D004', 'D005'], "低过管组按自下而上连续编号");
+for (const l of dgrqBaseline) {
+  assert.equal(l.loop, dgrqBaseline.indexOf(l) + 1, "低过回路号连续1..5");
+  assert.deepEqual(l.segs, [
+    ['入口段', 'Φ60×8.5 15CrMoG/Φ57×6 15CrMoG'],
+    ['1~3组', 'Φ57×6 15CrMoG'],
+    ['4组', 'Φ57×6 12Cr1MoVG'],
+    ['垂直段', 'Φ57×8 12Cr1MoVG']
+  ], `${l.tube} 分段链`);
+}
 
 // 与清洗脚本的 GGRQ_LOOP_SEGMENTS 逐回路逐段一致（单一事实源，双端同步）
 const py = readFileSync(resolve(here, "../scripts/clean_boiler_film_records.py"), "utf8");
@@ -121,7 +159,7 @@ const qRearSummary = summaryOf('1G-GGRQ-GQ-L025-B002-Q', []);
 assert.ok(qRearSummary.startsWith('回路2 出口段 B002（底弯→顶出口）：Φ51×11 SA-213T91【底弯后】 → Φ51×11 SA-213T22'), '出口段Q（B向规范地址）列出底弯后多种规格（按顺序全部列出）');
 assert.ok(summaryOf('1G-GGRQ-GQ-L002-F002-Q', [{ spec: 'Φ51×11', material: 'SA-213T22' }]).includes('；检测记录：Φ51×11 SA-213T22'), '记录值不在入口段直管链时附检测记录待核');
 assert.ok(summaryOf('1G-GGRQ-GQ-L001-B001-W', []).startsWith('回路1 底弯段 Φ54×7.5 SA-213TP347H'), '弯头B写法归一入口段位后取回路基准');
-assert.ok(summaryOf('1G-DPGRQ-GQ-L001-L002-F001-Q', []).startsWith('回路1 入口段 F001（顶入口→底弯）：Φ51×7 12Cr1MoVG → Φ51×7 SA-213T91【底弯前】'), '大屏外圈入口段链（12Cr1MoVG→T91，绑定在小屏内）');
+assert.ok(summaryOf('1G-DPGRQ-GQ-L001-F002-F001-Q', []).startsWith('回路1 入口段 F001（顶入口→底弯）：Φ51×7 12Cr1MoVG → Φ51×7 SA-213T91【底弯前】'), '大屏外圈入口段链（12Cr1MoVG→T91，绑定在小屏内）');
 assert.equal(summaryOf('1G-GZRQ-GQ-L001-F001-W', [{ spec: 'Φ60×4', material: 'SA-213TP304H' }]), 'Φ60×4 SA-213TP304H', '高再无回路基准，用检测记录值');
 
 console.log("ok - design drawings module: nav/view/upload/viewer/delete/linkage with permission gating and KV sync + 12-loop segment baseline");

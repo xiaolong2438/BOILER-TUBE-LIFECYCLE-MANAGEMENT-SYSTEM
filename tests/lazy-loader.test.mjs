@@ -41,6 +41,11 @@ assert.ok(
   indexOf(overtemperature, 'overtemperature-evidence-v1.js') > indexOf(overtemperature, 'overtemperature-v1.js'),
   'evidence 依赖 overtemperature 的公开 API，必须后加载'
 );
+assert.ok(
+  indexOf(overtemperature, 'overtemperature-import-v1.js') > 0 &&
+    indexOf(overtemperature, 'overtemperature-import-v1.js') < indexOf(overtemperature, 'overtemperature-v1.js'),
+  '导入解析模块必须在超温 UI 之前加载'
+);
 
 /* ---------------- 2. 主页面不再静态加载这些模块 ---------------- */
 for (const src of [...assistant, ...overtemperature]) {

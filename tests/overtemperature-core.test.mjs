@@ -141,8 +141,10 @@ test('R/L position mirror and historical loop-leg migration reuse assistant rule
   const back = region({ dirs:['B'], tubeFrom:12,tubeTo:12 });
   assert.equal(Core.matchesRegion('1G-GGRQ-GQ-R032-F013-Q001', back, '1'), true);
   const dp = region({ sys:'DPGRQ', pos2From:1, pos2To:1 });
-  assert.equal(Core.matchesRegion('1G-DPGRQ-GQ-R006-R004-F001-Q', dp, '1'), true);
-  assert.equal(Core.matchesRegion('1G-DPGRQ-GQ-R006-R003-F001-Q', dp, '1'), false);
+  assert.equal(Core.matchesRegion('1G-DPGRQ-GQ-R006-F001-F001-Q', dp, '1'), true);
+  assert.equal(Core.matchesRegion('1G-DPGRQ-GQ-R006-F004-F001-Q', dp, '1'), false);
+  assert.equal(Core.matchesRegion('1G-DPGRQ-GQ-R006-B004-F001-Q', dp, '1'), true, '小屏号炉后起算 B004 镜像为 F001');
+  assert.equal(Core.matchesRegion('1G-DPGRQ-GQ-R006-L001-F001-Q', dp, '1'), false, '小屏号台账 F001–F004，L 方向不是别名');
 });
 
 test('wall tube directions use matrix first direction including asymmetric defaults', () => {
@@ -156,24 +158,24 @@ test('wall tube directions use matrix first direction including asymmetric defau
 });
 
 test('low-temperature omitted 1KJ is space one, not a wildcard', () => {
-  const low = region({ sys:'DGRQ', spaces:[1], tubeFrom:2,tubeTo:2 });
-  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-L001-F002-Q', low, '1'), true);
-  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-1KJ-L001-F002-Q', low, '1'), true);
-  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-L001-F002-Q', { ...low,spaces:[2] }, '1'), false);
-  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-2KJ-L001-F002-Q', { ...low,spaces:null }, '1'), true);
-  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-1KJ-R112-B004-Q', low, '1'), true);
-  assert.equal(Core.expandRegion({ ...low,spaces:null }, '1', undefined, 1).count, 4);
-  bad(Core.validateRegion({ ...low, spaces:[5] }));
+  const low = region({ sys:'DGRQ', spaces:[1], dirs:['D'], tubeFrom:2,tubeTo:2 });
+  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-L001-D002-Q', low, '1'), true);
+  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-1KJ-L001-D002-Q', low, '1'), true);
+  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-L001-D002-Q', { ...low,spaces:[2] }, '1'), false);
+  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-2KJ-L001-D002-Q', { ...low,spaces:null }, '1'), true);
+  assert.equal(Core.matchesRegion('1G-DGRQ-GQ-1KJ-R112-U004-Q', low, '1'), true);
+  assert.equal(Core.expandRegion({ ...low,spaces:null }, '1', undefined, 1).count, 5);
+  bad(Core.validateRegion({ ...low, spaces:[6] }));
 });
 
 test('DZRQ unspecified tube never becomes a specified single tube', () => {
-  const low = region({ sys:'DZRQ', spaces:[1] });
+  const low = region({ sys:'DZRQ', spaces:[1], dirs:['D'] });
   assert.equal(Core.matchesRegion('1G-DZRQ-GQ-L001-Q', low, '1'), false);
   assert.equal(Core.matchesRegion('1G-DZRQ-GQ-L001-Q', { ...low,tubeFrom:null,tubeTo:null }, '1'), false);
   assert.equal(Core.matchesRegion('1G-DZRQ-GQ-L001-Q', { ...low,tubeFrom:null,tubeTo:null,dirs:null }, '1'), true);
   assert.equal(Core.matchesRegion('1G-DZRQ-GQ-R112-Q', { ...low,tubeFrom:null,tubeTo:null,dirs:null }, '1'), true);
   assert.equal(Core.matchesRegion('1G-DZRQ-GQ-L001-Q', { ...low,spaces:[2],tubeFrom:null,tubeTo:null,dirs:null }, '1'), false);
-  assert.equal(Core.matchesRegion('1G-DZRQ-GQ-L001-F001-Q', low, '1'), true);
+  assert.equal(Core.matchesRegion('1G-DZRQ-GQ-L001-D001-Q', low, '1'), true);
 });
 
 test('suspended F/B Q are separate legs and W has only F canonical identity', () => {
@@ -298,9 +300,9 @@ test('record validation rejects empty, nonfinite, future and malformed time/temp
   bad(Core.validateRecord(record(), point(), [config()], ''), /now/);
 });
 
-test('interval strictly exceeds an evidenced limit and closed intervals are verified', () => {
-  bad(Core.validateRecord(record({ temperatureC:600 }), point(), [config()], now), /严格大于/);
-  bad(Core.validateRecord(record({ temperatureC:599 }), point(), [config()], now), /严格大于/);
+test('interval reaches an evidenced limit and closed intervals are verified', () => {
+  good(Core.validateRecord(record({ temperatureC:600 }), point(), [config()], now));
+  bad(Core.validateRecord(record({ temperatureC:599 }), point(), [config()], now), /不得低于/);
   bad(Core.validateRecord(record(), point(), [config({ limitC:null,limitBasis:'' })], now), /确认限值/);
   bad(Core.validateRecord(record(), point(), [config({ limitBasis:'' })], now), /确认限值/);
   bad(Core.validateRecord(record({ verified:false }), point(), [config()], now), /人工核定/);
@@ -318,7 +320,7 @@ test('record version, cross-boundary, exact endpoint and open interval rules', (
   good(Core.validateRecord(observation({ startAt:t0+H,configId:c2.id }), point(), [c1,c2], now));
   bad(Core.validateRecord(record({ endAt:null }), point(), [c1,c2], now), /未结束/);
   bad(Core.validateRecord(record({ configId:c2.id }), point(), [c1,c2], now), /生效期/);
-  bad(Core.validateRecord(record({ startAt:t0+H,endAt:t0+2*H,configId:c2.id,temperatureC:620 }), point(), [c1,c2], now), /严格大于/);
+  bad(Core.validateRecord(record({ startAt:t0+H,endAt:t0+2*H,configId:c2.id,temperatureC:620 }), point(), [c1,c2], now), /不得低于/);
 });
 
 test('merge handles overlap, adjacency, duplicates, sorting, midnight and month rollover', () => {
@@ -356,13 +358,13 @@ test('summary counts evidence records but unions overlap and adjacent durations'
   assert.equal(s.latestAt, t0+8*H);
 });
 
-test('observations/open records never accumulate, missing/equals thresholds never accumulate', () => {
+test('observations/open records never accumulate, at-limit counts and below/missing do not', () => {
   const records = [observation({ id:'obs',temperatureC:900 }),record({ id:'open',endAt:null }),record({ id:'equal',temperatureC:600 }),record({ id:'below',temperatureC:590 }),record({ id:'unverified',verified:false })];
   const s = Core.summarize(records, [config()]);
-  assert.equal(s.durationMs, 0);
-  assert.equal(s.mergedCount, 0);
+  assert.equal(s.durationMs, H);
+  assert.equal(s.mergedCount, 1);
   assert.equal(s.openCount, 1);
-  assert.equal(s.excludedIntervalCount, 3);
+  assert.equal(s.excludedIntervalCount, 2);
   assert.equal(s.peakC, 900);
   for (const c of [config({ limitC:null,limitBasis:'' }),config({ limitBasis:'' })]) {
     const x = Core.summarize([record()], [c]);

@@ -130,7 +130,7 @@ check("散点图：标签进提示，低于阈值的点高亮并配危险色带"
 });
 
 check("X 轴长标签截断并保留完整名称于提示", () => {
-  const long = "1G-DPGRQ-GQ-L001-L002-F007-Q";
+  const long = "1G-DPGRQ-GQ-L001-F002-F007-Q";
   const svg = A.chartSvg({
     type: "bar",
     categories: Array.from({ length: 8 }, () => long),

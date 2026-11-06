@@ -18,12 +18,12 @@
     { name:'冷灰斗-前坡', sys:'SLB', comp:'LHD', pos:'F000', dirs:['L','R'], tMax:96 },
     { name:'冷灰斗-后坡', sys:'SLB', comp:'LHD', pos:'B000', dirs:['L','R'], tMax:96 },
     { name:'燃烧器区域', sys:'SLB', comp:'RSQ', special:'rsq', corners:[1,4], layers:['A','B','C','D','E','F'], nozzles:[1,8] },
-    { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['L','R'], p2Max:4, dirs:['F','B'], tMax:14, loopPairing:true },
+    { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['F','B'], p2Max:4, dirs:['F','B'], tMax:14, loopPairing:true },
     { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing:true },
     { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:12, loopPairing:true },
     { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['F'], tMax:7, fieldDirs:['F','B'] },
-    { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,4], posLetters:['L','R'], pMax:112, dirs:['F','B'], tMax:5 },
-    { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['F','B'], tMax:6, tubeOptional:true },
+    { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:5 },
+    { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,6], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:6, tubeOptional:true },
     { name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1 },
     { name:'省煤器进口集箱', sys:'SMQ', comp:'EXIN', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1 },
     { name:'省煤器出口集箱', sys:'SMQ', comp:'EXOUT', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1 }
@@ -316,7 +316,7 @@
       if (!covers(r, config, configs)) errors.push('configId 与生效期不一致，区间不得跨配置边界（未结束区间须先结束）');
       if (r.kind === 'interval') {
         if (!hasLimit(config)) errors.push('interval 需要有依据的确认限值');
-        else if (!finite(r.temperatureC) || r.temperatureC <= config.limitC) errors.push('interval 温度必须严格大于限值');
+        else if (!finite(r.temperatureC) || r.temperatureC < config.limitC) errors.push('interval 温度不得低于限值');
       }
     }
     if (r.kind === 'interval' && end !== null && r.verified !== true) errors.push('已结束 interval 必须人工核定 verified=true');
@@ -383,7 +383,7 @@
           partial = start < w.from || end > w.to;
           estimate = partial;
           if (partial) { s.partialIntervalCount += 1; s.partialPeak = true; s.peakFromClippedInterval = true; }
-          if (r.verified === true && text(r.note) && hasLimit(config) && r.temperatureC > config.limitC) intervals.push({ startAt:start, endAt:end });
+          if (r.verified === true && text(r.note) && hasLimit(config) && r.temperatureC >= config.limitC) intervals.push({ startAt:start, endAt:end });
           else s.excludedIntervalCount += 1;
         }
       }

@@ -162,7 +162,7 @@ const checks = [
     assert.equal(ok.parts.seq, 1);
     assert.equal(ok.matched, null, "未提供矩阵时不判 matched");
     assert.equal(Core.validateTubeCode("1G-DZRQ-GQ-4KJ-L065-Q001").valid, true, "低再检修空间/省略管号写法合法");
-    assert.equal(Core.validateTubeCode("1G-DPGRQ-GQ-L001-L002-F007-Q001").valid, true, "全大屏片/屏/管三段合法");
+    assert.equal(Core.validateTubeCode("1G-DPGRQ-GQ-L001-F002-F007-Q001").valid, true, "全大屏片/小屏/管三段合法");
     assert.equal(Core.validateTubeCode("2G-SLB-RSQ-J1-A03-Q001").valid, true, "燃烧器区域角/层/喷口合法");
     assert.equal(Core.validateTubeCode("1-HSH-E-012-0005-W02").valid, false, "旧格式不再合法");
     assert.equal(Core.validateTubeCode("bad-code").valid, false);

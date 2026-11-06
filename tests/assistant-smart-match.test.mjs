@@ -155,7 +155,7 @@ check("suggestSimilarCode：同机组同系统内找最近编码，跨系统候�
   /* 目标编码本身在候选里 → 相似码没有意义，返回 null（调用方按存在处理） */
   assert.equal(Core.suggestSimilarCode("1G-SLB-WB-F000-R003-Q001", ledger), null);
   /* 相似度太低（不是笔误，可能是合法新码）不给出建议 */
-  assert.equal(Core.suggestSimilarCode("1G-DZRQ-GQ-1KJ-L001-F001-Q001", ledger), null);
+  assert.equal(Core.suggestSimilarCode("1G-DZRQ-GQ-1KJ-L001-D001-Q001", ledger), null);
 });
 
 check("台账里不存在但高度相似的编码：报 unknown_code 警告并给出建议", () => {

@@ -35,6 +35,7 @@
     overtemperature: [
       'assets/app/assistant-core-v1.js',
       'assets/app/overtemperature-core-v1.js',
+      'assets/app/overtemperature-import-v1.js',
       'assets/app/overtemperature-v1.js',
       'assets/app/overtemperature-evidence-v1.js'
     ],

@@ -20,8 +20,9 @@ assert.match(app, /window\.BTAssistantAnalysis/, "必须复用助手分析引擎
 assert.match(app, /collectAssistantSnapshot\(\)/, "数据口径与助手快照一致");
 assert.match(app, /lastLLMVisualInsights/, "洞察应暂存供大模型引用");
 assert.match(app, /总览可视化分析结论（本地规则计算，可作为解读依据）/, "洞察应注入 buildLLMContext");
-assert.match(app, /if\(typeof runLLMVisualAnalysis === 'function'\) runLLMVisualAnalysis\(\);/, "数据变更时应自动刷新");
-assert.match(app, /^runLLMVisualAnalysis\(\);$/m, "初始化时应渲染一次");
+assert.match(app, /function saveDB\(\)[^\n]*invalidateTubeViews\(\)/, "数据变更时应使总览失效，由可见页面刷新");
+assert.match(app, /dashboard: \{ init\(\) \{[^\n]*refresh\(\) \{[^\n]*runLLMVisualAnalysis\(\)/, "总览首次挂载及数据刷新时应渲染分析");
+assert.match(app, /function runLLMVisualAnalysis\(forceLoad = false\) \{\s*if\(deferViewRender\('dashboard'\)\) return;/, "模块就绪后已离开总览时应推迟计算");
 
 // 引擎契约：分系列与预警线（由 assistant-analysis 测试覆盖细节），这里只钉面板接线。
 assert.match(css, /\.llm-viz \{/, "区块样式应存在");

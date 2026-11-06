@@ -67,11 +67,13 @@ assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-B003-Q', matrix), null, '�
 assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-F020-Q', matrix).code, '1G-GGRQ-GQ-L012-B005-Q', '旧腿号迁移：F020（炉后第5根）→出口段B005');
 assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-F024-W', matrix).code, '1G-GGRQ-GQ-L012-F001-W', '旧腿号迁移：F024弯头→回路1底弯F001-W');
 assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-B020-Q', matrix).code, '1G-GGRQ-GQ-L012-F005-Q', '旧腿号迁移：B020≙旧F005入口段→F005');
-assert.equal(matrix.reduce((sum, row) => sum + ctx.matrixRowCount(row), 0), 9512);
+assert.equal(matrix.reduce((sum, row) => sum + ctx.matrixRowCount(row), 0), 10744);
 assert.equal(ctx.parseTubeCode(w).partKind, 'W');
 assert.equal(ctx.parseTubeCode(w).seq, null);
 assert.equal(ctx.parseTubeCode(legacyW).seq, 1);
-assert.equal(Core.validateTubeCode('1G-DPGRQ-GQ-L001-L001-F001-Q', matrix).valid, true, '大屏管序 F/B 为合法主口径');
+assert.equal(Core.validateTubeCode('1G-DPGRQ-GQ-L001-F001-F001-Q', matrix).valid, true, '大屏管序 F/B 为合法主口径');
+assert.equal(Core.canonicalTubeCode('1G-DPGRQ-GQ-L001-B001-F007-Q', matrix).code, '1G-DPGRQ-GQ-L001-F004-F007-Q', '小屏号台账 F001–F004：炉后起算 B001≙F004');
+assert.equal(Core.validateTubeCode('1G-DPGRQ-GQ-L001-L002-F001-Q', matrix).matched, null, '小屏号 L/R 旧写法不再命中矩阵');
 assert.equal(Core.suggestSimilarCode('1G-GGRQ-GQ-L033-F004-W', [q]), null, 'W 不得建议成 Q');
 const suggestion = Core.suggestSimilarCode('1G-GGRQ-GQ-L033-F004-W', [w]);
 assert.ok(suggestion && suggestion.code.endsWith('-W'), '同部位建议保持 W 尾');
@@ -139,15 +141,15 @@ assert.equal(ctx.ggrqLoopBinding('1G-HPGRQ-GQ-L010-F013-W').current.bend, true, 
 assert.equal(ctx.ggrqLoopBinding('1G-HPGRQ-GQ-L010-F026-Q').rearCode, '1G-HPGRQ-GQ-L010-B001-Q', '旧腿号F026迁移为出口段B001');
 assert.equal(ctx.ggrqLoopBinding('1G-GZRQ-GQ-L032-F001-Q'), null, '高再无回路基准不绑定');
 // 全大屏过热器：每片4小屏×14回路；外三圈（回路1-3）与最内圈（回路14，夹持管外套）下段+底弯T91，中间整根12Cr1MoVG
-const dbind = ctx.ggrqLoopBinding('1G-DPGRQ-GQ-L001-L002-F003-Q');
+const dbind = ctx.ggrqLoopBinding('1G-DPGRQ-GQ-L001-F002-F003-Q');
 assert.equal(dbind.loop, 3, '大屏绑定在小屏内：片1小屏2回路3');
-assert.equal(dbind.rearCode, '1G-DPGRQ-GQ-L001-L002-B003-Q', '出口段B003 同片同小屏');
-ctx.userDB.events.push(event('1G-DPGRQ-GQ-L001-L002-F001-Q', '2026-04', '测厚', { thickness: '6.4' }));
-assert.ok(ctx.getTubeProfileData('1G-DPGRQ-GQ-L001-L002-F001-Q').data.spec.startsWith('回路1 入口段 F001（顶入口→底弯）：Φ51×7 12Cr1MoVG → Φ51×7 SA-213T91【底弯前】'), '大屏外圈入口段链（12Cr1MoVG→T91）');
-ctx.userDB.events.push(event('1G-DPGRQ-GQ-L001-L002-F008-Q', '2026-04', '测厚', { thickness: '6.6' }));
-assert.ok(ctx.getTubeProfileData('1G-DPGRQ-GQ-L001-L002-F008-Q').data.spec.includes('Φ51×7 12Cr1MoVG（直管与底弯同材质）'), '大屏中间回路整根12Cr1MoVG');
-ctx.userDB.events.push(event('1G-DPGRQ-GQ-L001-L002-F014-Q', '2026-04', '测厚', { thickness: '6.5' }));
-assert.ok(ctx.getTubeProfileData('1G-DPGRQ-GQ-L001-L002-F014-Q').data.spec.startsWith('回路14 入口段 F014（顶入口→底弯）：Φ51×7 12Cr1MoVG → Φ51×7 SA-213T91【底弯前】'), '最内圈（夹持管外套）分段链');
+assert.equal(dbind.rearCode, '1G-DPGRQ-GQ-L001-F002-B003-Q', '出口段B003 同片同小屏');
+ctx.userDB.events.push(event('1G-DPGRQ-GQ-L001-F002-F001-Q', '2026-04', '测厚', { thickness: '6.4' }));
+assert.ok(ctx.getTubeProfileData('1G-DPGRQ-GQ-L001-F002-F001-Q').data.spec.startsWith('回路1 入口段 F001（顶入口→底弯）：Φ51×7 12Cr1MoVG → Φ51×7 SA-213T91【底弯前】'), '大屏外圈入口段链（12Cr1MoVG→T91）');
+ctx.userDB.events.push(event('1G-DPGRQ-GQ-L001-F002-F008-Q', '2026-04', '测厚', { thickness: '6.6' }));
+assert.ok(ctx.getTubeProfileData('1G-DPGRQ-GQ-L001-F002-F008-Q').data.spec.includes('Φ51×7 12Cr1MoVG（直管与底弯同材质）'), '大屏中间回路整根12Cr1MoVG');
+ctx.userDB.events.push(event('1G-DPGRQ-GQ-L001-F002-F014-Q', '2026-04', '测厚', { thickness: '6.5' }));
+assert.ok(ctx.getTubeProfileData('1G-DPGRQ-GQ-L001-F002-F014-Q').data.spec.startsWith('回路14 入口段 F014（顶入口→底弯）：Φ51×7 12Cr1MoVG → Φ51×7 SA-213T91【底弯前】'), '最内圈（夹持管外套）分段链');
 // 后屏规格材质链：外圈Φ60、回路2-3/13底弯TP347H、回路4-6底弯T91、回路7-12整根12Cr1MoVG
 ctx.userDB.events.push(event('1G-HPGRQ-GQ-L010-F001-Q', '2026-04', '测厚', { thickness: '7.8' }));
 assert.ok(ctx.getTubeProfileData('1G-HPGRQ-GQ-L010-F001-Q').data.spec.startsWith('回路1 入口段 F001（顶入口→底弯）：Φ60×8 12Cr1MoVG → Φ60×8 SA-213T91【底弯前】'), '后屏外圈入口段分段链');

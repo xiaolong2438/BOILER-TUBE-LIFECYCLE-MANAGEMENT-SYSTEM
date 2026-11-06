@@ -27,8 +27,11 @@ const checks = [
   ["code generator options are populated from the inventory matrix", () => {
     assert.match(html, /function populateCodeGeneratorOptions\s*\(/);
     assert.match(html, /populateCodeGeneratorOptions\(\)/);
+    const lifecycleBlock = html.slice(html.indexOf('const viewLifecycle ='), html.indexOf('function activeViewId'));
+    assert.match(lifecycleBlock, /generator:\s*\{\s*init\(\)\s*\{\s*populateCodeGeneratorOptions\(\);\s*genCode\(\);/);
     const initBlock = html.slice(html.indexOf("// ========== INIT =========="));
-    assert.ok(initBlock.indexOf("populateCodeGeneratorOptions();") < initBlock.indexOf("genCode();"));
+    assert.match(initBlock, /initNav\(\);/);
+    assert.doesNotMatch(initBlock, /populateCodeGeneratorOptions\(\);|genCode\(\);/, 'generator initializes on its first visit; execution order and binding counts are covered by view-lifecycle.test.mjs');
     assert.match(html, /<select id="f-system"><\/select>/);
   }],
   ["code generator uses complete coding-zone rules separate from the inventory matrix", () => {

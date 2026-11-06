@@ -307,9 +307,9 @@ test('record dates, point/config association and unverified observations use cor
   assert.equal(future.status, 422);
   assert.equal((await addRecord(db, record('pending', 'p1', BASE + HOUR, BASE + 3 * HOUR, { verified: false }))).status, 422);
   assert.equal((await addRecord(db, record('observation', 'p1', BASE + HOUR, null, { kind: 'observation', temperatureC: 600 }))).status, 200);
-  assert.equal((await addRecord(db, record('at-limit', 'p2', BASE + HOUR, BASE + 3 * HOUR, { temperatureC: 500 }))).status, 422);
+  assert.equal((await addRecord(db, record('at-limit', 'p2', BASE + HOUR, BASE + 3 * HOUR, { temperatureC: 500 }))).status, 200);
   const summary = await call(db, summaryGet, 'GET', 'summary');
-  assert.equal(summary.body.summary.durationMs, 0);
+  assert.equal(summary.body.summary.durationMs, 2 * HOUR);
   assert.equal(summary.body.summary.observationCount, 1);
 });
 

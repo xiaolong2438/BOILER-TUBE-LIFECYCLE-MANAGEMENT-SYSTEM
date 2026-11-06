@@ -465,8 +465,8 @@ const DIR_MATRIX = [
   { sys: "SLB", comp: "WB", pos: "L000", dirs: ["F", "B"], tMax: 169 },
   { sys: "SLB", comp: "LHD", pos: "F000", dirs: ["L", "R"], tMax: 96 },
   { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["F", "B"], tMax: 24 },
-  { sys: "DPGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 6, pos2Letters: ["L", "R"], p2Max: 4, dirs: ["F", "B"], tMax: 14 },
-  { sys: "DZRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 112, dirs: ["F", "B"], tMax: 6, spaces: [1, 5], tubeOptional: true },
+  { sys: "DPGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 6, pos2Letters: ["F", "B"], p2Max: 4, dirs: ["F", "B"], tMax: 14 },
+  { sys: "DZRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 112, dirs: ["D", "U"], tMax: 6, spaces: [1, 6], tubeOptional: true },
   { sys: "SMQ", comp: "EXIN", posLetters: ["L", "R"], pMax: 124, dirs: ["U", "D"], tMax: 1 }
 ];
 
@@ -478,11 +478,13 @@ check("归一：墙面反方向管号按同一物理位置镜像（前墙 L025 �
   assert.equal(same, null, "规范方向不归一、不产生噪音");
 });
 
-check("归一：覆盖全部段位——侧墙 F↔B、冷灰斗、过/再热器排号与管号、小屏号、检修空间", () => {
+check("归一：覆盖全部段位——侧墙 F↔B、冷灰斗、过/再热器排号与管号、小屏号炉前/炉后镜像、检修空间", () => {
   assert.equal(Core.canonicalTubeCode("2G-SLB-WB-L000-B020-Q001", DIR_MATRIX).code, "2G-SLB-WB-L000-F150-Q001");
   assert.equal(Core.canonicalTubeCode("2G-SLB-LHD-F000-R016-Q001", DIR_MATRIX).code, "2G-SLB-LHD-F000-L081-Q001");
   assert.equal(Core.canonicalTubeCode("1G-GGRQ-GQ-R005-B003-Q001", DIR_MATRIX).code, "1G-GGRQ-GQ-L028-F022-Q001");
-  assert.equal(Core.canonicalTubeCode("1G-DPGRQ-GQ-R003-R002-B005-Q001", DIR_MATRIX).code, "1G-DPGRQ-GQ-L004-L003-F010-Q001");
+  assert.equal(Core.canonicalTubeCode("1G-DPGRQ-GQ-R003-F002-B005-Q001", DIR_MATRIX).code, "1G-DPGRQ-GQ-L004-F002-F010-Q001");
+  assert.equal(Core.canonicalTubeCode("1G-DPGRQ-GQ-L001-B001-F007-Q001", DIR_MATRIX).code, "1G-DPGRQ-GQ-L001-F004-F007-Q001", "小屏号台账 F001–F004：炉后起算 B001≙F004");
+  assert.equal(Core.canonicalTubeCode("1G-DPGRQ-GQ-L001-L002-F007-Q001", DIR_MATRIX), null, "小屏号 L/R 旧写法不再作为方向别名、进待确认");
   assert.equal(Core.canonicalTubeCode("1G-DZRQ-GQ-4KJ-R065-Q001", DIR_MATRIX).code, "1G-DZRQ-GQ-4KJ-L048-Q001");
 });
 

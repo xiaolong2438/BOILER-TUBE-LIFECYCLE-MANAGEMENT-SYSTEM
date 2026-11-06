@@ -105,7 +105,16 @@ assert.match(js, /function setDmBoilerFilter\(value\)/);
 assert.match(js, /localStorage\.setItem\('boiler_dm_boiler_filter', value \|\| 'all'\)/, "批量范围选择记忆在本地");
 assert.match(js, /boilerHost\.querySelectorAll\('button'\)\.forEach\(btn => btn\.classList\.toggle\('active', btn\.dataset\.boiler === savedBoiler\)\)/);
 assert.match(js, /function renderDataManagerTables\(\) \{[\s\S]*?renderDMTable\(\); renderReplacementTable\(\);\s*\}/);
-assert.match(js, /renderDataManagerTables\(\);\s*\r?\n\s*updateLifecycleDropdown\(\);/);
+const cloudBoot = js.slice(js.indexOf('async function bootstrapCloudStorage'), js.indexOf('async function loadAuthSession'));
+assert.match(cloudBoot, /if\(localRaw !== remoteRaw\)\s*\{[\s\S]*?changed = true;/, '相同云端台账不标记变更');
+assert.match(cloudBoot, /if\(localMatRaw !== remoteMatRaw\)\s*\{[\s\S]*?changed = true;/, '相同云端材料不标记变更');
+assert.match(cloudBoot, /if\(changed\) invalidateTubeViews\(\);/, '云同步有变更时统一失效：活动页立即刷新，隐藏页返回时刷新（行为见 view-lifecycle.test.mjs）');
+assert.doesNotMatch(cloudBoot, /renderDataManagerTables\(\);|updateLifecycleDropdown\(\);/, '云同步不再强制重绘隐藏页面');
+const lifecycle = js.slice(js.indexOf('const viewLifecycle ='), js.indexOf('function activeViewId'));
+assert.match(lifecycle, /datamgr:\s*\{\s*refresh:\s*renderDataManagerTables\s*\}/, '数据管理表接入视图刷新');
+assert.match(lifecycle, /'tube-analysis':\s*\{\s*refresh:\s*refreshTubeAnalysisView\s*\}/, '管段分析接入专用刷新入口');
+const tubeRefresh = js.slice(js.indexOf('function refreshTubeAnalysisView'), js.indexOf('function activeViewId'));
+assert.match(tubeRefresh, /updateLifecycleDropdown\(\);\s*populateAIThicknessTargets\(\);/, '管段分析刷新更新两组下拉');
 assert.match(js, /function closeDataEditModal\(\)/);
 
 // 权限口径与 AI 助手一致：viewer 只读，界面隐藏编辑/删除操作。
