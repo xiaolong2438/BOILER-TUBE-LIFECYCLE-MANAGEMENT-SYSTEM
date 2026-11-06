@@ -23,6 +23,10 @@ body:has(> .assistant-root) .toast-host {
   bottom: 108px;
 }
 
+/* 按需入口在完整助手挂载后退出，避免两个入口重叠。 */
+#assistant-lazy-launcher[hidden],
+body:has(#assistantMount .assistant-launcher) #assistant-lazy-launcher { display: none; }
+
 /* ---------- 悬浮入口 ---------- */
 .assistant-launcher {
   position: absolute;

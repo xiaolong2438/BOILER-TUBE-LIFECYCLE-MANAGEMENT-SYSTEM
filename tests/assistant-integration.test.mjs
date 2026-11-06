@@ -58,9 +58,13 @@ check("页面按依赖顺序加载助手资源", () => {
   for (let i = 1; i < positions.length; i += 1) {
     assert.ok(positions[i] > positions[i - 1], `资源顺序错误：${order[i]} 必须晚于 ${order[i - 1]}`);
   }
-  for (const asset of order) {
-    assert.ok(!html.includes(`<script src="${asset}"`), `${asset} 不应再随首屏静态加载，应由 lazy-v1.js 管理`);
+  for (const asset of order.slice(1)) {
+    assert.ok(!html.includes(`<script src="${asset}"`), `${asset} 界面模块仅在使用时加载`);
   }
+  has(html, '<script src="assets/app/assistant-core-v1.js" defer></script>', '编码归一领域核心随首屏就绪');
+  assert.ok(html.indexOf('assets/app/assistant-core-v1.js') < html.indexOf('assets/app/app-v7.9.js'), '未打开助手时也必须正确归一管码');
+  has(html, 'id="assistant-lazy-launcher"', '按需助手入口存在');
+  has(appJs, 'function openAssistantOnDemand()', '轻量助手入口调用按需加载');
   has(html, '<script src="assets/app/lazy-v1.js" defer></script>', "页面缺少懒加载器");
   assert.ok(html.indexOf("assets/app/lazy-v1.js") < html.indexOf("assets/app/app-v7.9.js"), "懒加载器必须早于主应用执行（主应用 INIT 会调用 BTLazy.idle）");
   has(html, '<link rel="stylesheet" href="assets/app/assistant-v1.css">');

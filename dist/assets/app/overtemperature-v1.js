@@ -10,6 +10,9 @@
   const NUM_KEYS = ['posFrom', 'posTo', 'pos2From', 'pos2To', 'tubeFrom', 'tubeTo'];
   const ARRAY_KEYS = ['spaces', 'dirs', 'parts', 'corners', 'layers', 'nozzles'];
   const S = { root: null, tab: 'analysis', filters: { unit: '', sys: '', pointId: '', q: '', from: '', to: '' }, tubeCode: '', points: new Map(), configs: new Map(), records: new Map(), options: new Set(), optionCursor: null, optionsLoaded: false, optionTotal: null, summary: null, list: null, page: 0, cursor: '', stack: [], next: null, total: null, busy: false, saving: false, epoch: 0, serverTime: null, syncedAt: null, error: '', notice: '', draft: null, storedDraft: null, storageWarning: '', formErrors: [], conflict: null, preview: null, history: null, historyEpoch: 0, allPointsLoaded: false, import: null };
+  let refreshFlight = null;
+  let optionsFlight = null;
+  let importLoad = null;
   const core = () => window.BTOvertemperatureCore;
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -160,8 +163,8 @@
       : action('登记温度', 'newRecord') + action('导入月度报表', 'importReport', null, 'btn-primary');
     S.root.querySelector('#ot-toolbar').innerHTML = '<div><strong>' + ({ analysis: '已核定区间累计', points: '测点台账', records: '人工温度记录' })[S.tab] + '</strong><small>' + ({ analysis: '先有依据，再做归属；未知状态绝不标为正常。', points: '机组与测量类型创建后不可变；区域和限值使用不可变版本。', records: '时点观察不累计；未结束区间不推算时长。' })[S.tab] + '</small></div><div class="ot-actions">' + actions + '</div>';
   }
-  function filterQuery() {
-    const f = S.filters, from = f.from ? core().parseTime(f.from) : null, to = f.to ? core().parseTime(f.to) : null;
+  function filterQuery(f = S.filters) {
+    const from = f.from ? core().parseTime(f.from) : null, to = f.to ? core().parseTime(f.to) : null;
     if (f.from && from === null || f.to && to === null) throw fail('筛选时间无效，请输入完整的北京时间');
     if (from != null && to != null && from >= to) throw fail('结束时间必须晚于开始时间');
     return { unit: f.unit, sys: f.sys, pointId: f.pointId, q: f.q.trim(), from, to };
@@ -174,40 +177,59 @@
     data.items.forEach(p => { S.points.set(p.id, p); S.options.add(p.id); });
     S.optionCursor = data.nextCursor || null; S.optionTotal = data.total; S.optionsLoaded = true;
   }
-  async function refresh() {
-    if (!init() || !active()) return;
-    if (!core()) { renderSync(); return; }
-    const epoch = ++S.epoch; S.busy = true; S.error = ''; renderSync();
+  function refresh(options) {
+    if (!init() || !active()) return Promise.resolve();
+    if (!core()) { renderSync(); return Promise.resolve(); }
+    const snapshot = { filters: Object.assign({}, S.filters), tubeCode: S.tubeCode, tab: S.tab, cursor: S.cursor };
+    const key = JSON.stringify(snapshot);
+    if (!options?.force && refreshFlight && refreshFlight.key === key) return refreshFlight.promise;
+    const flight = { key, promise: null };
+    refreshFlight = flight;
+    // Publish the promise before starting requests so concurrent entry points share it.
+    flight.promise = Promise.resolve().then(() => performRefresh(snapshot, flight.epoch)).finally(() => {
+      if (refreshFlight === flight) refreshFlight = null;
+    });
+    // Supersede older work immediately, including work queued in the same turn.
+    flight.epoch = ++S.epoch;
+    return flight.promise;
+  }
+  async function performRefresh(snapshot, epoch) {
+    if (epoch !== S.epoch) return;
+    const tab = snapshot.tab, cursor = snapshot.cursor, tubeCode = snapshot.tubeCode;
+    S.busy = true; S.error = ''; renderSync();
     try {
-      const q = filterQuery();
-      const [data] = await Promise.all([request('/summary' + query(Object.assign({}, q, { tubeCode: S.tubeCode }))), S.optionsLoaded ? Promise.resolve() : loadOptions(false)]);
+      const q = filterQuery(snapshot.filters);
+      if (!S.optionsLoaded && !optionsFlight) optionsFlight = loadOptions(false).finally(() => { optionsFlight = null; });
+      const [data] = await Promise.all([request('/summary' + query(Object.assign({}, q, { tubeCode }))), optionsFlight]);
       if (epoch !== S.epoch) return;
       if (!data.summary || !Array.isArray(data.byPoint)) throw fail('统计接口缺少 summary / byPoint，未显示未确认的数据');
-      if (S.tubeCode) {
+      if (tubeCode) {
         if (!data.tubeEvidence || data.tubeEvidence.errors?.length) throw fail((data.tubeEvidence?.errors || ['管段摘要未返回，不能使用全厂统计替代']).join('；'));
         data.summary = data.tubeEvidence.summary;
         data.byPoint = data.tubeEvidence.points;
       }
       S.summary = data;
       data.byPoint.forEach(row => { if (row.point) S.points.set(row.point.id, row.point); (row.configs || []).forEach(c => S.configs.set(c.id, c)); });
-      if (S.tab === 'points') {
-        const list = await request('/points' + query({ unit: q.unit, sys: q.sys, q: q.q, cursor: S.cursor, limit: PAGE_SIZE }));
+      if (tab === 'points') {
+        const list = await request('/points' + query({ unit: q.unit, sys: q.sys, q: q.q, cursor, limit: PAGE_SIZE }));
         if (epoch !== S.epoch) return;
         if (!Array.isArray(list.items)) throw fail('测点列表响应不完整');
         accept(list); list.items.forEach(p => S.points.set(p.id, p)); S.list = list;
-      } else if (S.tab === 'records') {
-        let ids = q.pointId;
+      } else if (tab === 'records') {
+        let ids = q.pointId, list;
         if (q.q) {
           // records 不支持 q：以不带 tubeCode 的服务端筛选结果确定 pointId，绝不以选项缓存截断记录。
-          const searchData = S.tubeCode ? await request('/summary' + query(q)) : data;
+          const searchData = tubeCode ? await request('/summary' + query(q)) : data;
+          if (epoch !== S.epoch) return;
           const matching = searchData.byPoint.map(row => row.point.id).filter(id => !ids || id === ids);
           if (matching.length > 100) throw fail('关键词匹配超过 100 个测点，请缩小搜索或选择单个测点后查看记录');
-          if (!matching.length) S.list = { items: [], total: 0, nextCursor: null };
-          else { ids = matching.join(','); S.list = await request('/records' + query({ unit: q.unit, sys: q.sys, pointId: ids, from: q.from, to: q.to, cursor: S.cursor, limit: PAGE_SIZE, includeVoid: 'true' })); }
-        } else S.list = await request('/records' + query({ unit: q.unit, sys: q.sys, pointId: ids, from: q.from, to: q.to, cursor: S.cursor, limit: PAGE_SIZE, includeVoid: 'true' }));
+          if (!matching.length) list = { items: [], total: 0, nextCursor: null };
+          else { ids = matching.join(','); list = await request('/records' + query({ unit: q.unit, sys: q.sys, pointId: ids, from: q.from, to: q.to, cursor, limit: PAGE_SIZE, includeVoid: 'true' })); }
+        } else list = await request('/records' + query({ unit: q.unit, sys: q.sys, pointId: ids, from: q.from, to: q.to, cursor, limit: PAGE_SIZE, includeVoid: 'true' }));
         if (epoch !== S.epoch) return;
-        if (!Array.isArray(S.list.items)) throw fail('记录列表响应不完整');
-        accept(S.list); S.list.items.forEach(r => S.records.set(r.id, r));
+        if (!Array.isArray(list.items)) throw fail('记录列表响应不完整');
+        S.list = list;
+        accept(list); list.items.forEach(r => S.records.set(r.id, r));
       }
       S.next = S.tab === 'analysis' ? null : S.list.nextCursor || null; S.total = S.tab === 'analysis' ? data.byPoint.length : S.list.total;
       renderFilters(); renderContent();
@@ -492,10 +514,20 @@
     }
     return fingerprints;
   }
-  function startImport(kind) {
-    if (!core() || !importCore()) { window.alert('导入模块尚未加载，请刷新页面后重试。'); return; }
-    if (S.saving) return;
+  async function ensureImportCore() {
+    if (importCore()) return importCore();
+    if (!window.BTLazy) throw fail('导入模块尚未加载，请刷新页面后重试。');
+    if (!importLoad) importLoad = window.BTLazy.ensure('overtemperature-import').finally(() => { importLoad = null; });
+    await importLoad;
+    if (!importCore()) throw fail('导入模块尚未加载，请刷新页面后重试。');
+    return importCore();
+  }
+  async function startImport(kind) {
+    if (!core() || S.saving) return;
     if (S.draft && !window.confirm('导入会替换当前未共享草稿。是否继续？')) return;
+    const draft = S.draft, tab = S.tab;
+    await ensureImportCore();
+    if (S.saving || S.draft !== draft || S.tab !== tab || !active()) return;
     S.draft = null;
     S.import = { kind: kind, fileName: '', rows: null, summary: null, confirmed: false, busy: false, error: '', result: null, progress: null };
     renderForm();
@@ -549,8 +581,9 @@
     host.innerHTML = html + '</section>';
   }
   async function buildImportPreview(matrix, fileName) {
-    const imp = S.import, api = importCore();
-    if (!imp || !api) throw fail('导入模块不可用，请刷新页面');
+    const imp = S.import;
+    if (!imp) throw fail('导入模块不可用，请刷新页面');
+    const api = await ensureImportCore();
     await ensureAllPoints();
     if (imp.kind === 'points') {
       const parsed = api.normalizePointMatrix(matrix);
@@ -641,7 +674,7 @@
       S.allPointsLoaded = false; S.optionsLoaded = false;
       window.dispatchEvent(new window.CustomEvent('bt-temperature-changed', { detail: { entity: 'import', kind: imp.kind } }));
       resetPage();
-      await refresh();
+      await refresh({ force: true });
     } catch (e) {
       imp.error = e.message || String(e);
     } finally {
@@ -806,7 +839,7 @@
       S.saving = false; clearDraft(); resetPage();
       if (d.type === 'point') { S.tab = 'points'; S.filters = { unit: '', sys: '', pointId: '', q: '', from: '', to: '' }; renderToolbar(); }
       window.dispatchEvent(new window.CustomEvent('bt-temperature-changed', { detail: { entity: d.type, id: result.item && result.item.id, requestId: d.pending.requestId } }));
-      await refresh();
+      await refresh({ force: true });
     } catch (e) {
       S.formErrors = [e.message];
       if (e.details && Array.isArray(e.details.errors)) S.formErrors.push(...e.details.errors);
@@ -859,7 +892,7 @@
     if (S.saving && !['tube', 'drawings'].includes(name)) return;
     if (S.import && S.import.busy && !['closeImport'].includes(name)) return;
     try {
-      if (name === 'refresh') { if (!core()) { renderSync(); return; } renderFilters(); await refresh(); }
+      if (name === 'refresh') { if (!core()) { renderSync(); return; } renderFilters(); await refresh({ force: true }); }
       else if (name === 'tab') selectTab(id);
       else if (name === 'unit') { S.filters.unit = id; S.filters.pointId = ''; resetPage(); renderFilters(); await refresh(); }
       else if (name === 'focusPoint') { if (!id) return; S.filters.pointId = id; resetPage(); renderFilters(); await refresh(); }
@@ -877,8 +910,8 @@
         else { if (name === 'next' && S.next) { S.stack.push(S.cursor); S.cursor = S.next; S.page += 1; } else if (name === 'prev' && S.stack.length) { S.cursor = S.stack.pop(); S.page -= 1; } await refresh(); }
       }
       else if (name === 'newPoint') openDraft('point');
-      else if (name === 'importPoints') startImport('points');
-      else if (name === 'importReport') startImport('report');
+      else if (name === 'importPoints') await startImport('points');
+      else if (name === 'importReport') await startImport('report');
       else if (name === 'parseImportText') await parseImportText();
       else if (name === 'runImport') await runImport();
       else if (name === 'closeImport') { if (S.import && S.import.busy) return; S.import = null; renderForm(); }
@@ -907,10 +940,17 @@
     init(); renderFilters(); renderToolbar();
     if (typeof window.switchView === 'function') window.switchView('overtemperature');
     else { S.error = '页面切换入口尚未接入，请从导航进入“超温分析”'; renderSync(); }
-    if (active() && !S.busy) refresh();
+    if (active()) refresh();
   }
   window.BTOvertemperature = { init, refresh, request, openForTube, formatDuration };
-  function start() { init(); if (active()) refresh(); }
+  function start() {
+    init();
+    // The bundle entry point refreshes after evidence wiring finishes. Static
+    // integrations still initialize themselves when no group is loading.
+    if (window.BTLazy?.onReady && !window.BTLazy.isReady('overtemperature')) {
+      window.BTLazy.onReady('overtemperature', () => { if (active() && !S.summary && !S.error) refresh(); });
+    } else if (active()) refresh();
+  }
   if (document) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
     document.addEventListener('visibilitychange', () => { if (!document.hidden && active() && !S.saving) refresh(); });

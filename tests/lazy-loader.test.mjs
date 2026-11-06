@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import vm from 'node:vm';
 
 /**
- * 懒加载契约：清单顺序、按需注入、失败重试、空闲预载。
+ * 懒加载契约：清单顺序、按需注入、失败重试、空闲无网络预载。
  * 这些性质一旦被改坏，页面表现是「某个模块静默不出现」或「首屏又变慢」，很难肉眼发现。
  */
 const here = dirname(fileURLToPath(import.meta.url));
@@ -19,7 +19,7 @@ const lazySource = read('assets/app/lazy-v1.js');
 const require = createRequire(import.meta.url);
 const Lazy = require('../assets/app/lazy-v1.js');
 assert.ok(Lazy, 'BTLazy 必须通过 CommonJS 导出，便于 Node 测试');
-assert.deepEqual(Object.keys(Lazy.GROUPS), ['assistant', 'overtemperature', 'xlsx', 'pdf']);
+assert.deepEqual(Object.keys(Lazy.GROUPS), ['assistant', 'overtemperature', 'overtemperature-import', 'xlsx', 'pdf']);
 assert.equal(Lazy.XLSX_CDN, 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js');
 assert.equal(Lazy.PDFJS_CDN, 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
 
@@ -41,27 +41,29 @@ assert.ok(
   indexOf(overtemperature, 'overtemperature-evidence-v1.js') > indexOf(overtemperature, 'overtemperature-v1.js'),
   'evidence 依赖 overtemperature 的公开 API，必须后加载'
 );
-assert.ok(
-  indexOf(overtemperature, 'overtemperature-import-v1.js') > 0 &&
-    indexOf(overtemperature, 'overtemperature-import-v1.js') < indexOf(overtemperature, 'overtemperature-v1.js'),
-  '导入解析模块必须在超温 UI 之前加载'
-);
+assert.equal(indexOf(overtemperature, 'overtemperature-import-v1.js'), -1, '普通超温视图不加载导入解析器');
+assert.deepEqual(Lazy.GROUPS['overtemperature-import'], [
+  'assets/app/assistant-core-v1.js',
+  'assets/app/overtemperature-core-v1.js',
+  'assets/app/overtemperature-import-v1.js'
+], '导入组独立保留核心依赖顺序');
 
 /* ---------------- 2. 主页面不再静态加载这些模块 ---------------- */
-for (const src of [...assistant, ...overtemperature]) {
+for (const src of [...assistant, ...overtemperature, ...Lazy.GROUPS['overtemperature-import']]) {
+  if (src.endsWith('/assistant-core-v1.js')) continue; // 管段身份核心独立于可选 UI，允许首屏加载。
   assert.ok(!html.includes(`<script src="${src}"`), `主页面不应再静态加载 ${src}`);
 }
 assert.ok(html.includes('<script src="assets/app/lazy-v1.js" defer></script>'), '页面缺少懒加载器');
 assert.ok(
   html.indexOf('assets/app/lazy-v1.js') < html.indexOf('assets/app/app-v7.9.js'),
-  'lazy-v1 必须先于 app-v7.9 执行（主应用 INIT 会调用 BTLazy.idle）'
+  'lazy-v1 必须先于 app-v7.9 执行（主应用按需入口依赖 BTLazy）'
 );
 assert.match(html, /<link rel="preconnect" href="https:\/\/cdn\.sheetjs\.com">/, '缺少 SheetJS 预连接');
 assert.match(html, /<link rel="preconnect" href="https:\/\/cdnjs\.cloudflare\.com">/, '缺少 pdf.js 预连接');
 
 /* ---------------- 3. 接线点存在且按需 ---------------- */
 const appJs = read('assets/app/app-v7.9.js');
-assert.match(appJs, /window\.BTLazy\.idle\(\)/, '主应用初始化后必须安排空闲预载');
+assert.doesNotMatch(appJs, /window\.BTLazy\.idle\(\)/, '主应用初始化不应安排空闲网络预载');
 assert.match(appJs, /BTLazy\.ensure\('overtemperature'\)/, '超温视图打开时必须按需加载模块');
 assert.match(appJs, /BTLazy\.ensure\('xlsx'\)/, 'Excel 导入/导出必须先按需加载 SheetJS');
 assert.match(appJs, /BTLazy\.onReady\('assistant'/, '总览可视化面板必须等助手模块就绪后自动重跑');
@@ -158,19 +160,45 @@ function createSandbox({ failures = [] } = {}) {
 }
 
 {
-  /* 空闲预载：先助手后超温、幂等、不重复注入 */
+  /* 兼容 idle 调用不安排后台网络；显式导入复用普通组的核心。 */
   const { sandbox, requested } = createSandbox();
-  sandbox.requestIdleCallback = (fn) => { fn(); };
+  let scheduled = 0;
+  sandbox.requestIdleCallback = () => { scheduled += 1; };
+  sandbox.setTimeout = () => { scheduled += 1; };
   vm.runInNewContext(lazySource, sandbox);
   const LZ = sandbox.BTLazy;
-  LZ.idle();
-  LZ.idle();
-  const expected = [...LZ.GROUPS.assistant, ...LZ.GROUPS.overtemperature.filter((src) => !LZ.GROUPS.assistant.includes(src))];
-  for (let i = 0; i < 50 && !(LZ.isReady('assistant') && LZ.isReady('overtemperature')); i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 2));
-  }
-  assert.deepEqual([...requested], expected, '空闲预载必须覆盖两个组且不重复注入');
-  assert.equal(LZ.isReady('overtemperature'), true);
+  LZ.idle(); LZ.idle();
+  await Promise.resolve();
+  assert.equal(scheduled, 0);
+  assert.deepEqual(requested, []);
+  await LZ.ensure('overtemperature');
+  assert.ok(!requested.some(src => src.endsWith('overtemperature-import-v1.js')));
+  const before = requested.length;
+  await Promise.all([LZ.ensure('overtemperature-import'), LZ.ensure('overtemperature-import')]);
+  assert.deepEqual(requested.slice(before), ['assets/app/overtemperature-import-v1.js']);
+  assert.equal(LZ.isReady('overtemperature-import'), true);
 }
 
-console.log('ok - lazy loader manifest, ordering, retry and idle preload are wired');
+{
+  const { sandbox, requested } = createSandbox();
+  vm.runInNewContext(lazySource, sandbox);
+  await sandbox.BTLazy.ensure('overtemperature-import');
+  assert.deepEqual(requested, [...sandbox.BTLazy.GROUPS['overtemperature-import']], '独立导入入口必须按顺序加载核心依赖');
+}
+
+{
+  const { sandbox, requested } = createSandbox();
+  sandbox.BTAssistantCore = { canonicalTubeCode() {} };
+  vm.runInNewContext(lazySource, sandbox);
+  await sandbox.BTLazy.ensure('overtemperature');
+  assert.ok(!requested.some(src => src.endsWith('/assistant-core-v1.js')), '已就绪的管段身份核心不能重复注入');
+}
+{
+  const { sandbox, requested } = createSandbox();
+  sandbox.BTAssistantCore = {};
+  vm.runInNewContext(lazySource, sandbox);
+  await sandbox.BTLazy.ensure('overtemperature');
+  assert.equal(requested[0], 'assets/app/assistant-core-v1.js', '不完整的核心对象不能当成已就绪');
+}
+
+console.log('ok - lazy loader ordering, import isolation, retry and network-free idle');

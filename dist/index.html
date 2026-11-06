@@ -1034,17 +1034,19 @@
 </div>
 
 <div class="toast-host" id="toast-host" aria-live="polite"></div>
+<button type="button" class="assistant-launcher" id="assistant-lazy-launcher" style="position:fixed; z-index:1003;" onclick="openAssistantOnDemand()">AI 数据助手</button>
 
 <!-- 首屏必需：核心应用、维护记录、界面外壳、主题、Excel 导出、报告导出 -->
-<!-- lazy-v1.js 必须最先加载：app-v7.9.js 的 INIT 会调用 BTLazy.idle() 做空闲预载 -->
+<!-- 编码归一领域核心先于主应用执行；助手界面和超温模块仅在使用时加载 -->
 <script src="assets/app/lazy-v1.js" defer></script>
+<script src="assets/app/assistant-core-v1.js" defer></script>
 <script src="assets/app/app-v7.9.js" defer></script>
 <script src="assets/app/maintenance-log-v1.js" defer></script>
 <script src="assets/app/ui-shell-v8.js" defer></script>
 <script src="assets/app/theme-toggle-v1.js" defer></script>
 <script src="assets/app/xlsx-export-v1.js" defer></script>
 <script src="assets/app/report-pro-v1.js" defer></script>
-<!-- 按需/空闲加载（清单见 assets/app/lazy-v1.js，改清单时同步 tests/lazy-loader.test.mjs）：
-     AI 助手 6 个模块、超温分析 3 个模块由 BTLazy 预载；SheetJS 与 pdf.js 首次使用时加载 -->
+<!-- 按需加载（清单见 assets/app/lazy-v1.js）：助手界面、超温分析及导入解析仅在对应操作时加载；
+     编码归一核心已随首屏就绪，SheetJS 与 pdf.js 首次使用时加载 -->
 </body>
 </html>

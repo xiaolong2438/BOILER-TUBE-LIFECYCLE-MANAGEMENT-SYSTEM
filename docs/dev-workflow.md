@@ -81,12 +81,15 @@ INIT 时 `loadLLMConfigToForm()` 负责回填表单并刷新 `#llm-status` 状�
 
 ## 7. 模块加载与缓存策略
 
-首屏只加载核心模块，其余按空闲预载或按需加载（实现：`assets/app/lazy-v1.js`）：
+首屏只加载核心模块，其他模块严格按用户操作加载（实现：`assets/app/lazy-v1.js`）：
 
 | 时机 | 模块 |
 | --- | --- |
 | 首屏 `defer` | `lazy-v1.js`、`app-v7.9.js`、`maintenance-log-v1.js`、`ui-shell-v8.js`、`theme-toggle-v1.js`、`xlsx-export-v1.js`、`report-pro-v1.js` |
-| `BTLazy.idle()`（空闲 / 2s 兜底） | AI 助手 6 个模块、超温分析 3 个模块 |
+| 首屏编码领域核心 | `assistant-core-v1.js`，供编码归一/校验使用；懒加载器复用已就绪核心 |
+| 点击助手或分析刷新 | AI 助手界面与分析模块 |
+| 打开超温分析/温度证据 | 超温领域、界面与证据模块 |
+| 点击超温导入 | `overtemperature-import` 组的导入解析模块 |
 | 首次使用时加载 | SheetJS（Excel 导入/导出）、pdf.js（PDF 识别） |
 
 约定：
@@ -96,7 +99,8 @@ INIT 时 `loadLLMConfigToForm()` 负责回填表单并刷新 `#llm-status` 状�
   `overtemperature-core` 加载时会校验 `assistant-core` 已存在（否则抛错）。
 - 新增内联 `onclick` 引用的全局函数，不能放在懒加载模块里；否则首次点击可能 ReferenceError。
   确需懒加载时，在 `switchView()` 或对应入口先用 `BTLazy.ensure(...)` 确保就绪。
-- `tests/lazy-loader.test.mjs` 校验清单顺序、按需注入、失败重试与空闲预载，改清单必须同步跑。
+- `tests/lazy-loader.test.mjs` 校验依赖顺序、按需注入、失败重试与零后台预载；`BTLazy.idle()`仅保留兼容空入口。
+- `tests/performance-cache.test.mjs` 验证历史索引、分页结果复用和保存/云同步/原地编辑后的缓存失效；耗时测试不替代浏览器网络与绘制验证。
 
 缓存与路由（`_headers` / `_routes.json` 是源码文件，由 sync-dist 复制进 dist）：
 

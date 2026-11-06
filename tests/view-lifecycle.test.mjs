@@ -95,7 +95,7 @@ await check('INIT initializes only the default or hash-selected page, with inval
     assert.equal(h.ctx.location.hash, hash, 'initial navigation does not rewrite the hash');
     assert.equal(count(h, 'loadAuthSession'), 1);
     assert.equal(count(h, 'bootstrapCloudStorage'), 1);
-    assert.equal(count(h, 'idle'), 1);
+    assert.equal(count(h, 'idle'), 0, 'startup never preloads hidden modules');
     for (const id of Object.keys(rendersFor)) assert.equal(Boolean(h.state(id).initialized), id === target, id);
   }
 });

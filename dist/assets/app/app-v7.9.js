@@ -1,6 +1,54 @@
 
 // ========== LOCAL DB (CSV 数据录入模块) ==========
 let userDB = JSON.parse(localStorage.getItem('boiler_user_db') || '{"events":[], "replacements":[]}');
+/* 所有写入（含原地编辑）经 saveDB/云端/演示/材料变更在刷新前清空；
+   数组身份/长度及按需助手的编码归一能力变化也会切换修订。 */
+let tubeDataRevision = 0;
+let tubeDataCache = null;
+function invalidateTubeDataCache() {
+  tubeDataRevision += 1;
+  tubeDataCache = null;
+}
+function getTubeDataCache() {
+  const canonical = window.BTAssistantCore?.canonicalTubeCode;
+  const demo = demoDataEnabled();
+  const pipeTypes = JSON.stringify(window.__tubePipeTypes || {});
+  if(!tubeDataCache || tubeDataCache.db !== userDB || tubeDataCache.events !== userDB.events ||
+    tubeDataCache.replacements !== userDB.replacements || tubeDataCache.eventCount !== userDB.events.length ||
+    tubeDataCache.replacementCount !== userDB.replacements.length || tubeDataCache.canonical !== canonical ||
+    tubeDataCache.demo !== demo || tubeDataCache.pipeTypes !== pipeTypes) {
+    tubeDataCache = { revision: ++tubeDataRevision, db: userDB, events: userDB.events, replacements: userDB.replacements,
+      eventCount: userDB.events.length, replacementCount: userDB.replacements.length, canonical, demo, pipeTypes,
+      derived: new Map(), eventsByPosition: null, installedByPosition: null };
+  }
+  return tubeDataCache;
+}
+function cachedTubeData(key, build) {
+  const cache = getTubeDataCache();
+  if(!cache.derived.has(key)) cache.derived.set(key, build());
+  return cache.derived.get(key);
+}
+function tubeHistoryIndex() {
+  const cache = getTubeDataCache();
+  if(!cache.eventsByPosition) {
+    cache.eventsByPosition = new Map();
+    cache.installedByPosition = new Map();
+    userDB.events.forEach(event => {
+      const key = tubePositionKey(event.code);
+      if(!cache.eventsByPosition.has(key)) cache.eventsByPosition.set(key, []);
+      cache.eventsByPosition.get(key).push(event);
+    });
+    userDB.replacements.forEach(record => {
+      const date = String(record.date || '');
+      if(!date) return;
+      [record.oldCode, record.newCode].forEach(code => {
+        const key = tubePositionKey(code);
+        if(date > (cache.installedByPosition.get(key) || '')) cache.installedByPosition.set(key, date);
+      });
+    });
+  }
+  return cache;
+}
 const LLM_CONFIG_KEY = 'boiler_llm_config';
 const LLM_PROVIDER_PRESETS = {
   custom: { baseUrl: '', model: '' },
@@ -404,7 +452,8 @@ function dmTypeOptions() {
 function syncDmTypeOptions() {
   const select = document.getElementById('dm-type-search');
   if (!select) return;
-  const options = dmTypeOptions();
+  const saved = readDmTypeSaved();
+  const options = typeof cachedTubeData === 'function' ? cachedTubeData(`dm-types:${saved}`, () => dmTypeOptions()) : dmTypeOptions();
   const signature = options.join('\u0001');
   const current = select.value || readDmTypeSaved();
   if (select.dataset.signature !== signature) {
@@ -574,11 +623,12 @@ function isExactInspectionDate(value) {
 /* 编码即管位永久身份：全部历史都挂在同一编码下；更换边界之后才算当前这根管的证据。 */
 function tubeEvidenceEvents(code) {
   const position = tubePositionKey(code);
+  if(typeof tubeHistoryIndex === 'function') return (tubeHistoryIndex().eventsByPosition.get(position) || []).slice();
   return userDB.events.filter(e => tubePositionKey(e.code) === position);
 }
 function currentTubeEvents(code) {
   const position = tubePositionKey(code);
-  const installed = userDB.replacements
+  const installed = typeof tubeHistoryIndex === 'function' ? tubeHistoryIndex().installedByPosition.get(position) : userDB.replacements
     .filter(r => tubePositionKey(r.oldCode) === position || tubePositionKey(r.newCode) === position)
     .map(r => String(r.date || '')).filter(Boolean).sort().pop();
   return installed ? tubeEvidenceEvents(code).filter(e => String(e.date).localeCompare(installed) >= 0) : tubeEvidenceEvents(code);
@@ -694,6 +744,7 @@ try { const savedSize = Number(localStorage.getItem('boiler_dm_page_size')); if 
 let dmFilterSignature = '';
 let dmFilteredTs = [];
 let dmTotalRows = 0;
+let dmResultCache = null;
 function dmInspectionTimestamp(value) {
   const match = String(value || '').trim().match(/^(\d{4})(?:[-/.](\d{1,2}))?(?:[-/.](\d{1,2}))?/);
   if (!match) return null;
@@ -702,7 +753,9 @@ function dmInspectionTimestamp(value) {
   return Date.UTC(year, month - 1, day);
 }
 function dmCompareByInspectionDateDesc(a, b) {
-  const left = dmInspectionTimestamp(a.date), right = dmInspectionTimestamp(b.date);
+  // 装饰行在一次排序前计算日期；直接调用比较器的既有 API 仍接受原始事件。
+  const left = Object.prototype.hasOwnProperty.call(a, 'inspectionTimestamp') ? a.inspectionTimestamp : dmInspectionTimestamp(a.date);
+  const right = Object.prototype.hasOwnProperty.call(b, 'inspectionTimestamp') ? b.inspectionTimestamp : dmInspectionTimestamp(b.date);
   if (left !== null && right !== null && left !== right) return right - left;
   if (left !== null && right === null) return -1;
   if (left === null && right !== null) return 1;
@@ -729,10 +782,20 @@ function renderDMTable() {
   const sys = getDmSysFilter();
   const codeQuery = getDmCodeQuery();
   const dateRange = getDmDateFilter();
-  const all = [...userDB.events].filter(r => dmDateInScope(r.date, dateRange) && dmTypeInScope(r.type) && dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery)).sort(dmCompareByInspectionDateDesc);
   const signature = JSON.stringify([filter, [...sys].sort(), codeQuery, getDmTypeFilter(), dateRange.from || '', dateRange.to || '']);
   if (signature !== dmFilterSignature) { dmFilterSignature = signature; dmPage = 1; }
-  dmFilteredTs = all.map(r => Number(r.ts));
+  const revision = getTubeDataCache().revision;
+  if (!dmResultCache || dmResultCache.revision !== revision || dmResultCache.signature !== signature) {
+    const rows = userDB.events.filter(r => dmDateInScope(r.date, dateRange) && dmTypeInScope(r.type) && dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery))
+      .map(row => ({ row, ts: row.ts, inspectionTimestamp: dmInspectionTimestamp(row.date) }))
+      .sort(dmCompareByInspectionDateDesc).map(item => item.row);
+    const timestamps = rows.map(r => Number(r.ts));
+    const counts = new Map();
+    timestamps.forEach(ts => counts.set(ts, (counts.get(ts) || 0) + 1));
+    dmResultCache = { revision, signature, rows, timestamps, counts, visibleTs: new Set(timestamps) };
+  }
+  const all = dmResultCache.rows;
+  dmFilteredTs = dmResultCache.timestamps;
   dmTotalRows = all.length;
   const pageCount = Math.max(1, Math.ceil(dmTotalRows / dmPageSize));
   if (dmPage > pageCount) dmPage = pageCount;
@@ -740,13 +803,13 @@ function renderDMTable() {
   const pageStart = (dmPage - 1) * dmPageSize;
   const pageRows = all.slice(pageStart, pageStart + dmPageSize);
   const manage = canManageTubeData();
-  const visibleTs = new Set(all.map(r => Number(r.ts)));
+  const visibleTs = dmResultCache.visibleTs;
   [...dmSelectedTs].forEach(ts => { if (!visibleTs.has(ts)) dmSelectedTs.delete(ts); });
   const selectTh = document.getElementById('dm-select-all-th');
   if (selectTh) selectTh.style.display = manage ? '' : 'none';
   const allBox = document.getElementById('dm-select-all');
   if (allBox) {
-    const selectedCount = all.filter(r => dmSelectedTs.has(Number(r.ts))).length;
+    const selectedCount = [...dmSelectedTs].reduce((count, ts) => count + (dmResultCache.counts.get(ts) || 0), 0);
     allBox.checked = all.length > 0 && selectedCount === all.length;
     allBox.indeterminate = selectedCount > 0 && selectedCount < all.length;
     allBox.style.display = manage ? '' : 'none';
@@ -1763,12 +1826,15 @@ function warningClass(level) {
   return level === 'HIGH' ? 'alert-danger' : level === 'MEDIUM' ? 'alert-warn' : 'alert-info';
 }
 function collectRetiredTubeCodes() {
+  const cache = typeof getTubeDataCache === 'function' ? getTubeDataCache() : null;
+  if(cache?.derived.has('retired')) return new Set(cache.derived.get('retired'));
   const retiredCodes = new Set();
   userDB.replacements.forEach(r => { if(r.oldCode) retiredCodes.add(r.oldCode); });
   userDB.events.forEach(event => {
     if(/报废更换|更换为/.test(`${event.type || ''} ${event.desc || ''}`)) retiredCodes.add(event.code);
   });
-  return retiredCodes;
+  if(cache) cache.derived.set('retired', retiredCodes);
+  return new Set(retiredCodes);
 }
 function isRetiredTubeCode(code, retiredCodes = collectRetiredTubeCodes()) {
   return retiredCodes.has(code) || retiredCodes.has(normalizedTubeCode(code));
@@ -1819,6 +1885,8 @@ function shortEventResult(event) {
 }
 function collectDashboardWarnings(options = {}) {
   const limit = Number(options.limit) || 6;
+  const cache = getTubeDataCache();
+  if(cache.derived.has('dashboard-warnings')) return cache.derived.get('dashboard-warnings').slice(0, limit);
   const retiredCodes = collectRetiredTubeCodes();
   const systemWarnings = Object.entries(systemLifecycleData())
     .filter(([code]) => !isRetiredTubeCode(code, retiredCodes))
@@ -1848,14 +1916,20 @@ function collectDashboardWarnings(options = {}) {
         text: `${warning.label} · 实测 ${current.val}mm · ${info.threshold === null ? info.reason : `采用${info.pipeType === 'bend' ? '弯管外侧' : '直管'} ${info.threshold}mm；裕量 ${warning.margin.toFixed(2)}mm`}` };
     }).filter(Boolean);
   const measuredCodes = new Set(measuredWarnings.map(item => item.code));
-  return [...measuredWarnings, ...systemWarnings.filter(item => !measuredCodes.has(item.code)), ...localWarnings.filter(item => !measuredCodes.has(item.code))]
-    .sort((a, b) => a.sort - b.sort || (b.ts || 0) - (a.ts || 0)).slice(0, limit);
+  const warnings = [...measuredWarnings, ...systemWarnings.filter(item => !measuredCodes.has(item.code)), ...localWarnings.filter(item => !measuredCodes.has(item.code))]
+    .sort((a, b) => a.sort - b.sort || (b.ts || 0) - (a.ts || 0));
+  cache.derived.set('dashboard-warnings', warnings);
+  return warnings.slice(0, limit);
 }
 /* 待处置任务（左栏）与风险信号（右栏）分家：
    风险信号 = 系统发现的异常状态（预警流）；待处置任务 = 接下来要做的动作——
    1) 材料库判定已到/接近更换阈值的管段 → 换管评估；2) 超期未检（复用检修模块 P1-P4 分层，P4 不进任务卡）→ 复测。
    返回 tasks（按 换管P1 → 复测P1 → 换管P2 → 复测P2/P3 排序，截取 limit 条）与两类全量计数（供指标卡）。 */
 function collectDashboardTasks(limit = 4) {
+  const year = Number(document.getElementById('maintenanceCycleStart')?.value) || new Date().getFullYear();
+  const cache = getTubeDataCache();
+  const cacheKey = JSON.stringify(['dashboard-tasks', dashboardUnit, year, limit, new Date().toDateString()]);
+  if(cache.derived.has(cacheKey)) return cache.derived.get(cacheKey);
   const retiredCodes = collectRetiredTubeCodes();
   const tasks = [];
   const seenCodes = new Set();
@@ -1880,7 +1954,6 @@ function collectDashboardTasks(limit = 4) {
       detail: `${warning.label} · 实测 ${current.val}mm${Number.isFinite(warning.margin) ? ` · 裕量 ${warning.margin.toFixed(2)}mm` : ''}`
     });
   });
-  const year = Number(document.getElementById('maintenanceCycleStart')?.value) || new Date().getFullYear();
   const overdue = buildMaintenanceOverdueRows(year, dashboardUnit)
     .filter(row => !seenCodes.has(row.code) && (row.priority === 'P1' || row.priority === 'P2' || row.priority === 'P3'));
   const overdueCount = overdue.length;
@@ -1898,7 +1971,9 @@ function collectDashboardTasks(limit = 4) {
     });
   });
   tasks.sort((a, b) => a.rank - b.rank);
-  return { tasks: tasks.slice(0, limit), replaceCount, overdueCount };
+  const result = { tasks: tasks.slice(0, limit), replaceCount, overdueCount };
+  cache.derived.set(cacheKey, result);
+  return result;
 }
 function getDashboardSurfaceHealth(unit = dashboardUnit) {
   return DASHBOARD_SURFACE_HEALTH.map(item => {
@@ -2071,8 +2146,10 @@ function syncDashboardSnapshot() {
   const sourceSum = document.getElementById('dashboard-source-sum');
   if(sourceSum) sourceSum.textContent = dashboardUnit === 'all' ? '台账+检测+检修' : `${unitLabel} · 台账+检测+检修`;
   document.querySelectorAll('#dashboard-unit-switch button').forEach(btn => btn.classList.toggle('active', btn.dataset.unit === dashboardUnit));
-  const scopedEvents = userDB.events.filter(event => codeMatchesDashboardUnit(event.code));
-  const scopedReplacements = userDB.replacements.filter(item => codeMatchesDashboardUnit(item.oldCode) || codeMatchesDashboardUnit(item.newCode));
+  const { scopedEvents, scopedReplacements } = cachedTubeData(`dashboard-scope:${dashboardUnit}`, () => ({
+    scopedEvents: userDB.events.filter(event => codeMatchesDashboardUnit(event.code)),
+    scopedReplacements: userDB.replacements.filter(item => codeMatchesDashboardUnit(item.oldCode) || codeMatchesDashboardUnit(item.newCode))
+  }));
   const eventCount = document.getElementById('dq-event-count');
   if(eventCount) eventCount.textContent = `${scopedEvents.length} 条`;
   const replacementCount = document.getElementById('dq-replacement-count');
@@ -2156,6 +2233,9 @@ function formatDashboardWarningsForPrompt() {
 }
 function extractThicknessData(code, options = {}) {
   const includeSystem = options.includeSystem !== false;
+  const cache = typeof getTubeDataCache === 'function' ? getTubeDataCache() : null;
+  const cacheKey = JSON.stringify(['thickness', code, includeSystem]);
+  if(cache?.derived.has(cacheKey)) return cache.derived.get(cacheKey).map(point => ({ ...point }));
   const timelineEvents = includeSystem ? (findLifecycleEntry(code)?.timeline || []).map(item => ({ code, type: item.t || '', date: item.date, desc: item.d || '', source: '系统寿命样例' })) : [];
   const localEvents = currentTubeEvents(code).filter(e => sameTubeMeasurement(e.code, code)).map(e => ({ ...e, source: '本地录入' }));
   const data = [];
@@ -2173,7 +2253,9 @@ function extractThicknessData(code, options = {}) {
     });
   const byTime = new Map();
   data.forEach(point => { if(!byTime.has(point.year) || byTime.get(point.year).val > point.val) byTime.set(point.year, point); });
-  return [...byTime.values()].sort((a,b) => a.year - b.year);
+  const points = [...byTime.values()].sort((a,b) => a.year - b.year);
+  if(cache) cache.derived.set(cacheKey, points);
+  return points.map(point => ({ ...point }));
 }
 
 /* 页面首次进入才挂载；数据变化只刷新当前页，其余页面下次进入时刷新。 */
@@ -2236,6 +2318,7 @@ function refreshView(viewId) {
   }
 }
 function invalidateViews(viewIds) {
+  if(typeof invalidateTubeDataCache === 'function') invalidateTubeDataCache();
   viewIds.forEach(viewId => { if(viewLifecycle[viewId]) viewLifecycle[viewId].dirty = true; });
   refreshView(activeViewId());
 }
@@ -2282,8 +2365,8 @@ function activateOvertemperatureView() {
   loadOvertemperatureBundle(() => { if(activeViewId() === 'overtemperature') window.BTOvertemperature?.refresh(); });
 }
 function activateTemperatureEvidence() {
-  if(window.BTTemperatureEvidence?.hydrate) { window.BTTemperatureEvidence.hydrate({ force: true }); return; }
-  loadOvertemperatureBundle(() => { if(activeViewId() === 'tube-analysis') window.BTTemperatureEvidence?.hydrate({ force: true }); });
+  if(window.BTTemperatureEvidence?.hydrate) { window.BTTemperatureEvidence.hydrate(); return; }
+  loadOvertemperatureBundle(() => { if(activeViewId() === 'tube-analysis') window.BTTemperatureEvidence?.hydrate(); });
 }
 function initNav() {
   const btns = [...document.querySelectorAll('.nav-btn')];
@@ -3380,8 +3463,11 @@ function maintenanceOverdueAction(row) {
   return `纳入6年滚动覆盖，补齐最近一次检查结论和影像记录；${focus}`;
 }
 function buildMaintenanceOverdueRows(asOfYear, boiler = 'all') {
+  const cache = typeof getTubeDataCache === 'function' ? getTubeDataCache() : null;
+  const cacheKey = JSON.stringify(['overdue', asOfYear, boiler, new Date().toDateString()]);
+  if(cache?.derived.has(cacheKey)) return cache.derived.get(cacheKey);
   const inspectionMap = collectTubeInspectionRecords(boiler);
-  return getGeneratedTubeLedgerRows(boiler).map(row => {
+  const rows = getGeneratedTubeLedgerRows(boiler).map(row => {
     const latest = inspectionMap.get(tubePositionKey(row.code));
     const years = latest ? yearsSinceDate(latest.date, asOfYear) : null;
     const aging = classifyInspectionAging(years ?? 999, Boolean(latest));
@@ -3400,6 +3486,8 @@ function buildMaintenanceOverdueRows(asOfYear, boiler = 'all') {
     };
   }).map(row => ({ ...row, action: maintenanceOverdueAction(row) }))
     .sort((a, b) => b.yearsSort - a.yearsSort || maintenanceSystemPriority(a.sys) - maintenanceSystemPriority(b.sys) || a.code.localeCompare(b.code));
+  if(cache) cache.derived.set(cacheKey, rows);
+  return rows;
 }
 function getOverdueStats(rows) {
   return {
@@ -4005,6 +4093,21 @@ function clearLLMResult() {
   setLLMStatus('结果已清空。', 'info');
 }
 
+/* 首次点击才下载助手界面；加载失败保留入口，允许重试。 */
+async function openAssistantOnDemand() {
+  const launcher = document.getElementById('assistant-lazy-launcher');
+  if(launcher?.disabled) return;
+  if(launcher) { launcher.disabled = true; launcher.textContent = 'AI 助手加载中…'; }
+  try {
+    if(!window.BTAssistant?.open) await window.BTLazy.ensure('assistant');
+    window.BTAssistant.open();
+    if(launcher) launcher.hidden = true;
+  } catch(err) {
+    if(launcher) { launcher.disabled = false; launcher.textContent = 'AI 数据助手'; }
+    showToast('助手加载失败，请重试：' + err.message, 'warn');
+  }
+}
+
 /* 总览深度分析面板：本地可视化分析（复用助手分析引擎，图表作为大模型解读的数据依据） */
 let lastLLMVisualInsights = [];
 let pendingLLMVizRerun = false;
@@ -4018,12 +4121,11 @@ function runLLMVisualAnalysis(forceLoad = false) {
       view.innerHTML = '<div class="llm-note">可视化分析组件未加载，请刷新页面。</div>';
       return;
     }
-    // 初始化时不抢首屏流量：占位并等待空闲预载就绪后自动重跑；
-    // 用户主动点“刷新”（forceLoad=true）则立即加载模块。
+    // 初始化不加载助手；点击刷新或打开助手后，再在模块就绪时运行分析。
     if(!pendingLLMVizRerun) {
       if(!window.BTLazy.isReady('assistant')) {
         pendingLLMVizRerun = true;
-        view.innerHTML = '<div class="llm-note">可视化分析组件加载中…</div>';
+        view.innerHTML = '<div class="llm-note">点击“刷新”加载可视化分析，或打开 AI 助手后自动显示。</div>';
         window.BTLazy.onReady('assistant', () => { pendingLLMVizRerun = false; runLLMVisualAnalysis(); });
       } else {
         // 模块组已加载但分析模块缺失（发布包不完整），明确提示而不是一直显示“加载中”
@@ -4031,6 +4133,7 @@ function runLLMVisualAnalysis(forceLoad = false) {
       }
     }
     if(forceLoad) {
+      view.innerHTML = '<div class="llm-note">可视化分析组件加载中…</div>';
       window.BTLazy.ensure('assistant').catch((err) => {
         pendingLLMVizRerun = false;
         view.innerHTML = '<div class="llm-note">可视化分析组件加载失败，请检查网络后刷新页面。</div>';
@@ -4265,10 +4368,14 @@ function extractMaterialHint(value) {
 }
 function resolveMaterialTheoryThickness(code, pipeType) {
   code = String(code || '').trim().toUpperCase();
+  const cache = typeof getTubeDataCache === 'function' ? getTubeDataCache() : null;
+  const cacheKey = JSON.stringify(['theory', code, pipeType]);
+  if(cache?.derived.has(cacheKey)) return cache.derived.get(cacheKey);
   const inventory = validateCodeAgainstMatrix(code)?.row;
   const component = matchComponentFromCode(code);
   const lifecycle = findLifecycleEntry(code);
-  const events = userDB.events.filter(event => sameTubeMeasurement(event.code, code))
+  const evidence = typeof tubeHistoryIndex === 'function' ? (tubeHistoryIndex().eventsByPosition.get(tubePositionKey(code)) || []) : userDB.events;
+  const events = evidence.filter(event => sameTubeMeasurement(event.code, code))
     .sort((a,b) => String(b.date).localeCompare(String(a.date)));
   const localSpec = events.find(event => event.spec)?.spec;
   const localMaterial = events.find(event => event.material)?.material;
@@ -4280,7 +4387,8 @@ function resolveMaterialTheoryThickness(code, pipeType) {
   const materials = materialAliases(material);
   const sys = getCodeSystem(code), zone = '';
   const meta = { sys, zone, spec, material };
-  const candidates = sizes.length === 1 && materials.length === 1 ? getMaterialLibrary().filter(item =>
+  const library = typeof cachedTubeData === 'function' ? cachedTubeData('material-library', () => getMaterialLibrary()) : getMaterialLibrary();
+  const candidates = sizes.length === 1 && materials.length === 1 ? library.filter(item =>
     item.sys === sys && (!item.theoryZone || !zone || item.theoryZone === zone) &&
     Number(item.diameter) === Number(sizes[0].diameter) && Number(item.wallThickness) === Number(sizes[0].wall) &&
     materialAliases(item.material).length === 1 && materialAliases(item.material)[0] === materials[0]) : [];
@@ -4290,10 +4398,12 @@ function resolveMaterialTheoryThickness(code, pipeType) {
   const straight = positiveThickness(selected?.straight), bend = positiveThickness(selected?.bend);
   const threshold = normalizedType === 'straight' ? straight : normalizedType === 'bend' ? bend : null;
   const reason = !selected ? '材料库未唯一匹配，请补全材质、外径及名义壁厚' : !normalizedType ? '未指定测点管型' : threshold === null ? '材料库缺少所选管型理论厚度' : '';
-  return { matched: Boolean(selected && threshold !== null), pipeType: normalizedType, threshold,
+  const info = { matched: Boolean(selected && threshold !== null), pipeType: normalizedType, threshold,
     nominalWall: selected?.nominalWall ?? (sizes.length === 1 ? positiveThickness(sizes[0].wall) : null), straight, bend,
     source: selected ? `材料库：${selected.sampleName || selected.position} · ${selected.spec} · ${selected.material}` : reason,
     reason, material: selected?.material || material, spec: selected?.spec || spec, rule: selected || false, meta };
+  if(cache) cache.derived.set(cacheKey, info);
+  return info;
 }
 function resolveTubeTheoryThreshold(code, pipeType) { return resolveMaterialTheoryThickness(code, pipeType); }
 function selectedTubePipeType(code) { return window.__tubePipeTypes?.[code] ?? (parseTubeCode(code)?.partKind === 'W' ? 'bend' : undefined); }
@@ -4970,7 +5080,7 @@ function collectAssistantSnapshot(options = {}) {
   const events = Array.isArray(userDB.events) ? userDB.events : [];
   const replacements = Array.isArray(userDB.replacements) ? userDB.replacements : [];
   let materialLibrary = [];
-  try { materialLibrary = getMaterialLibrary() || []; } catch (err) { materialLibrary = []; }
+  try { materialLibrary = cachedTubeData('material-library', () => getMaterialLibrary()) || []; } catch (err) { materialLibrary = []; }
   let warnings = [];
   try { warnings = collectDashboardWarnings({ limit: 500 }) || []; } catch (err) { warnings = []; }
   let overdueRows = [];
@@ -5406,5 +5516,4 @@ loadAuthSession();
 bootstrapCloudStorage();
 refreshLLMServerStatus();
 applyDemoDataToggle();
-/* 首屏渲染完成后空闲预载 AI 助手与超温分析模块，用户点开时通常已就绪 */
-if(window.BTLazy) window.BTLazy.idle();
+/* 可选模块只由实际使用入口加载；保留各模块就绪后的视图刷新订阅。 */
