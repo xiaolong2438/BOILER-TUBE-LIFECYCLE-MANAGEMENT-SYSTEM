@@ -607,6 +607,8 @@
       for (var li = 0; li < rows.length; li += 1) {
         var lrow = rows[li];
         if (!lrow || !lrow.loopPairing || lrow.special === 'rsq') continue;
+        // 高再历史腿号与新回路号的对应未经确认，超出7回路的管位保持待核。
+        if (String(lrow.sys || '').toUpperCase() === 'GZRQ') continue;
         if (String(lrow.sys || '').toUpperCase() !== parsed.sys || String(lrow.comp || '').toUpperCase() !== parsed.comp) continue;
         var loopNo = 2 * lrow.tMax + 1 - parsed.tube;
         if (loopNo < 1 || loopNo > lrow.tMax) continue;

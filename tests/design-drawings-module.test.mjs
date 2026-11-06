@@ -78,6 +78,10 @@ assert.match(html, /id="dgrqLoopBaseline"/, "低过分段基准表容器应存�
 assert.match(html, /低温过热器材质分段基准（5回路）/, "低过分段基准卡片标题应存在");
 assert.match(js, /const DGRQ_LOOP_BASELINE = \[/, "低过5回路分段基准应存在");
 assert.match(js, /function renderDGRQLoopBaseline\(\)/, "低过分段基准渲染函数应存在");
+assert.match(html, /id="gzrqLoopBaseline"/, "高再分段基准表容器应存在");
+assert.match(html, /高温再热器材质分段基准（7回路）/, "高再分段基准卡片标题应存在");
+assert.match(js, /const GZRQ_LOOP_BASELINE = \[/, "高再7回路分段基准应存在");
+assert.match(js, /function renderGZRQLoopBaseline\(\)/, "高再分段基准渲染函数应存在");
 assert.match(js, /function renderDZRQLoopBaseline\(\)/, "低再分段基准渲染函数应存在");
 
 // 行为验证：回路号即入口段F00k/出口段B00k编号（JSON 序列化取出，避免跨 realm 原型差异）
@@ -87,7 +91,7 @@ const baseline = JSON.parse(vm.runInContext("JSON.stringify(GGRQ_LOOP_BASELINE)"
 assert.equal(baseline.length, 12, "应包含全部12个回路");
 for (const l of baseline) {
   assert.equal(l.loop, baseline.indexOf(l) + 1, "回路号连续1..12");
-  assert.ok(l.frontSegs.length >= 1 && l.rearSegs.length >= 2, "每条腿至少1段，出口段至少2段");
+  assert.ok(l.frontSegs.length >= 2 && l.rearSegs.length >= 2, "入口直管和底弯分别保留，出口段至少2段");
 }
 assert.deepEqual(
   JSON.parse(vm.runInContext("JSON.stringify([ggrqBottomBendAttrs(5), ggrqBottomBendAttrs(8), ggrqBottomBendAttrs(12), ggrqBottomBendAttrs(1)])", baselineCtx)),
@@ -123,6 +127,46 @@ for (const l of dgrqBaseline) {
     ['垂直段', 'Φ57×8 12Cr1MoVG']
   ], `${l.tube} 分段链`);
 }
+const gzrqBaseline = JSON.parse(vm.runInContext("JSON.stringify(GZRQ_LOOP_BASELINE)", baselineCtx));
+assert.equal(gzrqBaseline.length, 7, "高再应包含7个回路");
+for (const l of gzrqBaseline) {
+  assert.equal(l.loop, gzrqBaseline.indexOf(l) + 1, "高再回路号连续1..7");
+  assert.ok(l.frontSegs.length >= 3 && l.rearSegs.length >= 2, "每回路含入口段/底弯/出口段");
+  assert.deepEqual(l.rearSegs[l.rearSegs.length - 1], ['Φ60×5', 'SA-213T22'], `回路${l.loop} 顶棚外出口段T22`);
+}
+assert.deepEqual(gzrqBaseline[0].frontSegs, [
+  ['Φ60×5', '12Cr1MoVG'],
+  ['Φ60×4', '12Cr1MoVG'],
+  ['Φ60×4', 'SA-213T91'],
+  ['Φ60×4', 'SA-213TP304H']
+], 'F001 外圈底弯TP304H');
+assert.deepEqual(gzrqBaseline[0].rearSegs, [['Φ60×5', 'SA-213T91'], ['Φ60×5', 'SA-213T22']], 'F001 出口段');
+assert.deepEqual(gzrqBaseline[1].frontSegs, [
+  ['Φ51×5', '12Cr1MoVG'],
+  ['Φ51×4', '12Cr1MoVG'],
+  ['Φ60×4', '12Cr1MoVG'],
+  ['Φ60×4', 'SA-213T91']
+], 'F002 底弯T91');
+assert.deepEqual(gzrqBaseline[4].frontSegs, [
+  ['Φ51×5', '12Cr1MoVG'],
+  ['Φ51×4', '12Cr1MoVG'],
+  ['Φ60×4', '12Cr1MoVG'],
+  ['Φ60×4', '12Cr1MoVG']
+], 'F005 入口直管与底弯同材质仍分别保留');
+for (const loop of gzrqBaseline.slice(4)) {
+  assert.deepEqual(loop.frontSegs.slice(-2), [['Φ60×4', '12Cr1MoVG'], ['Φ60×4', '12Cr1MoVG']], 'F005–F007 独立入口与底弯');
+}
+assert.deepEqual(gzrqBaseline[5].rearSegs, [
+  ['Φ60×4', 'SA-213T91'],
+  ['Φ60×5', 'SA-213T91'],
+  ['Φ60×5', 'SA-213T22']
+], 'F006 出口段');
+assert.deepEqual(gzrqBaseline[6].rearSegs, [
+  ['Φ60×6', 'SA-213T91'],
+  ['Φ60×4', 'SA-213T91'],
+  ['Φ60×5', 'SA-213T91'],
+  ['Φ60×5', 'SA-213T22']
+], 'F007 出口三段T91');
 
 // 与清洗脚本的 GGRQ_LOOP_SEGMENTS 逐回路逐段一致（单一事实源，双端同步）
 const py = readFileSync(resolve(here, "../scripts/clean_boiler_film_records.py"), "utf8");
@@ -160,6 +204,39 @@ assert.ok(qRearSummary.startsWith('回路2 出口段 B002（底弯→顶出口�
 assert.ok(summaryOf('1G-GGRQ-GQ-L002-F002-Q', [{ spec: 'Φ51×11', material: 'SA-213T22' }]).includes('；检测记录：Φ51×11 SA-213T22'), '记录值不在入口段直管链时附检测记录待核');
 assert.ok(summaryOf('1G-GGRQ-GQ-L001-B001-W', []).startsWith('回路1 底弯段 Φ54×7.5 SA-213TP347H'), '弯头B写法归一入口段位后取回路基准');
 assert.ok(summaryOf('1G-DPGRQ-GQ-L001-F002-F001-Q', []).startsWith('回路1 入口段 F001（顶入口→底弯）：Φ51×7 12Cr1MoVG → Φ51×7 SA-213T91【底弯前】'), '大屏外圈入口段链（12Cr1MoVG→T91，绑定在小屏内）');
-assert.equal(summaryOf('1G-GZRQ-GQ-L001-F001-W', [{ spec: 'Φ60×4', material: 'SA-213TP304H' }]), 'Φ60×4 SA-213TP304H', '高再无回路基准，用检测记录值');
+assert.ok(summaryOf('1G-GZRQ-GQ-L001-F001-W', []).startsWith('回路1 底弯段 Φ60×4 SA-213TP304H'), '高再底弯使用确认基准');
+assert.ok(summaryOf('1G-GZRQ-GQ-L001-B001-Q', []).startsWith('回路1 出口段 B001（底弯→顶出口）：Φ60×5 SA-213T91'), '高再出口腿单独显示材质链');
+assert.ok(summaryOf('1G-GZRQ-GQ-L001-F005-Q', []).includes('Φ60×4 12Cr1MoVG【底弯前】'), '入口与底弯同材质不能省略入口直管');
+assert.ok(summaryOf('1G-HPGRQ-GQ-L001-F007-Q', []).includes('Φ54×8.5 12Cr1MoVG'), '屏过同材质入口直管规格完整显示');
+baselineCtx.escapeHTML = value => String(value);
+const gzrqTable = vm.runInContext("platenLoopBaselineTable(GZRQ_LOOP_BASELINE, '高再')", baselineCtx);
+assert.ok(gzrqTable.includes('F001↓ + B001↑') && gzrqTable.includes('F007↓ + B007↑'), '高再表格统一F入口/B出口');
+assert.equal((gzrqTable.match(/【底弯】/g) || []).length, 7, '每回路独立标注底弯');
+const f005Row = gzrqTable.slice(gzrqTable.indexOf('>回路5<'), gzrqTable.indexOf('>回路6<'));
+assert.equal((f005Row.match(/Φ60×4 12Cr1MoVG/g) || []).length, 2, '表格保留同规格材质入口和底弯两个位置');
+const hpTable = vm.runInContext("platenLoopBaselineTable(HPGRQ_LOOP_BASELINE, '后屏')", baselineCtx);
+const hp7Row = hpTable.slice(hpTable.indexOf('>回路7<'), hpTable.indexOf('>回路8<'));
+assert.equal((hp7Row.match(/Φ54×8.5 12Cr1MoVG/g) || []).length, 3, '同材质入口、底弯、出口分别显示且不重复补段');
 
-console.log("ok - design drawings module: nav/view/upload/viewer/delete/linkage with permission gating and KV sync + 12-loop segment baseline");
+// 三类受热面同规格材质的入口/底弯必须在数据、表格、Q/W摘要中各自保留。
+for (const [sys, name, first, last, spec, material] of [
+  ['GGRQ', 'GGRQ_LOOP_BASELINE', 8, 11, 'Φ51×9', '12Cr1MoVG'],
+  ['HPGRQ', 'HPGRQ_LOOP_BASELINE', 7, 12, 'Φ54×8.5', '12Cr1MoVG'],
+  ['DPGRQ', 'DPGRQ_LOOP_BASELINE', 4, 13, 'Φ51×7', '12Cr1MoVG']
+]) {
+  const loops = JSON.parse(vm.runInContext(`JSON.stringify(${name})`, baselineCtx));
+  const table = vm.runInContext(`platenLoopBaselineTable(${name}, '${sys}')`, baselineCtx);
+  for (let no = first; no <= last; no++) {
+    const loop = loops.find(item => item.loop === no);
+    assert.deepEqual(loop.frontSegs, [[spec, material], [spec, material]], `${sys}回路${no}分别存储入口直管与底弯`);
+    const row = table.split('<tr>').find(part => part.includes(`>回路${no}<`));
+    const label = `${spec} ${material}`;
+    assert.equal(row.split(label).length - 1, 2 + loop.rearSegs.filter(seg => seg.join(' ') === label).length, `${sys}回路${no}不能额外补出重复段`);
+    assert.equal(row.split('【底弯】').length - 1, 1, '每回路只标一次底弯');
+    const code = `1G-${sys}-GQ-L001-${sys === 'DPGRQ' ? 'F001-' : ''}F${String(no).padStart(3, '0')}`;
+    assert.ok(summaryOf(code + '-Q', []).includes(label + '【底弯前】'), `${sys}回路${no}入口档案显示完整直管材质`);
+    assert.ok(summaryOf(code + '-W', []).includes(`${label} → ${label}【底弯】`), `${sys}回路${no}底弯档案全回路保留入口`);
+  }
+}
+
+console.log("ok - design drawings module: nav/view/upload/viewer/delete/linkage + loop segment baselines and inlet/bend preservation");

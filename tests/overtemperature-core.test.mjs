@@ -193,16 +193,22 @@ test('suspended F/B Q are separate legs and W has only F canonical identity', ()
   bad(Core.validateRegion(region({ dirs:['B'],parts:['W'] })));
 });
 
-test('GZRQ confirmed F001-007 only, never permissive fieldDirs positions', () => {
+test('GZRQ seven loops keep F/B straight legs separate and canonicalize bends', () => {
   const highReheat = region({ sys:'GZRQ',tubeFrom:null,tubeTo:null,dirs:null });
-  assert.equal(Core.expandRegion(highReheat, '1').count, 7);
-  assert.equal(Core.matchesRegion('1G-GZRQ-GQ-L001-F007-Q', highReheat, '1'), true);
-  assert.equal(Core.matchesRegion('1G-GZRQ-GQ-R064-F007-Q', highReheat, '1'), true);
-  for (const code of ['1G-GZRQ-GQ-L001-F008-Q','1G-GZRQ-GQ-L001-B001-Q','1G-GZRQ-GQ-R064-B007-Q']) {
-    assert.equal(Assistant.validateTubeCode(code, Core.MATRIX).fieldPosition, true);
+  assert.equal(Core.expandRegion(highReheat, '1').count, 14);
+  for (const code of ['1G-GZRQ-GQ-L001-F007-Q', '1G-GZRQ-GQ-R064-B007-Q']) {
+    assert.equal(Core.matchesRegion(code, highReheat, '1'), true);
+    assert.notEqual(Assistant.validateTubeCode(code, Core.MATRIX).fieldPosition, true);
+  }
+  assert.equal(Core.matchesRegion('1G-GZRQ-GQ-L001-B001-Q', { ...highReheat, dirs:['F'] }, '1'), false);
+  assert.equal(Core.matchesRegion('1G-GZRQ-GQ-L001-B001-Q', { ...highReheat, dirs:['B'] }, '1'), true);
+  assert.equal(Core.matchesRegion('1G-GZRQ-GQ-L001-B001-W', { ...highReheat, dirs:['F'], parts:['W'] }, '1'), true);
+  for (const code of ['1G-GZRQ-GQ-L001-F008-Q','1G-GZRQ-GQ-L001-B014-Q']) {
+    assert.equal(Assistant.validateTubeCode(code, Core.MATRIX).matched, null);
+    assert.equal(Assistant.canonicalTubeCode(code, Core.MATRIX), null);
     assert.equal(Core.matchesRegion(code, highReheat, '1'), false);
   }
-  bad(Core.validateRegion({ ...highReheat, dirs:['B'] }));
+  good(Core.validateRegion({ ...highReheat, dirs:['B'] }));
   bad(Core.validateRegion({ ...highReheat, tubeTo:8 }));
 });
 
