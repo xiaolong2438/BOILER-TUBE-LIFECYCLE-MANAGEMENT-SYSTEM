@@ -593,7 +593,23 @@
       </div>
       <div id="dm-batch-bar" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;"></div>
       <div id="dm-duplicate-report" class="dm-duplicate-report" aria-live="polite" hidden></div>
-      <div class="table-wrap"><table><thead><tr><th id="dm-select-all-th" style="width:36px;"><input type="checkbox" id="dm-select-all" aria-label="全选" onchange="dmToggleAll(this.checked)"></th><th>日期</th><th>机组</th><th>管段编码</th><th>规格</th><th>材质</th><th>厚度(mm)</th><th>硬度(HB)</th><th>类型</th><th>详情</th><th>操作</th></tr></thead><tbody id="dm-table-body"></tbody></table></div>
+      <div class="dm-pager" id="dm-pager">
+        <span id="dm-pager-summary">共 0 条</span>
+        <label class="dm-pager-size">每页显示
+          <select id="dm-page-size" onchange="setDmPageSize(this.value)">
+            <option value="10">10 条</option>
+            <option value="50" selected>50 条</option>
+            <option value="100">100 条</option>
+            <option value="200">200 条</option>
+          </select>
+        </label>
+        <div class="dm-pager-nav">
+          <button type="button" class="btn btn-outline" id="dm-page-prev" onclick="dmGoPage(-1)">上一页</button>
+          <span id="dm-page-label">第 1/1 页</span>
+          <button type="button" class="btn btn-outline" id="dm-page-next" onclick="dmGoPage(1)">下一页</button>
+        </div>
+      </div>
+      <div class="table-wrap dm-table-scroll"><table><thead><tr><th id="dm-select-all-th" style="width:36px;"><input type="checkbox" id="dm-select-all" aria-label="全选" onchange="dmToggleAll(this.checked)"></th><th>日期</th><th>机组</th><th>管段编码</th><th>规格</th><th>材质</th><th>厚度(mm)</th><th>硬度(HB)</th><th>类型</th><th>详情</th><th>操作</th></tr></thead><tbody id="dm-table-body"></tbody></table></div>
     </div>
     <div class="card">
       <div class="card-title">管段更换登记记录</div>

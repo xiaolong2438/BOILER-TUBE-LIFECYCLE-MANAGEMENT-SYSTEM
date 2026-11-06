@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const js = readFileSync(resolve(here, "../assets/app/app-v7.9.js"), "utf8");
@@ -79,6 +80,28 @@ assert.match(js, /确定删除所选 \$\{dmSelectedTs\.size\} 条检测记录/, 
 assert.match(js, /removed\.forEach\(e => mlog\('delete', \{ record: e, source: 'manual' \}\)\);/, "批量删除逐条留痕");
 assert.match(js, /class="dm-row-check" data-ts="\$\{ts\}"/, "行复选框带ts标识");
 assert.match(js, /allBox\.indeterminate = selectedCount > 0 && selectedCount < all\.length/, "全选框支持半选态");
+
+// 记录列表：按炉管检查日期倒序，滚动容器内分页，每页 10/50/100/200 条。
+assert.match(html, /id="dm-page-size"/, "每页条数选择器存在");
+for (const size of [10, 50, 100, 200]) {
+  assert.match(html, new RegExp(`<option value="${size}"${size === 50 ? ' selected' : ''}>${size} 条</option>`), `每页 ${size} 条选项`);
+}
+assert.match(html, /id="dm-page-prev"/, "上一页按钮存在");
+assert.match(html, /id="dm-page-next"/, "下一页按钮存在");
+assert.match(html, /class="table-wrap dm-table-scroll"/, "记录表使用滚动容器");
+assert.match(js, /function dmCompareByInspectionDateDesc\(a, b\)/, "按检查日期倒序比较函数存在");
+assert.match(js, /\.sort\(dmCompareByInspectionDateDesc\)/, "事件表使用检查日期倒序排列");
+assert.match(js, /function setDmPageSize\(value\)/, "页大小切换函数存在");
+assert.match(js, /function dmGoPage\(delta\)/, "翻页函数存在");
+assert.match(js, /const pageRows = all\.slice\(pageStart, pageStart \+ dmPageSize\)/, "事件表按页切片渲染");
+assert.match(css, /\.dm-table-scroll \{ max-height: 62vh; overflow-y: auto; \}/, "滚动容器固定高度");
+const sortCtx = vm.createContext({ Date });
+vm.runInContext(js.slice(js.indexOf("function dmInspectionTimestamp"), js.indexOf("function setDmPageSize")), sortCtx);
+const sortedDates = JSON.parse(vm.runInContext(
+  "JSON.stringify([{date:'2022-10',ts:1},{date:'2024-01-15',ts:2},{date:'2023-06',ts:3},{date:'2024-01-15',ts:4}].sort(dmCompareByInspectionDateDesc).map(r => r.date + '#' + r.ts))",
+  sortCtx
+));
+assert.deepEqual(sortedDates, ["2024-01-15#4", "2024-01-15#2", "2023-06#3", "2022-10#1"], "检查日期倒序，同日期按录入时间倒序");
 
 // 编辑校验与新增口径一致：编码/日期/结论必填；炉号可选（留空按编码推断），两侧都有值时校验前缀。
 assert.match(js, /if\(!code \|\| !date \|\| !desc\) \{ showToast\('管段编码、日期和详细数据\/结论不能为空', 'warn'\); return; \}/);

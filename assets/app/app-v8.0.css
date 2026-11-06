@@ -1709,6 +1709,32 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   backdrop-filter: blur(12px);
 }
 
+/* 数据录入记录表：固定高度滚动 + 分页（每页 10/50/100/200 条） */
+.dm-pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.dm-pager-size { display: flex; align-items: center; gap: 6px; }
+.dm-pager-size select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 12px;
+}
+.dm-pager-nav { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.dm-pager-nav .btn { padding: 4px 12px; font-size: 12px; }
+.dm-pager-nav .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.dm-table-scroll { max-height: 62vh; overflow-y: auto; }
+.dm-table-scroll th { position: sticky; top: 0; z-index: 3; }
+
 .inventory-matrix-wrap {
   max-height: 400px;
   overflow-y: auto;

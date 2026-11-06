@@ -687,6 +687,40 @@ function dmCodeCell(code, tone) {
 }
 /* 批量选择：勾选行→全选/反选→批量删除（viewer 只读不可见） */
 let dmSelectedTs = new Set();
+/* 检测记录列表：按检查日期倒序，滚动容器内分页，每页可选 10/50/100/200 条 */
+let dmPage = 1;
+let dmPageSize = 50;
+try { const savedSize = Number(localStorage.getItem('boiler_dm_page_size')); if ([10, 50, 100, 200].includes(savedSize)) dmPageSize = savedSize; } catch (err) {}
+let dmFilterSignature = '';
+let dmFilteredTs = [];
+let dmTotalRows = 0;
+function dmInspectionTimestamp(value) {
+  const match = String(value || '').trim().match(/^(\d{4})(?:[-/.](\d{1,2}))?(?:[-/.](\d{1,2}))?/);
+  if (!match) return null;
+  const year = Number(match[1]), month = Number(match[2] || 1), day = Number(match[3] || 1);
+  if (!year || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return Date.UTC(year, month - 1, day);
+}
+function dmCompareByInspectionDateDesc(a, b) {
+  const left = dmInspectionTimestamp(a.date), right = dmInspectionTimestamp(b.date);
+  if (left !== null && right !== null && left !== right) return right - left;
+  if (left !== null && right === null) return -1;
+  if (left === null && right !== null) return 1;
+  return Number(b.ts) - Number(a.ts);
+}
+function setDmPageSize(value) {
+  const size = Number(value);
+  if (![10, 50, 100, 200].includes(size)) return;
+  dmPageSize = size;
+  try { localStorage.setItem('boiler_dm_page_size', String(size)); } catch (err) {}
+  dmPage = 1;
+  renderDMTable();
+}
+function dmGoPage(delta) {
+  const pageCount = Math.max(1, Math.ceil(dmTotalRows / dmPageSize));
+  dmPage = Math.min(pageCount, Math.max(1, dmPage + delta));
+  renderDMTable();
+}
 function renderDMTable() {
   if(deferViewRender('datamgr')) return;
   const tbody = document.getElementById('dm-table-body'); if(!tbody) return;
@@ -695,7 +729,16 @@ function renderDMTable() {
   const sys = getDmSysFilter();
   const codeQuery = getDmCodeQuery();
   const dateRange = getDmDateFilter();
-  const all = [...userDB.events].filter(r => dmDateInScope(r.date, dateRange) && dmTypeInScope(r.type) && dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery)).sort((a,b) => b.ts - a.ts);
+  const all = [...userDB.events].filter(r => dmDateInScope(r.date, dateRange) && dmTypeInScope(r.type) && dmRowInScope(eventBoiler(r), [r.code], filter, sys, codeQuery)).sort(dmCompareByInspectionDateDesc);
+  const signature = JSON.stringify([filter, [...sys].sort(), codeQuery, getDmTypeFilter(), dateRange.from || '', dateRange.to || '']);
+  if (signature !== dmFilterSignature) { dmFilterSignature = signature; dmPage = 1; }
+  dmFilteredTs = all.map(r => Number(r.ts));
+  dmTotalRows = all.length;
+  const pageCount = Math.max(1, Math.ceil(dmTotalRows / dmPageSize));
+  if (dmPage > pageCount) dmPage = pageCount;
+  if (dmPage < 1) dmPage = 1;
+  const pageStart = (dmPage - 1) * dmPageSize;
+  const pageRows = all.slice(pageStart, pageStart + dmPageSize);
   const manage = canManageTubeData();
   const visibleTs = new Set(all.map(r => Number(r.ts)));
   [...dmSelectedTs].forEach(ts => { if (!visibleTs.has(ts)) dmSelectedTs.delete(ts); });
@@ -725,7 +768,17 @@ function renderDMTable() {
     }
   }
   renderDmDuplicateReport(all);
-  tbody.innerHTML = all.map(r => {
+  const pagerSummary = document.getElementById('dm-pager-summary');
+  if (pagerSummary) pagerSummary.textContent = dmTotalRows ? `共 ${dmTotalRows} 条 · 当前 ${pageStart + 1}-${Math.min(pageStart + dmPageSize, dmTotalRows)}` : '共 0 条';
+  const pageLabel = document.getElementById('dm-page-label');
+  if (pageLabel) pageLabel.textContent = `第 ${dmPage}/${pageCount} 页`;
+  const prevBtn = document.getElementById('dm-page-prev');
+  if (prevBtn) prevBtn.disabled = dmPage <= 1;
+  const nextBtn = document.getElementById('dm-page-next');
+  if (nextBtn) nextBtn.disabled = dmPage >= pageCount;
+  const sizeSelect = document.getElementById('dm-page-size');
+  if (sizeSelect && sizeSelect.value !== String(dmPageSize)) sizeSelect.value = String(dmPageSize);
+  tbody.innerHTML = pageRows.map(r => {
     const ts = Number(r.ts);
     const checked = dmSelectedTs.has(ts) ? ' checked' : '';
     const action = manage
@@ -734,24 +787,18 @@ function renderDMTable() {
       : '<span style="font-size:11px; color:var(--text-dim);">只读</span>';
     const selectCell = manage ? `<td><input type="checkbox" class="dm-row-check" data-ts="${ts}"${checked} aria-label="选择该行" onchange="dmSetSelected(${ts}, this.checked)"></td>` : '';
     return `<tr${checked ? ' style="background:var(--bg);"' : ''}>${selectCell}<td>${escapeHTML(r.date)}</td><td>${eventBoiler(r) ? escapeHTML(eventBoiler(r)) + '号' : '-'}</td>${dmCodeCell(r.code)}<td>${escapeHTML(r.spec || '-')}</td><td style="font-family:inherit">${escapeHTML(r.material || '-')}</td><td>${escapeHTML(r.thickness || '-')}</td><td>${escapeHTML(r.hardness || '-')}</td><td><span class="badge badge-sh">${escapeHTML(r.type)}</span></td><td style="font-family:inherit; max-width:300px; white-space:normal;">${escapeHTML(r.desc)}</td><td style="white-space:nowrap;">${action}</td></tr>`;
-  }).join('') || `<tr><td colspan="${manage ? 11 : 10}" style="text-align:center; padding:20px;">暂无数据</td></tr>`;
+  }).join('') || `<tr><td colspan="${manage ? 11 : 10}" style="text-align:center; padding:20px;">${dmTotalRows ? '本页暂无数据' : '暂无数据'}</td></tr>`;
 }
 function dmSetSelected(ts, checked) {
   if (checked) dmSelectedTs.add(ts); else dmSelectedTs.delete(ts);
   renderDMTable();
 }
 function dmToggleAll(checked) {
-  document.querySelectorAll('#dm-table-body input.dm-row-check').forEach(box => {
-    const ts = Number(box.dataset.ts);
-    if (checked) dmSelectedTs.add(ts); else dmSelectedTs.delete(ts);
-  });
+  dmFilteredTs.forEach(ts => { if (checked) dmSelectedTs.add(ts); else dmSelectedTs.delete(ts); });
   renderDMTable();
 }
 function dmInvertSelection() {
-  document.querySelectorAll('#dm-table-body input.dm-row-check').forEach(box => {
-    const ts = Number(box.dataset.ts);
-    if (dmSelectedTs.has(ts)) dmSelectedTs.delete(ts); else dmSelectedTs.add(ts);
-  });
+  dmFilteredTs.forEach(ts => { if (dmSelectedTs.has(ts)) dmSelectedTs.delete(ts); else dmSelectedTs.add(ts); });
   renderDMTable();
 }
 function dmClearSelection() { dmSelectedTs.clear(); renderDMTable(); }
