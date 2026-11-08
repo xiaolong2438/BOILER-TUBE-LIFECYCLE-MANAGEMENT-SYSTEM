@@ -120,7 +120,9 @@ test('inapplicable fields and invalid matrix combinations fail closed', () => {
   bad(Core.validateRegion({ ...wall, posFrom:1 }));
   bad(Core.validateRegion({ ...wall, tubeTo:193 }));
   bad(Core.validateRegion({ ...wall, dirs:['L'] }));
-  bad(Core.validateRegion({ ...wall, wall:null, tubeTo:190 }));
+  bad(Core.validateRegion({ ...wall, wall:null, tubeTo:190, dirs:null }));        /* 未声明方向：四墙全部参与上限（侧墙169） */
+  good(Core.validateRegion({ ...wall, wall:null, tubeTo:190, dirs:['R'] }));      /* 声明R向：仅L/R向墙(tMax192)适用，F/B向墙不产生R码、不纳入上限 */
+  bad(Core.validateRegion({ ...wall, wall:null, tubeTo:193, dirs:['R'] }));
   bad(Core.validateRegion(region(), []));
   bad(Core.validateRegion(region(), {}));
 });
@@ -225,11 +227,21 @@ test('RSQ uses structural corner/layer/nozzle matching and validates its own fie
 });
 
 test('SMQ U/D mirror and component separation', () => {
-  for (const comp of ['SG','EXIN','EXOUT']) {
+  /* 集箱行维持镜像口径：D001≡U001（tMax 1，非 dualDir） */
+  for (const comp of ['EXIN','EXOUT']) {
     const eco = region({ sys:'SMQ', comp, dirs:['U'] });
     assert.equal(Core.matchesRegion(`1G-SMQ-${comp}-R124-D001-Q`, eco, '1'), true);
     assert.equal(Core.expandRegion(eco, '1').count, 1);
   }
+  /* 蛇形管新口径（2026-11-08）：U=上组/D=下组是不同物理管段（dualDir），组别不镜像，只镜像屏号 R↔L */
+  const up = region({ sys:'SMQ', comp:'SG', dirs:['U'] });
+  assert.equal(Core.matchesRegion('1G-SMQ-SG-R124-U001-Q', up, '1'), true, '屏号R124镜像到L001，上组圈1');
+  assert.equal(Core.matchesRegion('1G-SMQ-SG-R124-D001-Q', up, '1'), false, '下组D001不属于上组区域（组别不镜像）');
+  assert.equal(Core.expandRegion(up, '1').count, 1);
+  const down = region({ sys:'SMQ', comp:'SG', dirs:['D'], tubeFrom:1, tubeTo:3 });
+  assert.equal(Core.matchesRegion('1G-SMQ-SG-L001-D003-Q', down, '1'), true, '下组圈3合法');
+  assert.equal(Core.matchesRegion('1G-SMQ-SG-L001-F001-Q', down, '1'), false, '吊挂管F码不属于蛇形管区域');
+  assert.equal(Core.expandRegion(down, '1').count, 3, '下组圈1~3双向展开');
 });
 
 test('expansion counts all unique canonical identities independent of preview limit', () => {

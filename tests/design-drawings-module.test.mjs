@@ -83,6 +83,13 @@ assert.match(html, /高温再热器材质分段基准（7回路）/, "高再分�
 assert.match(js, /const GZRQ_LOOP_BASELINE = \[/, "高再7回路分段基准应存在");
 assert.match(js, /function renderGZRQLoopBaseline\(\)/, "高再分段基准渲染函数应存在");
 assert.match(js, /function renderDZRQLoopBaseline\(\)/, "低再分段基准渲染函数应存在");
+assert.match(html, /id="smqLoopBaseline"/, "省煤器分段基准表容器应存在");
+assert.match(html, /省煤器材质分段基准（每排三管圈）/, "省煤器分段基准卡片标题应存在");
+assert.match(js, /const SMQ_LOOP_BASELINE = \[/, "省煤器分段基准应存在");
+assert.match(js, /function renderSMQLoopBaseline\(\)/, "省煤器分段基准渲染函数应存在");
+assert.match(html, /SMQ-SG-L001~056-F001\/F002-Q/, "吊挂管编码模式应明确：F001=前排、F002=后排（B不用），L001~056为炉左往右56个位置");
+assert.match(js, /name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:\['L','R'\], pMax:124, dirs:\['U','D'\], tMax:3, dualDir:true/, "蛇形管矩阵行应按新口径：U=上组/D=下组，圈号001~003，双向展开不互镜像");
+assert.match(js, /name:'省煤器吊挂管', sys:'SMQ', comp:'SG', posLetters:\['L','R'\], pMax:56, dirs:\['F'\], tMax:2/, "吊挂管矩阵行应存在：L001~056 × F001/F002");
 
 // 行为验证：回路号即入口段F00k/出口段B00k编号（JSON 序列化取出，避免跨 realm 原型差异）
 const baselineCtx = vm.createContext({});
@@ -167,6 +174,13 @@ assert.deepEqual(gzrqBaseline[6].rearSegs, [
   ['Φ60×5', 'SA-213T91'],
   ['Φ60×5', 'SA-213T22']
 ], 'F007 出口三段T91');
+
+// 省煤器：每排三管圈合并一行，沿水流程3段，全部碳钢（148M3-0 + 用户确认2026-11-08）
+const smqBaseline = JSON.parse(vm.runInContext("JSON.stringify(SMQ_LOOP_BASELINE)", baselineCtx));
+assert.equal(smqBaseline.length, 1, "省煤器各排材质分段相同，合并为一行");
+assert.equal(smqBaseline[0].loop, '1~3', "回路=每排三管圈（圈号D001~D003）");
+assert.deepEqual(smqBaseline[0].segs.map(s => s[0]), ['下级水平段（下组）', '上级水平段（上组）', '吊挂管直段'], "分段顺序沿水流程：下级→上级→吊挂管，无级间过渡段");
+assert.deepEqual(smqBaseline[0].segs.map(s => s[1] + ' ' + s[2]), ['Φ51×6 SA-210C', 'Φ51×6 SA-210C', 'Φ60×9 SA-210C'], "蛇形管两段同规格材质，吊挂管直段Φ60×9 SA-210C");
 
 // 与清洗脚本的 GGRQ_LOOP_SEGMENTS 逐回路逐段一致（单一事实源，双端同步）
 const py = readFileSync(resolve(here, "../scripts/clean_boiler_film_records.py"), "utf8");

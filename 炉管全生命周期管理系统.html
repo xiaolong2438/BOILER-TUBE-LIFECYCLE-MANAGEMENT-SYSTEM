@@ -500,6 +500,10 @@
       <div class="card-title">再热器系统集箱</div>
       <div class="table-wrap"><table><thead><tr><th>序号</th><th>名称</th><th>规格</th><th>材质</th></tr></thead><tbody id="rhHeaders"></tbody></table></div>
     </div>
+    <div class="card">
+      <div class="card-title">省煤器集箱</div>
+      <div class="table-wrap"><table><thead><tr><th>序号</th><th>名称</th><th>规格</th><th>材质</th></tr></thead><tbody id="ecoHeaders"></tbody></table></div>
+    </div>
   </section>
 
   <!-- 7. DATA MANAGEMENT (已修复重复导入BUG) -->
@@ -965,6 +969,11 @@
       <div class="card-title">高温再热器材质分段基准（7回路）</div>
       <p style="font-size:12px; color:var(--text-dim); margin:0 0 10px;">来源：148M223-0 高温再热器材料分界图 + 用户确认（2026-11-06）。每回路 = 入口腿 F00k↓ + 底弯 F00k-W + 出口腿 B00k↑；F/B直管分别建档，底弯统一记F位。入口与底弯即使同规格材质也分别列出；F001 外圈底弯/热段为 TP304H，F002–F004 底弯为 T91，F005–F007 底弯为 12Cr1MoVG，出口最末段为 T22。核对拍片/测厚记录的材质、规格以此表为准。</p>
       <div id="gzrqLoopBaseline" style="overflow-x:auto;"></div>
+    </div>
+    <div class="card" style="margin-top:15px;">
+      <div class="card-title">省煤器材质分段基准（每排三管圈）</div>
+      <p style="font-size:12px; color:var(--text-dim); margin:0 0 10px;">来源：148M3-0 省煤器总图 + 用户确认（2026-11-08）。每排三管圈＝回路1~3：蛇形管编码方向字母即组别（U=上组、D=下组），数字位001~003=圈号，排号 L001~L124 沿炉左往右（R124~R001 镜像）；例 1G-SMQ-SG-L001-U001-Q=上组1排1圈、1G-SMQ-SG-L001-D001-Q=下组1排1圈。沿水流程依次为：下级水平段（下组）→ 上级水平段（上组）→ 吊挂管直段；蛇形管与吊挂管之间经中间集箱Ⅰ→12根连接管（Φ159×18 20G）→2只中间集箱Ⅱ过渡，集箱不属回路管段。全部碳钢、无合金分界：蛇形管/吊挂管 SA-210C，进口/中间集箱 SA-106C，出口集箱与连接管 20G。吊挂管编码 {机组}-SMQ-SG-L001~056-F001/F002-Q：F001=前排、F002=后排（B不用），L001~056 为炉左往右56个位置（R056~R001 镜像），两排各56根共112根，承受低温过热器载荷。旧 U/D 编码废弃不迁移（2026-11-08）。核对拍片/测厚记录的材质、规格以此表为准。</p>
+      <div id="smqLoopBaseline" style="overflow-x:auto;"></div>
     </div>
     <div class="alert alert-info" style="margin-top:15px;">
       <div><strong>用途</strong>核对编码与检测数据时，可在此调阅对应受热面的材料分界图/总图（如 148M211-0 高温过热器材料分界图），核对管排规格与材质。在「编码生成」「数据录入」页也有直达按钮。</div>

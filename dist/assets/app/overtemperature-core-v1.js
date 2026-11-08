@@ -24,7 +24,8 @@
     { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['F','B'], tMax:7, loopPairing:true },
     { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:5 },
     { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,6], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:6, tubeOptional:true },
-    { name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1 },
+    { name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:3, dualDir:true, dirLabels:{U:'上组（圈号1~3）', D:'下组（圈号1~3）'} },
+    { name:'省煤器吊挂管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:56, dirs:['F'], tMax:2, dirLabels:{F:'前/后排（001前 002后）'} },
     { name:'省煤器进口集箱', sys:'SMQ', comp:'EXIN', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1 },
     { name:'省煤器出口集箱', sys:'SMQ', comp:'EXOUT', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1 }
   ];
@@ -74,7 +75,8 @@
   var REGION_KEYS = ['sys','comp','wall','spaces','posFrom','posTo','pos2From','pos2To','tubeFrom','tubeTo','dirs','parts','corners','layers','nozzles'];
   var ARRAY_KEYS = ['spaces','dirs','parts','corners','layers','nozzles'];
   var NUMBER_KEYS = ['posFrom','posTo','pos2From','pos2To','tubeFrom','tubeTo'];
-  function canonicalDirs(row) { return row.loopPairing ? row.dirs : [row.dirs[0]]; }
+  /* loopPairing（悬挂屏F/B腿）与 dualDir（省煤器U上组/D下组，2026-11-08）：两个方向字母都是不同物理管段，双向都算规范方向 */
+  function canonicalDirs(row) { return (row.loopPairing || row.dualDir) ? row.dirs : [row.dirs[0]]; }
   function between(n, lo, hi) { return n >= lo && n <= hi; }
   function selected(list, x) { return list === null || list.indexOf(x) !== -1; }
   function rangeContains(n, lo, hi) { return n !== null && (lo === null || n >= lo) && (hi === null || n <= hi); }
@@ -101,6 +103,15 @@
     if (errors.length) return result(null, errors);
     var matches = regionRows(r, rows);
     if (!matches.length) return result(null, ['系统/部件/墙面组合不在矩阵内']);
+    /* 同部件多矩阵行（如省煤器 SG=蛇形管tMax3+吊挂管tMax2，2026-11-08）：区域声明 dirs 时，
+       只保留支持这些方向的行，范围/方向校验都按行 applicable，避免另一行的 tMax 误伤。 */
+    if (r.dirs !== null) {
+      var dirScoped = matches.filter(function (row) {
+        return canonicalDirs(row).some(function (d) { return r.dirs.indexOf(d) !== -1; });
+      });
+      if (!dirScoped.length) return result(null, ['dirs 与该系统部件的规范方向不相交']);
+      matches = dirScoped;
+    }
     var applicable = function (keys, predicate) {
       if (!matches.some(predicate)) keys.forEach(function (k) { if (r[k] !== null) errors.push(k + ' 不适用于此系统部件，应为 null'); });
     };

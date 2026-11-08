@@ -77,6 +77,15 @@ const checks = [
     assert.match(html, /BOILER-TUBE LIFE CYCLE MANAGEMENT SYSTEM v8\.\d+ · 2026/);
     assert.doesNotMatch(html, /<footer>[^<]*v7\.0/);
   }],
+  ["economizer headers are listed in the header library (148M3-0)", () => {
+    assert.match(html, /const ECO_HEADERS = \[/, "省煤器集箱数据应存在");
+    assert.match(html, /id="ecoHeaders"/, "集箱库省煤器分类容器应存在");
+    assert.match(html, /name:'省煤器进口集箱',spec:'Φ406\.4×52',mat:'SA-106C'/);
+    assert.match(html, /name:'省煤器中间集箱Ⅰ',spec:'Φ406\.4×52',mat:'SA-106C'/);
+    assert.match(html, /name:'省煤器中间集箱Ⅱ（2只）',spec:'Φ273×45',mat:'SA-106C'/);
+    assert.match(html, /name:'省煤器出口集箱',spec:'Φ273×40',mat:'20G'/);
+    assert.match(html, /function renderHeaders\(\) \{.*ecoHeaders/, "renderHeaders 应渲染省煤器分类");
+  }],
   ["LLM config is read from storage, not from the form DOM", () => {
     assert.ok(html.includes('function readLLMConfigFromStorage'), "必须提供只读存储的配置读取函数");
     assert.ok(html.includes('function getLLMFormConfig'), "必须提供表单配置（允许未保存输入）");

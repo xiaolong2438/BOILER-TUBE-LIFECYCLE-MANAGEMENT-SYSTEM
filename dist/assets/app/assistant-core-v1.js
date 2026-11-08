@@ -498,8 +498,8 @@
     parsed.partKind = tail[0];
     var POS_RE = /^([FBLR])(\d{3})$/;
     /* 管序 F/B：高过/高再/大屏/后屏/低过/低再（[UD] 继续放行解析，历史 U/D 码由矩阵行判合法性）；
-       省煤器仍为 U/D 口径 */
-    var TUBE_RE = /^(?:GGRQ|GZRQ|DPGRQ|HPGRQ|DGRQ|DZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UD])(\d{3})$/;
+       省煤器 U=上组/D=下组/F=吊挂管前后排（2026-11-08 新口径，数字位=圈号/排向序号） */
+    var TUBE_RE = /^(?:GGRQ|GZRQ|DPGRQ|HPGRQ|DGRQ|DZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UDF])(\d{3})$/;
     var WALL_RE = /^([FBLR])000$/;
     if (parsed.sys === 'SLB' && (parsed.comp === 'WB' || parsed.comp === 'LHD')) {
       if (parts.length !== 2) return null;
@@ -656,9 +656,9 @@
       }
       return null;
     }
-    /* 悬挂屏回路行：编号数回路——前腿F00k、后腿B00k 是两条不同物理管，Q 的 F/B 互不镜像；
-       底弯W整回路一件，B00k-W 与 F00k-W 同一弯头，归一到前腿位；屏号 R↔L 镜像照常。 */
-    if (row.loopPairing) {
+    /* 悬挂屏回路行与省煤器组别行（dualDir，2026-11-08）：两个方向字母都是不同物理管段，Q 的方向字母互不镜像，
+       只做屏号 R↔L 镜像；悬挂屏底弯W整回路一件（B00k-W 与 F00k-W 同一弯头，归一到前腿位），省煤器无 B 方向不受影响。 */
+    if (row.loopPairing || row.dualDir) {
       var posCanonicalP = row.posLetters && row.posLetters.length ? String(row.posLetters[0]).toUpperCase() : '';
       var pos2CanonicalP = row.pos2Letters && row.pos2Letters.length ? String(row.pos2Letters[0]).toUpperCase() : '';
       var changedP = false;
