@@ -88,8 +88,27 @@ function safeParseJson(raw, fallback) {
   try { return raw ? JSON.parse(raw) : fallback; } catch(err) { return fallback; }
 }
 const cloudSaveTimers = new Map();
+const cloudSaveErrorAt = new Map();
 let currentAuthSession = null;
 function cloudStorageEnabled() { return location.protocol.startsWith('http') && location.host && location.origin !== 'null'; }
+function cloudStorageLabel(key) {
+  return ({
+    boiler_user_db: '业务台账',
+    boiler_material_library: '材料库',
+    boiler_design_drawings: '设计图纸',
+    boiler_maintenance_log: '维护记录'
+  })[key] || key;
+}
+function notifyCloudSaveFailure(key, result) {
+  const now = Date.now();
+  if(now - (cloudSaveErrorAt.get(key) || 0) < 10000) return;
+  cloudSaveErrorAt.set(key, now);
+  const detail = result?.error || '请求未完成';
+  if(typeof showToast === 'function') {
+    showToast(`云端保存失败（${cloudStorageLabel(key)}）：${detail}。数据仍在本机，请检查后重试。`, 'warn', 9000);
+  }
+  console.warn('[云端保存失败]', key, result);
+}
 async function cloudStorageRequest(key, method = 'GET', value) {
   if(!cloudStorageEnabled()) return null;
   try {
@@ -99,8 +118,17 @@ async function cloudStorageRequest(key, method = 'GET', value) {
       body: method === 'GET' ? undefined : JSON.stringify({ value })
     });
     if(response.status === 404) return { found: false };
-    if(!response.ok) return null;
-    return await response.json();
+    let payload = null;
+    try { payload = await response.json(); } catch (err) { payload = null; }
+    if(!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        code: payload?.code || 'HTTP_ERROR',
+        error: payload?.error || `HTTP ${response.status}`
+      };
+    }
+    return payload || { ok: true };
   } catch {
     return null;
   }
@@ -109,7 +137,13 @@ function queueCloudStorageSave(key, value) {
   if(!cloudStorageEnabled()) return;
   const prev = cloudSaveTimers.get(key);
   if(prev) clearTimeout(prev);
-  cloudSaveTimers.set(key, setTimeout(() => { cloudStorageRequest(key, 'PUT', value); }, 250));
+  cloudSaveTimers.set(key, setTimeout(async () => {
+    cloudSaveTimers.delete(key);
+    const result = await cloudStorageRequest(key, 'PUT', value);
+    if(result === null || result?.ok === false || result?.found === false) {
+      notifyCloudSaveFailure(key, result || { error: '网络不可用或请求未完成' });
+    }
+  }, 250));
 }
 async function bootstrapCloudStorage() {
   if(!cloudStorageEnabled()) return;
@@ -117,6 +151,17 @@ async function bootstrapCloudStorage() {
     cloudStorageRequest('boiler_user_db'),
     cloudStorageRequest('boiler_material_library')
   ]);
+  const readFailures = [];
+  if(!remoteUserDB || remoteUserDB.ok === false) readFailures.push('业务台账');
+  if(!remoteMaterialLibrary || remoteMaterialLibrary.ok === false) readFailures.push('材料库');
+  if(readFailures.length) {
+    const detail = [remoteUserDB, remoteMaterialLibrary]
+      .find(item => item && item.ok === false)?.error || '网络不可用或请求未完成';
+    if(typeof showToast === 'function') {
+      showToast(`云端数据读取失败（${readFailures.join('、')}）：${detail}。当前使用本机数据。`, 'warn', 9000);
+    }
+    console.warn('[云端读取失败]', readFailures, detail);
+  }
   let changed = false;
   let conflictNotice = '';
   const localRaw = localStorage.getItem('boiler_user_db') || '';
@@ -5407,9 +5452,19 @@ try { designDrawings = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '
 if (!Array.isArray(designDrawings)) designDrawings = [];
 
 function saveDesignDrawings() {
-  localStorage.setItem(DESIGN_DRAWINGS_KEY, JSON.stringify(designDrawings));
+  let localSaved = true;
+  try {
+    localStorage.setItem(DESIGN_DRAWINGS_KEY, JSON.stringify(designDrawings));
+  } catch (err) {
+    localSaved = false;
+    if(typeof showToast === 'function') {
+      showToast('本机存储空间不足，图纸未保存；请先导出或删除旧图纸。', 'error', 9000);
+    }
+    console.warn('[设计图纸] 本机保存失败：', err);
+  }
   queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings);
   renderDesignDrawings();
+  return localSaved;
 }
 function designDrawingsForSys(sys) {
   return designDrawings.filter(d => !sys || d.sys === sys || !d.sys);
