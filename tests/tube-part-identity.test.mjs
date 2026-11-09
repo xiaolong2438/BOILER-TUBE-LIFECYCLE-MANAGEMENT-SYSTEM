@@ -73,8 +73,9 @@ assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-B003-Q', matrix), null, '�
 assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-F020-Q', matrix).code, '1G-GGRQ-GQ-L012-B005-Q', '旧腿号迁移：F020（炉后第5根）→出口段B005');
 assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-F024-W', matrix).code, '1G-GGRQ-GQ-L012-F001-W', '旧腿号迁移：F024弯头→回路1底弯F001-W');
 assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-B020-Q', matrix).code, '1G-GGRQ-GQ-L012-F005-Q', '旧腿号迁移：B020≙旧F005入口段→F005');
-/* 11192 + 省煤器新口径（2026-11-08）：蛇形管 124排×3圈×2组(U/D)=744、吊挂管 56×2=112（原 124，+732） */
-assert.equal(matrix.reduce((sum, row) => sum + ctx.matrixRowCount(row), 0), 11924);
+/* 11192 + 省煤器新口径（2026-11-08）：蛇形管 124排×3圈×2组(U/D)=744、吊挂管 56×2=112（原 124，+732）；
+   进/出口集箱不属回路管段（2026-11-08 用户确认），从矩阵移除 -248 → 11676 */
+assert.equal(matrix.reduce((sum, row) => sum + ctx.matrixRowCount(row), 0), 11676);
 assert.equal(ctx.parseTubeCode(w).partKind, 'W');
 assert.equal(ctx.parseTubeCode(w).seq, null);
 assert.equal(ctx.parseTubeCode(legacyW).seq, 1);

@@ -17,7 +17,7 @@
 
   /* 新编码规则：{机组}G-SYS-COMP-位置-Q/W，字母即部位身份（Q=管子、W=弯头）；
      位置段唯一确定物理对象，历史流水数字仅兼容旧数据（解析后忽略）。 */
-  var TUBE_CODE_SOURCE = '[12]G-(?:SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|EXIN|EXOUT|LHD|RSQ)-(?:[FBLR]000-[FBLR]\\d{3}|J\\d{1,2}-[A-Z]\\d{1,2}|[FBLR]\\d{3}-[FBLR]\\d{3}-[FBLRUD]\\d{3}|[FBLR]\\d{3}-[FBLRUD]\\d{3}|(?:[1-9]\\d?KJ-)?[FBLR]\\d{3}(?:-[FBLRUD]\\d{3})?)-[QW]\\d{0,3}';
+  var TUBE_CODE_SOURCE = '[12]G-(?:SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|LHD|RSQ)-(?:[FBLR]000-[FBLR]\\d{3}|J\\d{1,2}-[A-Z]\\d{1,2}|[FBLR]\\d{3}-[FBLR]\\d{3}-[FBLRUD]\\d{3}|[FBLR]\\d{3}-[FBLRUD]\\d{3}|(?:[1-9]\\d?KJ-)?[FBLR]\\d{3}(?:-[FBLRUD]\\d{3})?)-[QW]\\d{0,3}';
   var TUBE_CODE_PATTERN = new RegExp('^' + TUBE_CODE_SOURCE + '$');
 
   /* 受热面系统代码（与页面 CODE_SYSTEMS 一致） */
@@ -29,12 +29,12 @@
     { sys: 'DPGRQ', label: '全大屏过热器', comps: ['GQ'] },
     { sys: 'DGRQ', label: '低温过热器', comps: ['GQ'] },
     { sys: 'DZRQ', label: '低温再热器', comps: ['GQ'] },
-    { sys: 'SMQ', label: '省煤器', comps: ['SG', 'EXIN', 'EXOUT'] },
+    { sys: 'SMQ', label: '省煤器', comps: ['SG'] },
     /* 顶棚/包墙仅存在于材料库，不参与新编码，但查询/展示仍需标签 */
     { sys: 'RSH', label: '顶棚过热器', comps: [] },
     { sys: 'WSH', label: '包墙过热器', comps: [] }
   ];
-  var COMPONENT_LABELS = { GQ: '管屏', WB: '水冷壁管', SG: '省煤器蛇形管', EXIN: '省煤器进口集箱', EXOUT: '省煤器出口集箱', LHD: '冷灰斗', RSQ: '燃烧器区域' };
+  var COMPONENT_LABELS = { GQ: '管屏', WB: '水冷壁管', SG: '省煤器蛇形管', LHD: '冷灰斗', RSQ: '燃烧器区域' };
   var SYSTEM_LABEL_MAP = {};
   var SYSTEM_LABEL_MAP = {};
   CODE_SYSTEMS.forEach(function (item) { SYSTEM_LABEL_MAP[item.sys] = item.label; });
@@ -487,7 +487,7 @@
   /* 新编码解析（与页面 parseTubeCode 同构）：结构合法返回 parts，否则 valid=false */
   function parseTubeCodeParts(code) {
     var raw = normalizeCode(code);
-    var head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|EXIN|EXOUT|LHD|RSQ)(?:-(.*))?$/);
+    var head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ)(?:-(.*))?$/);
     if (!head) return null;
     var parsed = { unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], space: null, pos: '', posNum: null, pos2: '', pos2Num: null, corner: null, layer: '', nozzle: null, dir: '', tube: null, seq: null };
     var parts = head[4] ? head[4].split('-') : [];

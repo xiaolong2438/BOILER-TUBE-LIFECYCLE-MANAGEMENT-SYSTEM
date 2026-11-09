@@ -25,9 +25,7 @@
     { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:5 },
     { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,6], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:6, tubeOptional:true },
     { name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:3, dualDir:true, dirLabels:{U:'上组（圈号1~3）', D:'下组（圈号1~3）'} },
-    { name:'省煤器吊挂管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:56, dirs:['F'], tMax:2, dirLabels:{F:'前/后排（001前 002后）'} },
-    { name:'省煤器进口集箱', sys:'SMQ', comp:'EXIN', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1 },
-    { name:'省煤器出口集箱', sys:'SMQ', comp:'EXOUT', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1 }
+    { name:'省煤器吊挂管', sys:'SMQ', comp:'SG', label:'省煤器直管', posLetters:['L','R'], pMax:56, dirs:['F'], tMax:2, dirLabels:{F:'前/后排（001前 002后）'} }
   ];
   function freeze(value) {
     if (value && typeof value === 'object') { Object.keys(value).forEach(function (key) { freeze(value[key]); }); Object.freeze(value); }

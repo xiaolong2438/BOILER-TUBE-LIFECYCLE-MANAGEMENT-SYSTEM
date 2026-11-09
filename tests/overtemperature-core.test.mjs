@@ -226,13 +226,7 @@ test('RSQ uses structural corner/layer/nozzle matching and validates its own fie
   for (const patch of [{ corners:[5] }, { layers:['G'] }, { nozzles:[9] }, { corners:['1'] }, { tubeFrom:1 }, { wall:'F000' }, { spaces:[1] }]) bad(Core.validateRegion({ ...rsq,...patch }));
 });
 
-test('SMQ U/D mirror and component separation', () => {
-  /* 集箱行维持镜像口径：D001≡U001（tMax 1，非 dualDir） */
-  for (const comp of ['EXIN','EXOUT']) {
-    const eco = region({ sys:'SMQ', comp, dirs:['U'] });
-    assert.equal(Core.matchesRegion(`1G-SMQ-${comp}-R124-D001-Q`, eco, '1'), true);
-    assert.equal(Core.expandRegion(eco, '1').count, 1);
-  }
+test('SMQ 组别不镜像与蛇形管/吊挂管部件分离（集箱不属管段，已从矩阵移除）', () => {
   /* 蛇形管新口径（2026-11-08）：U=上组/D=下组是不同物理管段（dualDir），组别不镜像，只镜像屏号 R↔L */
   const up = region({ sys:'SMQ', comp:'SG', dirs:['U'] });
   assert.equal(Core.matchesRegion('1G-SMQ-SG-R124-U001-Q', up, '1'), true, '屏号R124镜像到L001，上组圈1');

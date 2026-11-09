@@ -89,7 +89,9 @@ assert.match(js, /const SMQ_LOOP_BASELINE = \[/, "省煤器分段基准应存在
 assert.match(js, /function renderSMQLoopBaseline\(\)/, "省煤器分段基准渲染函数应存在");
 assert.match(html, /SMQ-SG-L001~056-F001\/F002-Q/, "吊挂管编码模式应明确：F001=前排、F002=后排（B不用），L001~056为炉左往右56个位置");
 assert.match(js, /name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:\['L','R'\], pMax:124, dirs:\['U','D'\], tMax:3, dualDir:true/, "蛇形管矩阵行应按新口径：U=上组/D=下组，圈号001~003，双向展开不互镜像");
-assert.match(js, /name:'省煤器吊挂管', sys:'SMQ', comp:'SG', posLetters:\['L','R'\], pMax:56, dirs:\['F'\], tMax:2/, "吊挂管矩阵行应存在：L001~056 × F001/F002");
+assert.match(js, /name:'省煤器吊挂管', sys:'SMQ', comp:'SG', label:'省煤器直管', posLetters:\['L','R'\], pMax:56, dirs:\['F'\], tMax:2/, "吊挂管为直管，矩阵行应存在：L001~056 × F001/F002");
+assert.doesNotMatch(js, /name:'省煤器进口集箱', sys:'SMQ'/, "集箱不属回路管段，编码矩阵不再有进口集箱行");
+assert.doesNotMatch(js, /name:'省煤器出口集箱', sys:'SMQ'/, "集箱不属回路管段，编码矩阵不再有出口集箱行");
 
 // 行为验证：回路号即入口段F00k/出口段B00k编号（JSON 序列化取出，避免跨 realm 原型差异）
 const baselineCtx = vm.createContext({});

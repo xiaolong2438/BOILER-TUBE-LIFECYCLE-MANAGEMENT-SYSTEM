@@ -236,7 +236,7 @@ check("编码定位：建议只看同机组同系统，跨系统候选被过滤"
   const hit = Core.suggestSimilarCode("1G-SLB-WB-F000-R005-Q001", ledger);
   assert.ok(hit && hit.code.startsWith("1G-SLB-"), "1 号机组 SLB 系统的笔误只能建议 SLB 候选");
   assert.equal(Core.suggestSimilarCode("1G-SLB-WB-F000-R003-Q001", ledger), null, "编码本身在台账 → 无需建议");
-  assert.equal(Core.suggestSimilarCode("1G-SMQ-EXIN-L001-U001-Q001", ledger), null, "跨系统候选被过滤，不误报");
+  assert.equal(Core.suggestSimilarCode("1G-SMQ-SG-L001-U001-Q001", ledger), null, "跨系统候选被过滤，不误报");
 });
 
 check("编码定位：更换产生的新管码剥掉 -R 后缀再比对，不误报疑似笔误", () => {
@@ -467,7 +467,7 @@ const DIR_MATRIX = [
   { sys: "GGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 32, dirs: ["F", "B"], tMax: 24 },
   { sys: "DPGRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 6, pos2Letters: ["F", "B"], p2Max: 4, dirs: ["F", "B"], tMax: 14 },
   { sys: "DZRQ", comp: "GQ", posLetters: ["L", "R"], pMax: 112, dirs: ["D", "U"], tMax: 6, spaces: [1, 6], tubeOptional: true },
-  { sys: "SMQ", comp: "EXIN", posLetters: ["L", "R"], pMax: 124, dirs: ["U", "D"], tMax: 1 }
+  { sys: "SMQ", comp: "SG", posLetters: ["L", "R"], pMax: 124, dirs: ["U", "D"], tMax: 1 }
 ];
 
 check("归一：墙面反方向管号按同一物理位置镜像（前墙 L025 ≙ R168）", () => {
@@ -496,7 +496,7 @@ check("归一：Q 流水号原样保留（宽度不动）、燃烧器区域无�
 });
 
 check("归一：tMax=1 时两侧计数指向同一根管，只换方向字母", () => {
-  assert.equal(Core.canonicalTubeCode("1G-SMQ-EXIN-L010-D001-Q001", DIR_MATRIX).code, "1G-SMQ-EXIN-L010-U001-Q001");
+  assert.equal(Core.canonicalTubeCode("1G-SMQ-SG-L010-D001-Q001", DIR_MATRIX).code, "1G-SMQ-SG-L010-U001-Q001");
 });
 
 check("归一（清洗集成）：反方向编码进 direction_normalized 警告行，清洗网格落规范编码", () => {

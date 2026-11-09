@@ -1314,7 +1314,7 @@ const MATERIAL_COMPONENT_BY_TAB = { ww:'炉膛水冷壁', rsh:'顶棚过热器',
 const MATERIAL_COLUMNS = ['部件名称','系统代码','分段/位置','结构形式','规格型号','管径','壁厚','材质','库存根数','库存总长度(m)','预留位置','备注'];
 const MATERIAL_LIBRARY = [
   { component:'省煤器', sys:'SMQ', position:'1 省煤器蛇形管', shape:'蛇形管', spec:'Φ51×6', diameter:'51', wallThickness:'6', material:'SA-210C', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第47页序号1；直管附加壁厚0.6mm，弯管附加壁厚1.7475mm' },
-  { component:'省煤器', sys:'SMQ', position:'2 省煤器吊挂管', shape:'吊挂管', spec:'Φ60×9', diameter:'60', wallThickness:'9', material:'SA-210C', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第47页序号2；直管附加壁厚0.9mm，弯管附加壁厚1.872mm' },
+  { component:'省煤器', sys:'SMQ', position:'2 省煤器吊挂管', shape:'直管', spec:'Φ60×9', diameter:'60', wallThickness:'9', material:'SA-210C', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第47页序号2；直管附加壁厚0.9mm，弯管附加壁厚1.872mm' },
   { component:'省煤器', sys:'SMQ', position:'3 省煤器至锅筒连接管', shape:'连接管', spec:'Φ159×18', diameter:'159', wallThickness:'18', material:'20G', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第47页序号3；直管附加壁厚1.4mm，弯管附加壁厚3.11mm' },
   { component:'炉膛水冷壁', sys:'SLB', position:'4 水冷壁管', shape:'直管', spec:'Φ63.5×7.5', diameter:'63.5', wallThickness:'7.5', material:'SA-210C', inUseQty:'722根', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第47页序号4；直管附加壁厚0.75mm，弯管附加壁厚1.29mm' },
   { component:'顶棚过热器', sys:'RSH', position:'5 汽包至顶棚连接管', shape:'连接管', spec:'Φ159×18', diameter:'159', wallThickness:'18', material:'20G', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第47页序号5；直管附加壁厚1.4mm，弯管附加壁厚3.11mm' },
@@ -1431,7 +1431,6 @@ const LIFECYCLE_DATA = {
   '2G-HPGRQ-GQ-L015-F009-Q001': { name: '2号炉后屏过热器炉左往右第15屏炉前往后第9根', spec: 'Φ54×9 · SA-213TP347H', install: '2018-03-18', hours: 60110, status: 'warn', risk: '高温腐蚀区金相复查', timeline: [{date:'2018-03-18',t:'安装',d:'合格'},{date:'2025-10-20',t:'金相',d:'组织轻度球化'}] },
   '1G-DGRQ-GQ-2KJ-L045-D003-Q001': { name: '1号炉低温过热器第2检修空间第45排自下而上第3根', spec: 'Φ57×6 · 15CrMoG', install: '2016-08-02', hours: 71230, status: 'ok', risk: '状态良好', timeline: [{date:'2016-08-02',t:'安装',d:'壁厚6.0'},{date:'2025-06-18',t:'测厚',d:'壁厚5.4'}] },
   '1G-DZRQ-GQ-4KJ-L065-Q001': { name: '1号炉低温再热器第4检修空间炉左往右第65排', spec: 'Φ63.5×4 · SA-210C', install: '2015-12-11', hours: 76850, status: 'ok', risk: '状态良好', timeline: [{date:'2015-12-11',t:'安装',d:'壁厚4.0'},{date:'2025-04-05',t:'测厚',d:'壁厚3.7'}] },
-  '2G-SMQ-EXIN-L012-U001-Q001': { name: '2号炉省煤器进口集箱炉左往右第12排', spec: 'Φ159×18 · 20G', install: '2016-03-10', hours: 72540, status: 'ok', risk: '状态良好', timeline: [{date:'2016-03-10',t:'安装',d:'合格'},{date:'2025-11-11',t:'测厚',d:'壁厚17.2'}] },
   '2G-SLB-LHD-F000-L016-Q001': { name: '2号炉冷灰斗前坡炉左往右第16根', spec: 'Φ63.5×7.5 · SA-210C', install: '2016-03-10', hours: 72540, status: 'warn', risk: '灰斗冲刷区磨损', timeline: [{date:'2016-03-10',t:'安装',d:'壁厚7.5'},{date:'2025-08-22',t:'测厚',d:'壁厚5.9'}] },
   '2G-SLB-RSQ-J1-A03-Q001': { name: '2号炉燃烧器区域1号角A层第3喷口', spec: 'Φ63.5×7.5 · SA-210C', install: '2016-03-10', hours: 72540, status: 'ok', risk: '状态良好', timeline: [{date:'2016-03-10',t:'安装',d:'合格'},{date:'2025-05-30',t:'测厚',d:'壁厚7.0'}] }
 };
@@ -1461,12 +1460,11 @@ const matrix = [
   { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,6], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:6, tubeOptional:true, spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat:'按材料库分项', badge:'badge-rh' },
   /* 省煤器（148M3-0 + 用户确认2026-11-08）：蛇形管方向字母=组别——U=上组、D=下组（两级各自独立物理管段，
      双向都进台账、组别互不镜像，dualDir），数字位001~003=圈号（每排三管圈，回路1~3）；
-     排号 L001~L124 沿炉左往右、R124~R001 镜像。吊挂管同部件 SG：F001=前排、F002=后排（B不用），
-     L001~L056 沿炉左往右、R056~R001 镜像。旧 U/D 编码废弃不迁移（2026-11-08 用户确认）。 */
+     排号 L001~L124 沿炉左往右、R124~R001 镜像。吊挂管同部件 SG 但为直管（label 显示省煤器直管）：
+     F001=前排、F002=后排（B不用），L001~L056 沿炉左往右、R056~R001 镜像。
+     集箱不属回路管段，不进编码矩阵。旧 U/D 编码废弃不迁移（2026-11-08 用户确认）。 */
   { name:'省煤器蛇形管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:3, dualDir:true, dirLabels:{U:'上组（圈号1~3）', D:'下组（圈号1~3）'}, spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', mat:'按材料库分项', badge:'badge-eco' },
-  { name:'省煤器吊挂管', sys:'SMQ', comp:'SG', posLetters:['L','R'], pMax:56, dirs:['F'], tMax:2, dirLabels:{F:'前/后排（001前 002后）'}, spec:'Φ60×9 SA-210C', mat:'按材料库分项', badge:'badge-eco' },
-  { name:'省煤器进口集箱', sys:'SMQ', comp:'EXIN', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1, spec:'Φ406.4×52 SA-106C', mat:'按集箱库', badge:'badge-eco' },
-  { name:'省煤器出口集箱', sys:'SMQ', comp:'EXOUT', posLetters:['L','R'], pMax:124, dirs:['U','D'], tMax:1, spec:'Φ273×40 20G', mat:'按集箱库', badge:'badge-eco' }
+  { name:'省煤器吊挂管', sys:'SMQ', comp:'SG', label:'省煤器直管', posLetters:['L','R'], pMax:56, dirs:['F'], tMax:2, dirLabels:{F:'前/后排（001前 002后）'}, spec:'Φ60×9 SA-210C', mat:'按材料库分项', badge:'badge-eco' }
 ];
 const CODE_SYSTEMS = [
   { sys:'SLB', label:'水冷壁', comps:['WB','LHD','RSQ'] },
@@ -1476,11 +1474,11 @@ const CODE_SYSTEMS = [
   { sys:'DPGRQ', label:'全大屏过热器', comps:['GQ'] },
   { sys:'DGRQ', label:'低温过热器', comps:['GQ'] },
   { sys:'DZRQ', label:'低温再热器', comps:['GQ'] },
-  { sys:'SMQ', label:'省煤器', comps:['SG','EXIN','EXOUT'] }
+  { sys:'SMQ', label:'省煤器', comps:['SG'] }
 ];
 /* 顶棚过热器/包墙过热器仅存在于材料库，不参与新编码规则 */
 const ALL_CODE_SYSTEMS = [...CODE_SYSTEMS, { sys:'RSH', label:'顶棚过热器' }, { sys:'WSH', label:'包墙过热器' }];
-const COMPONENT_LABELS = { GQ:'管屏', WB:'水冷壁管', SG:'省煤器蛇形管', EXIN:'省煤器进口集箱', EXOUT:'省煤器出口集箱', LHD:'冷灰斗', RSQ:'燃烧器区域' };
+const COMPONENT_LABELS = { GQ:'管屏', WB:'水冷壁管', SG:'省煤器蛇形管', LHD:'冷灰斗', RSQ:'燃烧器区域' };
 /* 方位/方向字母含义（规则第4条） */
 const CODE_DIR_LABELS = { A:'A侧', B:'炉后往前/B侧', F:'炉前往后', L:'炉左往右', R:'炉右往左/A侧', U:'上往下', D:'下往上' };
 const WALL_THICKNESS_WARNING_RULES = [
@@ -1722,13 +1720,13 @@ function genCode() {
 }
 /* ========== 新编码规则 ==========
  * 模板：{机组}G-SYS-COMP-{方位}{三位排/片号}-{方位}{三位排/屏号}-{方向}{三位管号}-Q{序号}
- * 机组：1G/2G；系统：SLB/GZRQ/GGRQ/HPGRQ/DPGRQ/DGRQ/DZRQ/SMQ；部件：GQ/WB/SG/EXIN/EXOUT/LHD/RSQ
+ * 机组：1G/2G；系统：SLB/GZRQ/GGRQ/HPGRQ/DPGRQ/DGRQ/DZRQ/SMQ；部件：GQ/WB/SG/LHD/RSQ
  * 方位/方向：A侧→R、B侧→L、炉左往右→L、炉右往左→R、炉前往后→F、炉后往前→B；受热面管序用 F/B（高再管数待核），
  * 省煤器 U=上组/D=下组（数字位=圈号001~003）、吊挂管 F=前后排（F001前/F002后）；
  * 无明确排/屏号用 000 占位；方向不明不得臆造字母，保持原样进「待确认」人工核实；低过/低再默认第 1 检修空间可省略 */
 function parseTubeCode(code) {
   const raw = String(code || '').trim().toUpperCase();
-  const head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|EXIN|EXOUT|LHD|RSQ)(?:-(.*))?$/);
+  const head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ)(?:-(.*))?$/);
   if(!head) return null;
   const parsed = { raw, unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], pos: null, posNum: null, pos2: null, pos2Num: null, space: null, corner: null, layer: '', nozzle: null, dir: null, tube: null, seq: null };
   const parts = head[4] ? head[4].split('-') : [];
@@ -3080,7 +3078,7 @@ function renderMatrix() {
   const tbody = document.getElementById('matrixBody');
   tbody.innerHTML = matrix.map(m => {
     const count = matrixRowCount(m);
-    return `<tr><td style="font-family:inherit">${m.name}</td><td><span class="badge ${m.badge}">${m.sys}</span></td><td>${m.comp} · ${COMPONENT_LABELS[m.comp] || ''}</td><td>${matrixRowRangeText(m)}</td><td style="color:var(--accent)">${count}</td><td>${m.spec}</td><td style="font-family:inherit;font-size:11px">${m.mat}</td></tr>`;
+    return `<tr><td style="font-family:inherit">${m.name}</td><td><span class="badge ${m.badge}">${m.sys}</span></td><td>${m.comp} · ${m.label || COMPONENT_LABELS[m.comp] || ''}</td><td>${matrixRowRangeText(m)}</td><td style="color:var(--accent)">${count}</td><td>${m.spec}</td><td style="font-family:inherit;font-size:11px">${m.mat}</td></tr>`;
   }).join('');
   /* 四张统计卡与生成说明统一取矩阵口径，避免写死数字与 matrix 定义脱节 */
   const stats = tubeLedgerMatrixStats();
@@ -3178,7 +3176,7 @@ function getMaintenanceLedgerSurfaces() {
     current.ledgerCount += ledgerCount;
     current.specs.add(row.spec);
     current.materials.add(row.mat);
-    current.zones.add(`${row.comp} · ${COMPONENT_LABELS[row.comp] || ''}`);
+    current.zones.add(`${row.comp} · ${row.label || COMPONENT_LABELS[row.comp] || ''}`);
     aggregates.set(row.sys, current);
   });
   return [...aggregates.values()].map(item => ({
