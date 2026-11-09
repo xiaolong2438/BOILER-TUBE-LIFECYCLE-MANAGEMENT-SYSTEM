@@ -84,6 +84,8 @@ const checks = [
     assert.match(html, /name:'省煤器中间集箱Ⅰ',spec:'Φ406\.4×52',mat:'SA-106C'/);
     assert.match(html, /name:'省煤器中间集箱Ⅱ（2只）',spec:'Φ273×45',mat:'SA-106C'/);
     assert.match(html, /name:'省煤器出口集箱',spec:'Φ273×40',mat:'20G'/);
+    assert.match(html, /name:'省煤器进口集箱', sys:'SMQ', comp:'EXIN'[^\n]*spec:'Φ406\.4×52 SA-106C', mat:'按集箱库'/, "生成器进口集箱行规格应对齐集箱库口径");
+    assert.match(html, /name:'省煤器出口集箱', sys:'SMQ', comp:'EXOUT'[^\n]*spec:'Φ273×40 20G', mat:'按集箱库'/, "生成器出口集箱行规格应对齐集箱库口径");
     assert.match(html, /function renderHeaders\(\) \{.*ecoHeaders/, "renderHeaders 应渲染省煤器分类");
   }],
   ["LLM config is read from storage, not from the form DOM", () => {

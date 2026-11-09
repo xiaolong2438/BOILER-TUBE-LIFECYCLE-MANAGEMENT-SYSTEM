@@ -175,12 +175,15 @@ assert.deepEqual(gzrqBaseline[6].rearSegs, [
   ['Φ60×5', 'SA-213T22']
 ], 'F007 出口三段T91');
 
-// 省煤器：每排三管圈合并一行，沿水流程3段，全部碳钢（148M3-0 + 用户确认2026-11-08）
+// 省煤器：每排三管圈＝回路1~3 逐回路一行（写法对齐低过/低再），沿水流程3段，全部碳钢（148M3-0 + 用户确认2026-11-08）
 const smqBaseline = JSON.parse(vm.runInContext("JSON.stringify(SMQ_LOOP_BASELINE)", baselineCtx));
-assert.equal(smqBaseline.length, 1, "省煤器各排材质分段相同，合并为一行");
-assert.equal(smqBaseline[0].loop, '1~3', "回路=每排三管圈（圈号D001~D003）");
-assert.deepEqual(smqBaseline[0].segs.map(s => s[0]), ['下级水平段（下组）', '上级水平段（上组）', '吊挂管直段'], "分段顺序沿水流程：下级→上级→吊挂管，无级间过渡段");
-assert.deepEqual(smqBaseline[0].segs.map(s => s[1] + ' ' + s[2]), ['Φ51×6 SA-210C', 'Φ51×6 SA-210C', 'Φ60×9 SA-210C'], "蛇形管两段同规格材质，吊挂管直段Φ60×9 SA-210C");
+assert.equal(smqBaseline.length, 3, "省煤器每排三管圈＝回路1~3，逐回路一行");
+assert.deepEqual(smqBaseline.map(l => l.tube), ['U001=上组、D001=下组', 'U002=上组、D002=下组', 'U003=上组、D003=下组'], "蛇形管方向字母即组别（U=上组/D=下组），数字位001~003=圈号");
+for (const l of smqBaseline) {
+  assert.equal(l.loop, smqBaseline.indexOf(l) + 1, "回路号连续1..3");
+  assert.deepEqual(l.segs.map(s => s[0]), ['下级水平段（下组）', '上级水平段（上组）', '吊挂管直段'], "分段顺序沿水流程：下级→上级→吊挂管，无级间过渡段");
+  assert.deepEqual(l.segs.map(s => s[1] + ' ' + s[2]), ['Φ51×6 SA-210C', 'Φ51×6 SA-210C', 'Φ60×9 SA-210C'], "蛇形管两段同规格材质，吊挂管直段Φ60×9 SA-210C");
+}
 
 // 与清洗脚本的 GGRQ_LOOP_SEGMENTS 逐回路逐段一致（单一事实源，双端同步）
 const py = readFileSync(resolve(here, "../scripts/clean_boiler_film_records.py"), "utf8");
