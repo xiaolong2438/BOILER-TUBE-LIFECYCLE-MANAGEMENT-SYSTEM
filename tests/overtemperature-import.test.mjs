@@ -103,6 +103,35 @@ assert.equal(status(8), 'ok');
 assert.deepEqual(evaluated.summary, { total: 9, ok: 2, duplicate: 2, error: 5 });
 console.log('ok - report matching, limits, config boundary and duplicates');
 
+/* 4b. 未登记点位：按报表自动建点草稿，管屏留空待检修确认 */
+assert.equal(Import.inferMeasurementType('全大屏过热器出口壁温8'), 'tube_wall');
+assert.equal(Import.inferMeasurementType('低温过热器出口集箱壁温'), 'header_wall');
+assert.equal(Import.inferMeasurementType('过热蒸汽温度1'), 'steam');
+assert.equal(Import.inferSystem('全大屏过热器出口壁温8'), 'DPGRQ');
+assert.equal(Import.inferSystem('低温再热器入口管壁'), 'DZRQ');
+const auto = Import.evaluateReport([
+  reportItem({ row: 2, tag: 'DCS1_HAH61CT008', name: '全大屏过热器出口壁温8' }),
+  reportItem({ row: 3, tag: 'DCS1_SYN010', name: '合成壁温10', limitC: null }),
+  reportItem({ row: 4, tag: 'DCS1_SYN011', name: '' }),
+  reportItem({ row: 5, tag: 'DCS1_HAH61CT008', name: '全大屏过热器出口壁温8' })
+], {
+  core: Core, now: ms('2026-11-01T00:00:00'), pointsByTag: {}, existing: new Set(),
+  configsFor: () => [], autoCreate: true
+});
+assert.equal(auto.rows[0].status, 'ok');
+assert.equal(auto.rows[0].willCreate, true);
+assert.deepEqual(auto.rows[0].draftPoint, {
+  unit: '1', tag: 'DCS1_HAH61CT008', name: '全大屏过热器出口壁温8',
+  measurementType: 'tube_wall', system: 'DPGRQ', location: '', panel: '', active: true
+});
+assert.equal(auto.rows[1].status, 'error');
+assert.match(auto.rows[1].messages[0], /有效限值/);
+assert.equal(auto.rows[2].status, 'error');
+assert.match(auto.rows[2].messages[0], /缺少描述/);
+assert.equal(auto.rows[3].status, 'duplicate');
+assert.deepEqual(auto.summary, { total: 4, ok: 1, duplicate: 1, error: 2 });
+console.log('ok - unregistered points become blank-panel drafts for maintenance confirmation');
+
 /* 5. 记录构造：稳定 id、人工核定、来源备注 */
 const record = Import.recordFrom(reportItem(), p1, c1, '合成月报.xls');
 assert.match(record.id, /^tr-[0-9a-f]{16}$/);
@@ -139,6 +168,22 @@ assert.deepEqual(pointPreview.summary, { total: 3, ok: 0, duplicate: 1, error: 2
 assert.equal(pointPreview.rows[0].status, 'duplicate');
 console.log('ok - point ledger normalization and duplicate detection');
 
+/* 6b. 投产日期：有效日期进入终身累计起算，空白允许，非法日期阻断导入 */
+const commissionedMatrix = [
+  ['机组', 'DCS Tag', '测点名称', '测量类型', '投产日期'],
+  ['1号机组', 'DCS1_LBA10CT003', '合成测点', '管壁温度', '2019/06/30'],
+  ['1号机组', 'DCS1_LBA10CT004', '合成测点二', '管壁温度', '2020-13-40'],
+  ['1号机组', 'DCS1_LBA10CT005', '合成测点三', '管壁温度', '']
+];
+const commissioned = Import.normalizePointMatrix(commissionedMatrix, ms);
+assert.equal(commissioned.items[0].commissionedAt, ms('2019-06-30T00:00:00'));
+assert.equal(commissioned.items[0].errors.length, 0);
+assert.equal(commissioned.items[1].commissionedAt, null);
+assert.match(commissioned.items[1].errors[0], /投产日期无效/);
+assert.equal(commissioned.items[2].commissionedAt, null);
+assert.equal(commissioned.items[2].errors.length, 0, '投产日期可留空，由后续补填');
+console.log('ok - commissioning date parses strictly and stays optional');
+
 /* 7. UI 接线：两个入口、文件/粘贴解析、确认后才写入 */
 const ui = readFileSync(new URL('../assets/app/overtemperature-v1.js', import.meta.url), 'utf8');
 assert.match(ui, /action\('导入测点台账', 'importPoints'\)/);
@@ -147,6 +192,8 @@ assert.match(ui, /id="ot-import-file"/);
 assert.match(ui, /id="ot-import-confirm"/);
 assert.match(ui, /BTLazy\.ensure\('xlsx'\)/);
 assert.match(ui, /if \(!imp\.confirmed\)/);
+assert.match(ui, /normalizePointMatrix\(matrix, core\(\)\.parseTime\)/, '测点导入必须显式传入时间解析函数');
+assert.match(ui, /point\.commissionedAt = item\.commissionedAt/, '测点导入必须写入投产日期');
 console.log('ok - import UI wiring requires explicit confirmation');
 
 console.log('ok - overtemperature import parsing');

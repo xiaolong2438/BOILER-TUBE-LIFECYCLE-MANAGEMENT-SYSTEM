@@ -24,6 +24,8 @@
   function uid() { return window.crypto && typeof window.crypto.randomUUID === 'function' ? window.crypto.randomUUID() : 'ot-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2); }
   function now() { return finite(S.serverTime) && finite(S.syncedAt) ? S.serverTime + (Date.now() - S.syncedAt) : Date.now(); }
   function time(value) { return core() && !blank(value) ? core().formatTime(value) || '时间无效' : '—'; }
+  function dateValue(value) { const text = core() && finite(value) ? core().toInputTime(value) : ''; return text ? text.slice(0, 10) : ''; }
+  function dateEpoch(value) { const raw = String(value == null ? '' : value).trim(); return raw && core() ? core().parseTime(raw + 'T00:00:00') : null; }
   function formatDuration(value) {
     if (!finite(value) || value < 0) return '—';
     if (value === 0) return '0 分钟';
@@ -251,6 +253,9 @@
   function monthKeyOf(ms) { const d = beijingDate(ms); return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1); }
   function monthStartOf(key) { const parts = key.split('-').map(Number); return Date.UTC(parts[0], parts[1] - 1, 1) - BEIJING_OFFSET_MS; }
   function nextMonthKey(key) { const parts = key.split('-').map(Number); const d = new Date(Date.UTC(parts[0], parts[1], 1)); return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1); }
+  function yearKeyOf(ms) { return monthKeyOf(ms).slice(0, 4); }
+  function yearStartOf(key) { return Date.UTC(Number(key), 0, 1) - BEIJING_OFFSET_MS; }
+  function nextYearKey(key) { return String(Number(key) + 1); }
   function compactDuration(ms) {
     if (!finite(ms) || ms <= 0) return '0';
     const minutes = ms / 60000;
@@ -258,24 +263,12 @@
     if (minutes < 60) return (minutes < 10 ? minutes.toFixed(1).replace(/\.0$/, '') : String(Math.round(minutes))) + '分';
     return (minutes / 60).toFixed(1).replace(/\.0$/, '') + '时';
   }
-  function monthlySeries(intervals, limit) {
-    const list = (intervals || []).filter(item => finite(item.startAt) && finite(item.endAt) && item.endAt > item.startAt);
-    if (!list.length) return { items: [], truncated: false };
-    let first = monthKeyOf(list.reduce((min, item) => Math.min(min, item.startAt), Infinity));
-    let last = monthKeyOf(list.reduce((max, item) => Math.max(max, item.endAt - 1), -Infinity));
-    const keys = []; let key = first, guard = 0;
-    while (key <= last && guard < 240) { keys.push(key); key = nextMonthKey(key); guard += 1; }
-    const truncated = keys.length > limit;
-    const shown = truncated ? keys.slice(-limit) : keys;
-    return {
-      truncated: truncated,
-      items: shown.map(item => {
-        const start = monthStartOf(item), end = monthStartOf(nextMonthKey(item));
-        const ms = list.reduce((sum, interval) => sum + Math.max(0, Math.min(end, interval.endAt) - Math.max(start, interval.startAt)), 0);
-        return { key: item, ms: ms };
-      })
-    };
+  function clockDuration(ms) {
+    if (!finite(ms) || ms <= 0) return '0';
+    const total = Math.round(ms / 1000), hours = Math.floor(total / 3600), minutes = Math.floor(total % 3600 / 60), seconds = total % 60;
+    return (hours ? hours + ':' + pad2(minutes) : String(minutes)) + ':' + pad2(seconds);
   }
+  const POINT_COLORS = ['#33d6ff', '#4ade80', '#fbbf24', '#f472b6', '#a78bfa', '#fb923c', '#22d3ee', '#f87171'];
   function heatmapBuckets(intervals) {
     const cells = Array.from({ length: 7 }, () => Array(24).fill(0));
     (intervals || []).forEach(interval => {
@@ -291,32 +284,43 @@
     });
     return cells;
   }
-  function renderMonthlyTrend(intervals) {
-    const series = monthlySeries(intervals, 12);
-    if (!series.items.length) return '<figure class="ot-chart"><figcaption>月度超温时长</figcaption><p class="ot-viz-empty">当前筛选窗口没有已核定的超温区间。</p></figure>';
-    const width = 660, height = 230, left = 54, right = 16, top = 28, bottom = 40;
+  function renderMonthlyPointTrend(rows) {
+    const matrix = monthPointMatrix(rows, 12);
+    if (!matrix.months.length || !matrix.items.length) return '<figure class="ot-chart"><figcaption>月份 × 测点累计趋势</figcaption><p class="ot-viz-empty">当前筛选窗口没有已核定的超温区间。</p></figure>';
+    const points = matrix.items.slice(0, 8);
+    const colorOf = item => POINT_COLORS[matrix.items.indexOf(item) % POINT_COLORS.length];
+    const width = 820, height = 250, left = 58, right = 16, top = 24, bottom = 44;
     const plotW = width - left - right, plotH = height - top - bottom;
-    const max = Math.max(1, ...series.items.map(item => item.ms));
-    const step = plotW / series.items.length;
-    const barW = Math.max(4, Math.min(40, step * 0.55));
-    let svg = '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="按月统计的跨测点超温并集时长">';
+    const max = Math.max(1, ...points.reduce((all, item) => all.concat(item.cells.map(cell => cell.ms)), []));
+    const step = plotW / matrix.months.length;
+    const groupW = Math.min(58, step * 0.78), barW = Math.max(3, groupW / points.length - 2);
+    let svg = '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="按测点和月份分别统计的超温累计时长，不同测点不合并">';
     for (let i = 0; i <= 3; i += 1) {
       const y = top + plotH * i / 3;
       svg += '<line x1="' + left + '" y1="' + y.toFixed(1) + '" x2="' + (width - right) + '" y2="' + y.toFixed(1) + '" class="ot-grid-line"/>';
       svg += '<text x="' + (left - 8) + '" y="' + (y + 3).toFixed(1) + '" text-anchor="end" class="ot-axis">' + esc(compactDuration(max * (1 - i / 3))) + '</text>';
     }
-    series.items.forEach((item, i) => {
-      const h = item.ms / max * plotH;
-      const x = left + step * i + (step - barW) / 2;
-      const y = top + plotH - h;
-      const label = item.key.slice(0, 4) + '-' + item.key.slice(5);
-      const showYear = i === 0 || item.key.slice(5) === '01';
-      svg += '<g class="ot-bar-row" data-action="filterMonth" data-id="' + esc(item.key) + '" role="button" tabindex="0" aria-label="' + esc(label + '，' + formatDuration(item.ms)) + '"><title>' + esc(label + '：' + formatDuration(item.ms)) + '</title>' +
-        '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(h, 1).toFixed(1) + '" rx="4"/>' +
-        '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (height - bottom + 16) + '" text-anchor="middle" class="ot-axis">' + esc(showYear ? item.key.slice(2) : item.key.slice(5) + '月') + '</text>' +
-        (item.ms ? '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (y - 6).toFixed(1) + '" text-anchor="middle" class="ot-bar-value">' + esc(compactDuration(item.ms)) + '</text>' : '') + '</g>';
+    matrix.months.forEach((month, monthIndex) => {
+      const groupX = left + step * monthIndex + (step - groupW) / 2;
+      const label = month.slice(0, 4) + '-' + month.slice(5);
+      points.forEach((item, pointIndex) => {
+        const ms = item.cells[monthIndex].ms;
+        if (!ms) return;
+        const h = ms / max * plotH;
+        const x = groupX + pointIndex * (barW + 2);
+        const y = top + plotH - h;
+        svg += '<g class="ot-bar-row" data-action="focusMonthPoint" data-id="' + esc(item.point.id) + '" data-month="' + esc(month) + '" role="button" tabindex="0" aria-label="' + esc(item.point.name + '，' + label + '，' + clockDuration(ms)) + '"><title>' + esc(item.point.name + ' · ' + label + '：' + clockDuration(ms)) + '</title>' +
+          '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(h, 1).toFixed(1) + '" rx="2" style="fill:' + colorOf(item) + ';opacity:.9"/>' +
+          '</g>';
+      });
+      const showYear = monthIndex === 0 || month.slice(5) === '01';
+      svg += '<text x="' + (groupX + groupW / 2).toFixed(1) + '" y="' + (height - bottom + 16) + '" text-anchor="middle" class="ot-axis">' + esc(showYear ? month.slice(2) : month.slice(5) + '月') + '</text>';
     });
-    return '<figure class="ot-chart"><figcaption>月度超温时长 <small>跨测点区间并集；点击月份查看该月</small></figcaption>' + svg + (series.truncated ? '<p class="ot-chart-tip">仅显示最近 12 个月。</p>' : '') + '</figure>';
+    svg += '</svg>';
+    const legend = '<div class="ot-point-legend">' + points.map(item => '<button type="button" class="ot-legend-item" data-action="focusPoint" data-id="' + esc(item.point.id) + '"><i style="background:' + colorOf(item) + '"></i><span>' + esc(item.point.name) + '<small>' + esc(item.point.unit + '# · ' + item.point.tag + ' · 跨月累计 ' + clockDuration(item.totalMs)) + '</small></span></button>').join('') + '</div>';
+    return '<figure class="ot-chart ot-point-trend"><figcaption>月份 × 测点累计趋势 <small>每月每个测点一根独立柱；同一测点跨月累加，不同测点不合并</small></figcaption>' + svg + legend +
+      (points.length < matrix.items.length ? '<p class="ot-chart-tip">趋势图仅显示累计前 8 个测点；完整点位见上方矩阵。</p>' : '') +
+      (matrix.truncated ? '<p class="ot-chart-tip">仅显示最近 12 个月。</p>' : '') + '</figure>';
   }
   function renderHeatmap(intervals) {
     if (!(intervals || []).length) return '<figure class="ot-chart"><figcaption>时段分布</figcaption><p class="ot-viz-empty">当前筛选窗口没有已核定的超温区间。</p></figure>';
@@ -337,7 +341,128 @@
       }
     });
     svg += '</svg>';
-    return '<figure class="ot-chart ot-heatmap"><figcaption>时段分布 <small>按北京时间累计；颜色越深表示该时段超温时长越长</small></figcaption><div class="ot-heat-scroll">' + svg + '</div><div class="ot-heat-legend"><span>低</span><i style="background:var(--surface-sunken)"></i><i style="background:var(--accent);opacity:.3"></i><i style="background:var(--accent);opacity:.6"></i><i style="background:var(--accent)"></i><span>高</span></div></figure>';
+    return '<figure class="ot-chart ot-heatmap"><figcaption>时段分布 <small>全部测点时间并集，仅看时段参考，不进入点位累计</small></figcaption><div class="ot-heat-scroll">' + svg + '</div><div class="ot-heat-legend"><span>低</span><i style="background:var(--surface-sunken)"></i><i style="background:var(--accent);opacity:.3"></i><i style="background:var(--accent);opacity:.6"></i><i style="background:var(--accent)"></i><span>高</span></div></figure>';
+  }
+  function monthPointMatrix(rows, limit) {
+    const list = (rows || []).filter(row => row && row.point);
+    const bounds = [];
+    list.forEach(row => {
+      ((row.summary && row.summary.intervals) || []).forEach(interval => {
+        if (finite(interval.startAt) && finite(interval.endAt) && interval.endAt > interval.startAt) bounds.push(monthKeyOf(interval.startAt), monthKeyOf(interval.endAt - 1));
+      });
+    });
+    if (!bounds.length) return { months: [], items: [], truncated: false };
+    const first = bounds.reduce((min, key) => key < min ? key : min);
+    const last = bounds.reduce((max, key) => key > max ? key : max);
+    const all = []; let key = first, guard = 0;
+    while (key <= last && guard < 240) { all.push(key); key = nextMonthKey(key); guard += 1; }
+    const truncated = all.length > limit;
+    const months = truncated ? all.slice(-limit) : all;
+    const items = list.map(row => {
+      const intervals = ((row.summary && row.summary.intervals) || []).filter(interval => finite(interval.startAt) && finite(interval.endAt) && interval.endAt > interval.startAt);
+      const cells = months.map(month => {
+        const start = monthStartOf(month), end = monthStartOf(nextMonthKey(month));
+        return { key: month, ms: intervals.reduce((sum, interval) => sum + Math.max(0, Math.min(end, interval.endAt) - Math.max(start, interval.startAt)), 0) };
+      });
+      return { point: row.point, cells: cells, totalMs: cells.reduce((sum, cell) => sum + cell.ms, 0) };
+    }).filter(item => item.totalMs > 0).sort((a, b) => b.totalMs - a.totalMs || String(a.point.name).localeCompare(String(b.point.name), 'zh-CN'));
+    return { months: months, items: items, truncated: truncated };
+  }
+  function renderMonthPointMatrix(rows) {
+    const matrix = monthPointMatrix(rows, 12);
+    if (!matrix.months.length || !matrix.items.length) return '<figure class="ot-chart"><figcaption>月份 × 测点累计</figcaption><p class="ot-viz-empty">当前筛选窗口没有已核定的超温区间。</p></figure>';
+    const head = ['测点', '管屏（检修确认）'].concat(matrix.months.map(month => month.slice(0, 4) + '-' + month.slice(5))).concat(['该点跨月累计']);
+    const peak = Math.max(1, ...matrix.items.reduce((all, item) => all.concat(item.cells.map(cell => cell.ms)), []));
+    const body = matrix.items.map(item => {
+      const p = item.point;
+      const cells = item.cells.map(cell => cell.ms
+        ? '<td class="ot-matrix-hit"><button type="button" class="ot-matrix-cell ot-matrix-l' + Math.max(1, Math.min(4, Math.ceil(cell.ms / peak * 4))) + '" data-action="focusMonthPoint" data-id="' + esc(p.id) + '" data-month="' + esc(cell.key) + '" title="' + esc(p.name + ' · ' + cell.key + '：' + clockDuration(cell.ms) + '（' + formatDuration(cell.ms) + '）') + '">' + esc(clockDuration(cell.ms)) + '</button></td>'
+        : '<td class="ot-matrix-zero">—</td>').join('');
+      return '<tr><td>' + pointCell(p) + '</td><td>' + (p.panel ? esc(p.panel) : badge('待确认', 'warn')) + '</td>' + cells + '<td class="ot-matrix-total">' + esc(clockDuration(item.totalMs)) + '</td></tr>';
+    }).join('');
+    return '<figure class="ot-chart ot-month-matrix"><figcaption>月份 × 测点累计 <small>单元格为该测点当月经区间并集后的超温时长；点击查看该月该测点明细</small></figcaption>' +
+      '<div class="ot-matrix-scroll"><table class="ot-matrix"><thead><tr>' + head.map(label => '<th scope="col">' + esc(label) + '</th>').join('') + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+      '<p class="ot-chart-tip">月度合计为所示月份之和；同一测点不同时间全部相加，不同测点分行显示，不合并。管屏留空表示待机组检修时确认。</p>' + (matrix.truncated ? '<p class="ot-chart-tip">仅显示最近 12 个月。</p>' : '') + '</figure>';
+  }
+  function yearPointMatrix(rows, limit) {
+    const list = (rows || []).filter(row => row && row.point);
+    const bounds = [];
+    list.forEach(row => {
+      ((row.summary && row.summary.intervals) || []).forEach(interval => {
+        if (finite(interval.startAt) && finite(interval.endAt) && interval.endAt > interval.startAt) bounds.push(yearKeyOf(interval.startAt), yearKeyOf(interval.endAt - 1));
+      });
+    });
+    if (!bounds.length) return { years: [], items: [], truncated: false };
+    const first = Number(bounds.reduce((min, key) => key < min ? key : min));
+    const last = Number(bounds.reduce((max, key) => key > max ? key : max));
+    const all = []; let guard = 0;
+    for (let year = first; year <= last && guard < 500; year += 1, guard += 1) all.push(String(year));
+    const truncated = all.length > limit;
+    const years = truncated ? all.slice(-limit) : all;
+    const items = list.map(row => {
+      const intervals = ((row.summary && row.summary.intervals) || []).filter(interval => finite(interval.startAt) && finite(interval.endAt) && interval.endAt > interval.startAt);
+      const cells = years.map(year => {
+        let ms = 0;
+        for (let month = 0; month < 12; month += 1) {
+          const start = Date.UTC(Number(year), month, 1) - BEIJING_OFFSET_MS;
+          const end = Date.UTC(Number(year), month + 1, 1) - BEIJING_OFFSET_MS;
+          ms += intervals.reduce((sum, interval) => sum + Math.max(0, Math.min(end, interval.endAt) - Math.max(start, interval.startAt)), 0);
+        }
+        return { key: year, ms: ms };
+      });
+      return { point: row.point, cells: cells, totalMs: cells.reduce((sum, cell) => sum + cell.ms, 0) };
+    }).filter(item => item.totalMs > 0).sort((a, b) => b.totalMs - a.totalMs || String(a.point.name).localeCompare(String(b.point.name), 'zh-CN'));
+    return { years: years, items: items, truncated: truncated };
+  }
+  function renderYearPointMatrix(rows) {
+    const matrix = yearPointMatrix(rows, 5);
+    if (!matrix.years.length || !matrix.items.length) return '<figure class="ot-chart"><figcaption>年度 × 测点累计</figcaption><p class="ot-viz-empty">当前筛选窗口没有已核定的超温区间。</p></figure>';
+    const head = ['测点', '管屏（检修确认）'].concat(matrix.years.map(year => year + ' 年')).concat(['该点合计']);
+    const peak = Math.max(1, ...matrix.items.reduce((all, item) => all.concat(item.cells.map(cell => cell.ms)), []));
+    const body = matrix.items.map(item => {
+      const p = item.point;
+      const cells = item.cells.map(cell => cell.ms
+        ? '<td class="ot-matrix-hit"><button type="button" class="ot-matrix-cell ot-matrix-l' + Math.max(1, Math.min(4, Math.ceil(cell.ms / peak * 4))) + '" data-action="focusYearPoint" data-id="' + esc(p.id) + '" data-year="' + esc(cell.key) + '" title="' + esc(p.name + ' · ' + cell.key + ' 年：' + clockDuration(cell.ms) + '（' + formatDuration(cell.ms) + '）') + '">' + esc(clockDuration(cell.ms)) + '</button></td>'
+        : '<td class="ot-matrix-zero">—</td>').join('');
+      return '<tr><td>' + pointCell(p) + '</td><td>' + (p.panel ? esc(p.panel) : badge('待确认', 'warn')) + '</td>' + cells + '<td class="ot-matrix-total">' + esc(clockDuration(item.totalMs)) + '</td></tr>';
+    }).join('');
+    return '<figure class="ot-chart ot-year-matrix"><figcaption>年度 × 测点累计 <small>先按月累加，再把同一测点的各月合计汇入所属年度；点击查看该年度该测点明细</small></figcaption>' +
+      '<div class="ot-matrix-scroll"><table class="ot-matrix"><thead><tr>' + head.map(label => '<th scope="col">' + esc(label) + '</th>').join('') + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+      '<p class="ot-chart-tip">年度累计 = 该测点该年度各月累计之和；不同测点分行显示，不合并。管屏留空表示待机组检修时确认。</p>' + (matrix.truncated ? '<p class="ot-chart-tip">仅显示最近 5 个年度。</p>' : '') + '</figure>';
+  }
+  function bandColumns() {
+    const policy = core() && core().BAND_POLICY;
+    const edges = policy && Array.isArray(policy.edgesC) && policy.edgesC.length ? policy.edgesC : [5, 10, 20];
+    return edges.map((edge, index) => ({ key: 'b' + index, label: (index ? edges[index - 1] : 0) + '～<' + edge + '℃' })).concat([{ key: 'b' + edges.length, label: '≥' + edges[edges.length - 1] + '℃' }]);
+  }
+  function lifetimeBasisText(lifetime) {
+    if (!lifetime) return '未载入';
+    if (lifetime.basis === 'commissioned') return dateValue(lifetime.fromAt) + ' 投产';
+    if (lifetime.basis === 'earliest_record') return dateValue(lifetime.fromAt) + ' 最早记录（未登记投产日期）';
+    return '无起算依据';
+  }
+  function lifetimeMatrix(rows) {
+    return (rows || []).filter(row => row && row.point && row.lifetime).map(row => {
+      const byKey = {};
+      (row.lifetime.bands || []).forEach(band => { byKey[band.key] = band; });
+      return { point: row.point, lifetime: row.lifetime, bands: byKey };
+    }).filter(item => item.lifetime.recordCount > 0 || item.lifetime.bandDurationMs > 0).sort((a, b) => b.lifetime.durationMs - a.lifetime.durationMs || String(a.point.tag).localeCompare(String(b.point.tag), 'zh-CN'));
+  }
+  function renderLifetimeMatrix(rows) {
+    const columns = bandColumns(), items = lifetimeMatrix(rows);
+    if (!items.length) return '<figure class="ot-chart ot-life-matrix"><figcaption>投产以来超温累计</figcaption><p class="ot-viz-empty">当前筛选范围内没有可用于投产以来累计的已登记记录。</p></figure>';
+    const head = ['测点（精确点位）', '管屏（检修确认）'].concat(columns.map(column => column.label)).concat(['投产以来累计', '证据']);
+    const body = items.map(item => {
+      const p = item.point, l = item.lifetime;
+      const cells = columns.map(column => {
+        const band = item.bands[column.key], ms = band && finite(band.ms) ? band.ms : 0;
+        const level = band && band.fromC >= 10 ? ' ot-band-danger' : band && band.fromC >= 5 ? ' ot-band-warn' : '';
+        return '<td class="ot-band-cell' + level + '">' + (ms ? esc(clockDuration(ms)) : '<span class="ot-matrix-zero">—</span>') + '</td>';
+      }).join('');
+      const evidence = count(l.intervalRecordCount) + ' 区间' + (l.openCount ? ' · ' + count(l.openCount) + ' 未结束' : '') + '<small>' + (l.lastEvidenceAt != null ? '最近 ' + esc(time(l.lastEvidenceAt)) : '无有效证据') + '</small>';
+      return '<tr><td>' + pointCell(p) + '<small>起算：' + esc(lifetimeBasisText(l)) + (l.beforeStartRecordCount ? ' · 起点前 ' + count(l.beforeStartRecordCount) + ' 条未计入' : '') + '</small></td><td>' + (p.panel ? esc(p.panel) : badge('待确认', 'warn')) + '</td>' + cells + '<td class="ot-matrix-total">' + esc(clockDuration(l.durationMs)) + '</td><td>' + evidence + '</td></tr>';
+    }).join('');
+    return '<figure class="ot-chart ot-life-matrix"><figcaption>投产以来 × 超限分档累计 <small>按“机组 + DCS Tag 完全一致”的单个测点归集，跨月跨年持续累加</small></figcaption><div class="ot-matrix-scroll"><table class="ot-matrix"><thead><tr>' + head.map(label => '<th scope="col">' + esc(label) + '</th>').join('') + '</tr></thead><tbody>' + body + '</tbody></table></div><p class="ot-chart-tip">分档依据为每条已核定区间的最高温度相对当时有效限值的超限幅度；重叠时段只计一次并归入最高档，因此四档之和等于投产以来累计。名称或描述相同但 DCS Tag 不同的点位不合并。</p></figure>';
   }
   function renderChart(rows) {
     const values = rows.filter(row => row.summary && row.summary.durationMs > 0).sort((a, b) => b.summary.durationMs - a.summary.durationMs).slice(0, 10);
@@ -362,8 +487,14 @@
     if (!S.summary) return empty(S.error ? '共享累计尚未读取成功' : '尚未读取共享累计');
     const data = S.summary, s = data.summary, rows = data.byPoint;
     const hasLimits = rows.some(row => (row.configs || []).some(c => finite(c.limitC) && String(c.limitBasis || '').trim()));
-    const durationText = !s.recordCount ? '无有效登记' : !hasLimits ? '限值未配' : formatDuration(s.durationMs);
-    const cards = [['跨测点区间并集累计', durationText, '不是各测点时长求和；只累计已结束、人工核定区间'], ['最长连续区间', !s.recordCount ? '无有效登记' : !hasLimits ? '不可判定' : formatDuration(s.longestMs), '按当前筛选窗口去重合并'], ['有效人工记录', count(s.recordCount), '时点 ' + count(s.observationCount) + ' / 区间 ' + count(s.intervalRecordCount)], ['未结束区间', count(s.openCount), '仅提示待核定，不推算持续时长'], ['窗口内确定峰值', degrees(s.peakC), s.peakIncludesObservations ? '含人工时点观察，不据此推算时长' : '完整覆盖记录提供的峰值'], ['最大确定超限', degrees(s.maxExcessC), '使用各记录生效时的有据限值']];
+    const evidenceRows = rows.filter(row => row.summary && row.summary.durationMs > 0);
+    const monthly = monthPointMatrix(rows, 240), annual = yearPointMatrix(rows, 240), lifetimeRows = lifetimeMatrix(rows);
+    const maxPointMs = annual.items.reduce((max, item) => Math.max(max, ...item.cells.map(cell => cell.ms)), 0);
+    const maxLifetimeMs = lifetimeRows.reduce((max, item) => Math.max(max, item.lifetime.durationMs), 0);
+    const missingCommission = lifetimeRows.filter(item => item.lifetime.basis === 'earliest_record').length;
+    const beforeStart = lifetimeRows.reduce((sum, item) => sum + (item.lifetime.beforeStartRecordCount || 0), 0);
+    const maxPointText = !s.recordCount ? '无有效登记' : !hasLimits ? '限值未配' : maxPointMs ? formatDuration(maxPointMs) : '无有效登记';
+    const cards = [['超温点位', count(evidenceRows.length), '每个测点单独累计；同一测点不同时间都相加'], ['单点最长年累计', maxPointText, '取各测点单个年度的合计最大值，不合并不同测点'], ['单点投产以来最长', maxLifetimeMs ? formatDuration(maxLifetimeMs) : '无有效登记', '按精确点位分别累计，不同测点不相加'], ['涉及月份', count(monthly.months.length), '跨 ' + count(annual.years.length) + ' 个年度；按测点出现超温的自然月统计'], ['有效人工记录', count(s.recordCount), '时点 ' + count(s.observationCount) + ' / 区间 ' + count(s.intervalRecordCount) + ' · 未结束 ' + count(s.openCount)], ['窗口内确定峰值', degrees(s.peakC), s.peakIncludesObservations ? '含人工时点观察，不据此推算时长' : '完整覆盖记录提供的峰值'], ['最大确定超限', degrees(s.maxExcessC), '使用各记录生效时的有据限值']];
     let html = '<div class="ot-stats">' + cards.map(([label, value, help]) => '<article class="ot-stat ot-panel"><h3>' + esc(label) + '</h3><strong>' + esc(value) + '</strong><small>' + esc(help) + '</small></article>').join('') + '</div>';
     if (s.partialPeak || s.partial || s.peakFromClippedInterval || finite(s.estimatedPeakC)) html += '<div class="ot-caution">部分区间被筛选边界裁剪。原完整区间峰值参考：' + esc(degrees(s.estimatedPeakC)) + '；它不是本窗口确定峰值，不用于声称窗口最大超限。</div>';
     const activePoints = rows.filter(row => row.summary && row.summary.recordCount > 0).length;
@@ -371,15 +502,22 @@
     if (S.tubeCode) html += '<p class="ot-caution">管段条件仅用于本页累计摘要，按记录引用的历史映射匹配；此处为区域历史，当前管换管后统计请查看管段档案。台账与记录页仍按上方筛选，不冒充本管独占记录。</p>';
     if (s.excludedIntervalCount) html += '<p class="ot-warning">有 ' + esc(s.excludedIntervalCount) + ' 条区间未纳入累计，请检查核定状态和版本依据。</p>';
     if (!rows.length) return html + empty('当前筛选条件下没有已登记测点或关联记录', '新增测点', 'newPoint');
-    html += '<div class="ot-viz-grid"><section class="ot-panel ot-viz-card">' + renderMonthlyTrend(s.intervals) + '</section><section class="ot-panel ot-viz-card">' + renderHeatmap(s.intervals) + '</section></div>';
+    html += '<p class="ot-help">累计口径：测点身份以“机组 + DCS Tag”完全一致为准；同一测点的不同时间区间先按时间并集累加，形成月度合计；同一测点的各月合计再按年度累加，投产以来累计再跨年度持续累加且不受上方时间筛选限制。不同测点即使名称或描述相同也独立统计，不合并。</p>';
+    html += '<section class="ot-panel ot-viz-card ot-matrix-card">' + renderYearPointMatrix(rows) + '</section>';
+    html += '<section class="ot-panel ot-viz-card ot-matrix-card">' + renderMonthPointMatrix(rows) + '</section>';
+    html += '<p class="ot-help">规范口径：DL/T 654-2022《火电机组寿命评估技术导则》和 GB/T 30580-2022《电站锅炉主要承压部件寿命评估技术导则》采用线性损伤累积、Larson-Miller 参数等专业方法评定寿命，需材料、金属壁温、应力与运行小时等输入。下方超限幅度分档是筛查模板，不是规范强制阈值，也不能折算成寿命损耗或剩余寿命。</p>';
+    html += '<section class="ot-panel ot-viz-card ot-matrix-card">' + renderLifetimeMatrix(rows) + '</section>';
+    if (missingCommission) html += '<p class="ot-caution">' + count(missingCommission) + ' 个测点未登记投产日期，投产以来累计暂从各自最早登记记录起算，是偏小的下限值；补填投产日期后需按新起点复核。</p>';
+    if (beforeStart) html += '<p class="ot-warning">有 ' + count(beforeStart) + ' 条记录早于投产以来累计的起算日期，已整条排除；请核对投产日期或记录日期。</p>';
+    html += '<div class="ot-viz-grid"><section class="ot-panel ot-viz-card">' + renderMonthlyPointTrend(rows) + '</section><section class="ot-panel ot-viz-card">' + renderHeatmap(s.intervals) + '</section></div>';
     html += '<section class="ot-panel">' + renderChart(rows.slice()) + '</section>';
     const pageRows = rows.slice(S.page * PAGE_SIZE, (S.page + 1) * PAGE_SIZE);
-    html += table(['测点', '证据状态', '区间累计', '最长连续', '确定峰值 / 超限', '记录 / 未结束', '最近记录', '操作'], pageRows.map(row => { const p = row.point, sum = row.summary || {}; const limitKnown = (row.configs || []).some(c => finite(c.limitC) && String(c.limitBasis || '').trim()); return '<tr><td>' + pointCell(p) + '</td><td>' + pointState(p, sum, row.configs) + '</td><td>' + esc(!sum.recordCount ? '无有效登记' : !limitKnown ? '限值未配，不可判定' : formatDuration(sum.durationMs)) + '</td><td>' + esc(!sum.recordCount || !limitKnown ? '—' : formatDuration(sum.longestMs)) + '</td><td>' + esc(degrees(sum.peakC)) + '<small>超限 ' + esc(degrees(sum.maxExcessC)) + '</small>' + (sum.partialPeak ? badge('有裁剪区间', 'warn') : '') + '</td><td>' + count(sum.recordCount) + ' / ' + count(sum.openCount) + '</td><td>' + esc(time(sum.latestAt)) + '</td><td>' + pointButtons(p) + '</td></tr>'; }));
+    html += table(['测点', '证据状态', '窗口内累计', '投产以来累计', '最长连续', '确定峰值 / 超限', '记录 / 未结束', '最近记录', '操作'], pageRows.map(row => { const p = row.point, sum = row.summary || {}, life = row.lifetime || null; const limitKnown = (row.configs || []).some(c => finite(c.limitC) && String(c.limitBasis || '').trim()); return '<tr><td>' + pointCell(p) + '</td><td>' + pointState(p, sum, row.configs) + '</td><td>' + esc(!sum.recordCount ? '无有效登记' : !limitKnown ? '限值未配，不可判定' : formatDuration(sum.durationMs)) + '</td><td>' + (life && life.recordCount ? esc(clockDuration(life.durationMs)) + '<small>' + esc(lifetimeBasisText(life)) + '</small>' : '—') + '</td><td>' + esc(!sum.recordCount || !limitKnown ? '—' : formatDuration(sum.longestMs)) + '</td><td>' + esc(degrees(sum.peakC)) + '<small>超限 ' + esc(degrees(sum.maxExcessC)) + '</small>' + (sum.partialPeak ? badge('有裁剪区间', 'warn') : '') + '</td><td>' + count(sum.recordCount) + ' / ' + count(sum.openCount) + '</td><td>' + esc(time(sum.latestAt)) + '</td><td>' + pointButtons(p) + '</td></tr>'; }));
     return html + pager(rows.length, (S.page + 1) * PAGE_SIZE < rows.length);
   }
   function renderPoints() {
     if (!S.list || !S.list.items.length) return empty(S.error ? '共享测点尚未读取成功' : '当前筛选条件下没有测点', '新增测点 / 批量建点', 'newPoint');
-    return table(['测点', '测量类型 / 位置', '当前配置', '证据状态', '修订 / 更新时间', '操作'], S.list.items.map(p => { const c = currentConfig(p), row = summaryRow(p.id); return '<tr><td>' + pointCell(p) + '</td><td>' + esc(TYPES[p.measurementType] || p.measurementType) + '<small>' + esc(p.location || '位置待填写') + '</small></td><td>' + (c ? '版本 ' + esc(c.revision) + ' · ' + esc(degrees(c.limitC)) + '<small>自 ' + esc(time(c.effectiveFrom)) + '</small>' : '尚无已生效配置') + '</td><td>' + pointState(p, row && row.summary) + '</td><td>r' + esc(p.revision) + '<small>' + esc(time(p.updatedAt)) + '</small></td><td>' + pointButtons(p) + '</td></tr>'; })) + pager(S.total, S.next);
+    return table(['测点', '测量类型 / 位置', '管屏（检修确认）', '投产日期', '当前配置', '证据状态', '修订 / 更新时间', '操作'], S.list.items.map(p => { const c = currentConfig(p), row = summaryRow(p.id); return '<tr><td>' + pointCell(p) + '</td><td>' + esc(TYPES[p.measurementType] || p.measurementType) + '<small>' + esc(p.location || '位置待填写') + '</small></td><td>' + (p.panel ? esc(p.panel) : badge('待确认', 'warn')) + '</td><td>' + (finite(p.commissionedAt) ? esc(dateValue(p.commissionedAt)) : badge('未登记', 'warn')) + '</td><td>' + (c ? '版本 ' + esc(c.revision) + ' · ' + esc(degrees(c.limitC)) + '<small>自 ' + esc(time(c.effectiveFrom)) + '</small>' : '尚无已生效配置') + '</td><td>' + pointState(p, row && row.summary) + '</td><td>r' + esc(p.revision) + '<small>' + esc(time(p.updatedAt)) + '</small></td><td>' + pointButtons(p) + '</td></tr>'; })) + pager(S.total, S.next);
   }
   function renderRecords() {
     if (!S.list || !S.list.items.length) return empty(S.error ? '共享记录尚未读取成功' : '当前筛选条件下没有温度记录', '登记真实温度', 'newRecord');
@@ -393,8 +531,8 @@
     if (S.import) S.import = null;
     if ((S.draft || S.storedDraft) && !window.confirm('将替换当前未共享草稿。是否继续？')) return;
     const d = { version: 1, type, entityId: uid(), data: {}, point: null, original: null, pending: null };
-    if (type === 'point') d.data = { mode: 'single', unit: S.filters.unit, tag: '', name: '', measurementType: 'tube_wall', location: '', namePrefix: '', seqStart: '', seqEnd: '' };
-    if (type === 'editPoint') { d.point = clone(entity); d.data = { name: entity.name, location: entity.location || '', active: entity.active !== false, reason: '' }; }
+    if (type === 'point') d.data = { mode: 'single', unit: S.filters.unit, tag: '', name: '', measurementType: 'tube_wall', location: '', panel: '', commissionedAt: '', namePrefix: '', seqStart: '', seqEnd: '' };
+    if (type === 'editPoint') { d.point = clone(entity); d.data = { name: entity.name, location: entity.location || '', panel: entity.panel || '', commissionedAt: dateValue(entity.commissionedAt), active: entity.active !== false, reason: '' }; }
     if (type === 'config') { d.point = clone(entity); d.data = { effectiveFrom: '', limitC: '', limitBasis: '', mappingConfirmed: false, mappingBasis: '', regions: [], reason: '', confirmBasis: false }; }
     if (type === 'record' || type === 'void') {
       const record = entity && entity.kind ? entity : null;
@@ -408,8 +546,8 @@
   }
   function renderPointForm(d) {
     const v = d.data;
-    if (d.type === 'editPoint') return '<p class="ot-help">' + esc(d.point.unit) + '# · ' + esc(d.point.tag) + ' · ' + esc(TYPES[d.point.measurementType]) + '（机组和测量类型不可改）</p><div class="ot-form-grid">' + field('名称', input('name', v.name, 'text', 'required maxlength="120"')) + field('位置', input('location', v.location, 'text', 'maxlength="240"')) + '</div><label class="ot-check"><input name="active" type="checkbox"' + checked(v.active) + '>启用测点（停用保留全部记录与历史）</label>' + field('编辑原因（必填）', textarea('reason', v.reason, 'required maxlength="1000"'));
-    return '<div class="ot-form-grid">' + field('创建方式', '<select name="mode">' + option('single', '单个测点', v.mode) + option('batch', '按名称序号批量创建', v.mode) + '</select>') + field('机组（必选单机组）', '<select name="unit" required>' + option('', '请选择机组', v.unit) + option('1', '1# 机组', v.unit) + option('2', '2# 机组', v.unit) + '</select>') + field('测量类型（创建后不可改）', '<select name="measurementType">' + Object.keys(TYPES).map(key => option(key, TYPES[key], v.measurementType)).join('') + '</select>') + (v.mode === 'batch' ? field('名称前缀', input('namePrefix', v.namePrefix, 'text', 'required maxlength="110" placeholder="如：低过出口集箱"')) + field('开始序号', input('seqStart', v.seqStart, 'number', 'required min="1" step="1"')) + field('结束序号', input('seqEnd', v.seqEnd, 'number', 'required min="1" step="1"')) : field('名称', input('name', v.name, 'text', 'required maxlength="120"')) + field('编号 / DCS Tag', input('tag', v.tag, 'text', 'maxlength="120"'), '可空；由服务端产生内部编号，不猜测 DCS Tag。')) + field('位置', input('location', v.location, 'text', 'maxlength="240"')) + '</div><div class="ot-caution">' + (v.mode === 'batch' ? '批量最多 100 个，使用名称前缀 + 序号；编号由服务端生成。' : '') + '创建只登记测点，不自动建立真实区域、映射、限值或温度数值。保存后可逐点配置区域/限值。</div>';
+    if (d.type === 'editPoint') return '<p class="ot-help">' + esc(d.point.unit) + '# · ' + esc(d.point.tag) + ' · ' + esc(TYPES[d.point.measurementType]) + '（机组和测量类型不可改；已有配置后 DCS Tag 作为终身身份不可改）</p><div class="ot-form-grid">' + field('名称', input('name', v.name, 'text', 'required maxlength="120"')) + field('位置', input('location', v.location, 'text', 'maxlength="240"')) + field('管屏（可空）', input('panel', v.panel, 'text', 'maxlength="100" placeholder="检修时现场确认后补填"')) + field('投产日期（可空）', input('commissionedAt', v.commissionedAt, 'date'), '用于“投产以来”累计；留空则从最早登记记录起算并标注。') + '</div><label class="ot-check"><input name="active" type="checkbox"' + checked(v.active) + '>启用测点（停用保留全部记录与历史）</label>' + field('编辑原因（必填）', textarea('reason', v.reason, 'required maxlength="1000"'));
+    return '<div class="ot-form-grid">' + field('创建方式', '<select name="mode">' + option('single', '单个测点', v.mode) + option('batch', '按名称序号批量创建', v.mode) + '</select>') + field('机组（必选单机组）', '<select name="unit" required>' + option('', '请选择机组', v.unit) + option('1', '1# 机组', v.unit) + option('2', '2# 机组', v.unit) + '</select>') + field('测量类型（创建后不可改）', '<select name="measurementType">' + Object.keys(TYPES).map(key => option(key, TYPES[key], v.measurementType)).join('') + '</select>') + (v.mode === 'batch' ? field('名称前缀', input('namePrefix', v.namePrefix, 'text', 'required maxlength="110" placeholder="如：低过出口集箱"')) + field('开始序号', input('seqStart', v.seqStart, 'number', 'required min="1" step="1"')) + field('结束序号', input('seqEnd', v.seqEnd, 'number', 'required min="1" step="1"')) : field('名称', input('name', v.name, 'text', 'required maxlength="120"')) + field('编号 / DCS Tag', input('tag', v.tag, 'text', 'maxlength="120"'), '可空；由服务端产生内部编号，不猜测 DCS Tag。')) + field('位置', input('location', v.location, 'text', 'maxlength="240"')) + (v.mode === 'batch' ? '' : field('管屏（可空）', input('panel', v.panel, 'text', 'maxlength="100" placeholder="暂不确定可留空，检修时补填"')) + field('投产日期（可空）', input('commissionedAt', v.commissionedAt, 'date'), '用于“投产以来”累计；留空则从最早登记记录起算并标注。')) + '</div><div class="ot-caution">' + (v.mode === 'batch' ? '批量最多 100 个，使用名称前缀 + 序号；编号由服务端生成，投产日期请在逐点编辑中补填。' : '') + '创建只登记测点，不自动建立真实区域、映射、限值或温度数值。保存后可逐点配置区域/限值；管屏可留空，待机组检修时现场确认。</div>';
   }
   function rangeValues(pair) { if (!pair) return []; return Array.from({ length: pair[1] - pair[0] + 1 }, (_, i) => pair[0] + i); }
   function regionField(index, key, label, html, help) { return field(label, html.replace('<select', '<select data-region="' + index + '" data-key="' + key + '"').replace('<input', '<input data-region="' + index + '" data-key="' + key + '"'), help); }
@@ -541,21 +679,23 @@
   function importMessages(row) { return (row.messages || []).join('；'); }
   function renderImportPreview(imp) {
     const s = imp.summary || { ok: 0, duplicate: 0, error: 0, total: 0 };
+    const autoRows = (imp.rows || []).filter(row => row.willCreate).length;
     const cards = [['可导入', count(s.ok), '写入共享台账'], ['跳过', count(s.duplicate), '已存在或文件内重复'], ['需处理', count(s.error), '未匹配 / 缺配置 / 数据无效']];
+    if (imp.kind === 'report' && autoRows) cards.splice(1, 0, ['自动建点', count(autoRows), '未登记点位；管屏留空待确认']);
     let html = '<div class="ot-stats">' + cards.map(([label, value, help]) => '<article class="ot-stat ot-panel"><h3>' + esc(label) + '</h3><strong>' + esc(value) + '</strong><small>' + esc(help) + '</small></article>').join('') + '</div>';
     html += '<p class="ot-help">文件来源：' + esc(imp.fileName || '粘贴内容') + ' · 共 ' + count(s.total) + ' 行；下表仅显示前 50 行。</p>';
-    if (s.ok > 0) html += '<label class="ot-check"><input type="checkbox" id="ot-import-confirm"' + checked(imp.confirmed) + '>已核对文件来源、点位匹配和限值，确认写入共享台账</label>';
+    if (s.ok > 0) html += '<label class="ot-check"><input type="checkbox" id="ot-import-confirm"' + checked(imp.confirmed) + '>' + (autoRows ? '已核对文件来源和点位；未登记点位将按报表自动建点（管屏留空，待检修确认），确认写入共享台账' : '已核对文件来源、点位匹配和限值，确认写入共享台账') + '</label>';
     html += '<div class="ot-actions">' + (s.ok > 0 ? '<button class="btn btn-primary" type="button" data-action="runImport"' + (imp.busy ? ' disabled' : '') + '>开始导入 ' + count(s.ok) + ' 条</button>' : '') + action('取消导入', 'closeImport') + '</div>';
     if (imp.progress) html += '<p class="ot-help" role="status">正在写入 ' + count(imp.progress.done) + ' / ' + count(imp.progress.total) + ' 条…</p>';
     const rows = (imp.rows || []).slice(0, 50);
     if (imp.kind === 'points') {
-      return html + table(['状态', '行', '机组', 'DCS Tag', '测点名称', '类型', '限值', '说明'], rows.map(row => '<tr><td>' + importStatus(row.status) + '</td><td>' + esc(row.item.row) + '</td><td>' + esc(row.item.unit) + '#</td><td>' + esc(row.item.tag) + '</td><td>' + esc(row.item.name) + '</td><td>' + esc(TYPES[row.item.measurementType] || row.item.measurementType) + '</td><td>' + esc(degrees(row.item.limitC)) + '</td><td>' + esc(importMessages(row)) + '</td></tr>'));
+      return html + table(['状态', '行', '机组', 'DCS Tag', '测点名称', '类型', '投产日期', '限值 / 管屏', '说明'], rows.map(row => '<tr><td>' + importStatus(row.status) + '</td><td>' + esc(row.item.row) + '</td><td>' + esc(row.item.unit) + '#</td><td>' + esc(row.item.tag) + '</td><td>' + esc(row.item.name) + '</td><td>' + esc(TYPES[row.item.measurementType] || row.item.measurementType) + '</td><td>' + esc(finite(row.item.commissionedAt) ? dateValue(row.item.commissionedAt) : '—') + '</td><td>' + esc(degrees(row.item.limitC)) + '<small>' + esc(row.item.panel || '管屏待确认') + '</small></td><td>' + esc(importMessages(row)) + '</td></tr>'));
     }
-    return html + table(['状态', '行', '点位', '开始', '结束', '最值', '限值', '说明'], rows.map(row => '<tr><td>' + importStatus(row.status) + '</td><td>' + esc(row.item.row) + '</td><td>' + esc(row.item.tag) + '</td><td>' + esc(time(row.item.startAt)) + '</td><td>' + esc(time(row.item.endAt)) + '</td><td>' + esc(degrees(row.item.temperatureC)) + '</td><td>' + esc(degrees(row.item.limitC)) + '</td><td>' + esc(importMessages(row)) + '</td></tr>'));
+    return html + table(['状态', '行', '点位', '开始', '结束', '最值', '限值 / 管屏', '说明'], rows.map(row => '<tr><td>' + (row.willCreate ? badge('自动建点', 'warn') : importStatus(row.status)) + '</td><td>' + esc(row.item.row) + '</td><td>' + esc(row.item.tag) + '<small>' + esc(row.item.name) + '</small></td><td>' + esc(time(row.item.startAt)) + '</td><td>' + esc(time(row.item.endAt)) + '</td><td>' + esc(degrees(row.item.temperatureC)) + '</td><td>' + esc(degrees(row.item.limitC)) + '<small>' + (row.willCreate ? '管屏待确认' : '已登记测点') + '</small></td><td>' + esc(importMessages(row) || (row.willCreate ? '未登记点位，导入时自动建点' : '')) + '</td></tr>'));
   }
   function renderImportResult(imp) {
     const r = imp.result;
-    let html = '<div class="ot-alert"><strong>导入完成</strong> 已导入 ' + count(r.created) + ' 条；跳过 ' + count(r.skipped) + ' 条；失败 ' + count((r.failed || []).length) + ' 条。' + (r.failed && r.failed.length ? '' : '') + '</div>';
+    let html = '<div class="ot-alert"><strong>导入完成</strong> 已导入 ' + count(r.created) + ' 条；跳过 ' + count(r.skipped) + ' 条；失败 ' + count((r.failed || []).length) + ' 条。' + (r.createdPoints ? ' 自动建点 ' + count(r.createdPoints) + ' 个（管屏留空，待检修确认）。' : '') + '</div>';
     if (r.failed && r.failed.length) html += '<div class="ot-alert"><ul>' + r.failed.map(item => '<li>行 ' + esc(item.row || '—') + '：' + esc(item.message) + '</li>').join('') + '</ul></div>';
     return html + '<div class="ot-actions">' + action('关闭导入', 'closeImport') + action('刷新共享数据', 'refresh') + '</div>';
   }
@@ -568,7 +708,7 @@
     let html = '<section class="ot-panel ot-composer" aria-label="' + title + '"><div class="ot-section-head"><h3>' + title + '</h3>' + action('关闭导入', 'closeImport') + '</div>';
     html += '<p class="ot-help">' + (isPoints
       ? '支持 CSV / XLS / XLSX。按“机组 + DCS Tag”建点；已有 Tag 跳过，不覆盖；限值写入新配置（基线生效时间 2000-01-01），映射保持待确认。'
-      : '支持 DCS 月报 .xls / .xlsx / CSV。按“点位”匹配已登记测点；预览确认后才写入，相同区间自动跳过。') + '</p>';
+      : '支持 DCS 月报 .xls / .xlsx / CSV。按“点位”匹配已登记测点；未登记点位自动建点（管屏留空，待检修确认），预览确认后才写入，相同区间自动跳过。') + '</p>';
     if (!imp.rows && !imp.result) {
       html += '<div class="ot-form-grid">' + field('选择文件', '<input id="ot-import-file" type="file" accept=".csv,.xls,.xlsx"' + (imp.busy ? ' disabled' : '') + '>', isPoints ? '列：机组、DCS Tag、测点名称、测量类型、安装位置、温度限值(℃)、限值依据' : '列：点位、描述、限值、最值、开始时间、结束时间、总时长(秒)') + field('或粘贴 CSV', '<textarea id="ot-import-text" rows="6" placeholder="' + esc(isPoints ? '机组,DCS Tag,测点名称,测量类型,安装位置,温度限值(℃),限值依据' : '点位,描述,限值,最值,开始时间,结束时间,总时长(秒)') + '"></textarea>') + '</div>';
       html += '<div class="ot-actions">' + action('解析粘贴内容', 'parseImportText', null, 'btn-primary') + (imp.busy ? '<span class="ot-help" role="status">正在读取文件…</span>' : '') + '</div>';
@@ -586,7 +726,7 @@
     const api = await ensureImportCore();
     await ensureAllPoints();
     if (imp.kind === 'points') {
-      const parsed = api.normalizePointMatrix(matrix);
+      const parsed = api.normalizePointMatrix(matrix, core().parseTime);
       const existing = new Set(knownPoints().map(p => p.unit + '|' + String(p.tag || '').toUpperCase()));
       const evaluated = api.evaluatePoints(parsed.items, existing);
       imp.rows = evaluated.rows; imp.summary = evaluated.summary;
@@ -595,7 +735,7 @@
       const existing = await loadExistingFingerprints(parsed.items);
       const pointsByTag = {};
       knownPoints().forEach(p => { pointsByTag[p.unit + '|' + String(p.tag || '').toUpperCase()] = p; });
-      const evaluated = api.evaluateReport(parsed.items, { core: core(), now: now(), pointsByTag, configsFor, existing });
+      const evaluated = api.evaluateReport(parsed.items, { core: core(), now: now(), pointsByTag, configsFor, existing, autoCreate: true });
       imp.rows = evaluated.rows; imp.summary = evaluated.summary;
     }
     imp.fileName = fileName || '粘贴内容';
@@ -624,7 +764,8 @@
     for (let offset = 0; offset < items.length; offset += 100) {
       const chunk = items.slice(offset, offset + 100);
       const points = chunk.map(item => {
-        const point = { unit: item.unit, tag: item.tag, name: item.name, measurementType: item.measurementType, location: item.location, active: item.active };
+        const point = { unit: item.unit, tag: item.tag, name: item.name, measurementType: item.measurementType, location: item.location, panel: item.panel || '', active: item.active };
+        if (item.commissionedAt !== null && item.commissionedAt !== undefined) point.commissionedAt = item.commissionedAt;
         if (item.limitC !== null) point.config = { effectiveFrom: core().parseTime('2000-01-01T00:00:00'), regions: [], mappingConfirmed: false, mappingBasis: '', limitC: item.limitC, limitBasis: item.limitBasis };
         return point;
       });
@@ -641,10 +782,51 @@
   }
   async function importRecords(imp, summary) {
     const api = importCore(), rows = imp.rows.filter(row => row.importable);
-    let created = 0, skipped = summary.duplicate; const failed = [];
-    imp.progress = { done: 0, total: rows.length };
+    let created = 0, skipped = summary.duplicate, createdPoints = 0; const failed = [];
+    const createGroups = new Map();
+    rows.filter(row => row.willCreate).forEach(row => {
+      const key = row.item.unit + '|' + String(row.item.tag || '').toUpperCase();
+      if (!createGroups.has(key)) createGroups.set(key, { item: row.item, point: row.draftPoint, rows: [] });
+      createGroups.get(key).rows.push(row);
+    });
+    if (createGroups.size) {
+      const groups = Array.from(createGroups.values());
+      imp.progress = { done: 0, total: groups.length, phase: '自动建点' };
+      for (let offset = 0; offset < groups.length; offset += 100) {
+        const chunk = groups.slice(offset, offset + 100);
+        const points = chunk.map(group => ({
+          unit: group.point.unit, tag: group.point.tag, name: group.point.name,
+          measurementType: group.point.measurementType, location: '', panel: '', active: true,
+          config: {
+            effectiveFrom: core().parseTime('2000-01-01T00:00:00'), regions: [], mappingConfirmed: false, mappingBasis: '',
+            limitC: group.item.limitC, limitBasis: '月度超温报表限值（待定值单复核）'
+          }
+        }));
+        const body = { points: points, reason: '导入月度超温报表自动建点（管屏留空待确认）：' + (imp.fileName || '文件') };
+        const requestId = api.stableId('imp', [JSON.stringify(body)]);
+        try {
+          const result = await request('/points', { method: 'POST', body: Object.assign({ requestId }, body) });
+          const pointsByTag = new Map((result.items || []).map(point => [point.unit + '|' + String(point.tag || '').toUpperCase(), point]));
+          const configsByPoint = new Map((result.configs || []).map(config => [config.pointId, config]));
+          chunk.forEach(group => {
+            const key = group.item.unit + '|' + String(group.item.tag || '').toUpperCase();
+            const point = pointsByTag.get(key), config = point ? configsByPoint.get(point.id) : null;
+            if (!point || !config) {
+              group.rows.forEach(row => { row.importable = false; failed.push({ row: row.item.row, message: '自动建点响应缺少测点或限值配置' }); });
+              return;
+            }
+            createdPoints += 1;
+            group.rows.forEach(row => { row.point = point; row.config = config; });
+          });
+        } catch (e) {
+          chunk.forEach(group => group.rows.forEach(row => { row.importable = false; failed.push({ row: row.item.row, message: '自动建点失败：' + e.message }); }));
+        }
+      }
+    }
+    imp.progress = { done: 0, total: rows.length, phase: '写入记录' };
     for (let i = 0; i < rows.length; i += 1) {
       const row = rows[i];
+      if (!row.importable || !row.point || !row.config) continue;
       const record = api.recordFrom(row.item, row.point, row.config, imp.fileName);
       const body = { record: record };
       const requestId = api.stableId('imp', [JSON.stringify(body)]);
@@ -659,12 +841,12 @@
       imp.progress.done = i + 1;
       if (i % 5 === 4) renderForm();
     }
-    return { created, skipped, failed };
+    return { created, skipped, createdPoints, failed };
   }
   async function runImport() {
     const imp = S.import;
     if (!imp || !imp.rows || imp.busy) return;
-    if (!imp.confirmed) { imp.error = '请先勾选“已核对文件来源、点位匹配和限值”'; renderForm(); return; }
+    if (!imp.confirmed) { imp.error = '请先勾选“已核对文件来源和点位”'; renderForm(); return; }
     if (!imp.summary || imp.summary.ok < 1) { imp.error = '没有可导入的数据'; renderForm(); return; }
     const summary = imp.summary;
     imp.busy = true; imp.error = ''; renderForm();
@@ -773,6 +955,9 @@
       if (!['1', '2'].includes(v.unit)) errors.push('机组必须选择 1# 或 2#，不能选全厂');
       if (!Object.prototype.hasOwnProperty.call(TYPES, v.measurementType)) errors.push('请选择有效测量类型');
       let names = [];
+      const commissionedAt = blank(v.commissionedAt) ? null : dateEpoch(v.commissionedAt);
+      if (!blank(v.commissionedAt) && commissionedAt === null) errors.push('投产日期无效，请使用公历日期');
+      else if (commissionedAt !== null && commissionedAt > now()) errors.push('投产日期不能填写未来时间');
       if (v.mode === 'batch') {
         const start = Number(v.seqStart), end = Number(v.seqEnd);
         if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start || end - start + 1 > 100) errors.push('批量起止必须为正整数，结束不早于开始，单次最多 100 个');
@@ -780,11 +965,14 @@
         if (!errors.length) names = Array.from({ length: end - start + 1 }, (_, i) => v.namePrefix.trim() + (start + i));
       } else { if (!String(v.name).trim()) errors.push('名称不能为空'); names = [String(v.name).trim()]; }
       if (errors.length) return { errors };
-      return { method: 'POST', path: '/points', body: { points: names.map(name => ({ unit: v.unit, name, tag: v.mode === 'batch' ? '' : String(v.tag || '').trim(), measurementType: v.measurementType, location: String(v.location || '').trim(), active: true })) } };
+      return { method: 'POST', path: '/points', body: { points: names.map(name => Object.assign({ unit: v.unit, name, tag: v.mode === 'batch' ? '' : String(v.tag || '').trim(), measurementType: v.measurementType, location: String(v.location || '').trim(), panel: v.mode === 'batch' ? '' : String(v.panel || '').trim(), active: true }, v.mode !== 'batch' && commissionedAt !== null ? { commissionedAt } : {})) } };
     }
     if (d.type === 'editPoint') {
       if (!String(v.name).trim()) errors.push('名称不能为空'); if (!String(v.reason).trim()) errors.push('编辑原因不能为空');
-      return errors.length ? { errors } : { method: 'PUT', path: '/points/' + encodeURIComponent(d.point.id), body: { revision: d.point.revision, name: v.name.trim(), location: v.location.trim(), active: v.active, reason: v.reason.trim() } };
+      const commissionedAt = blank(v.commissionedAt) ? null : dateEpoch(v.commissionedAt);
+      if (!blank(v.commissionedAt) && commissionedAt === null) errors.push('投产日期无效，请使用公历日期');
+      else if (commissionedAt !== null && commissionedAt > now()) errors.push('投产日期不能填写未来时间');
+      return errors.length ? { errors } : { method: 'PUT', path: '/points/' + encodeURIComponent(d.point.id), body: { revision: d.point.revision, name: v.name.trim(), location: v.location.trim(), panel: String(v.panel || '').trim(), commissionedAt, active: v.active, reason: v.reason.trim() } };
     }
     if (d.type === 'config') {
       const p = previewRegions(d); S.preview = p;
@@ -857,7 +1045,7 @@
   async function loadRemote() {
     const d = S.draft; if (!d || !S.conflict || !window.confirm('显式读取远端版本：测点/记录编辑将替换本地输入；配置草稿保留但更新版本并要求重新确认。继续？')) return;
     try {
-      if (d.type === 'config' || d.type === 'editPoint') { const p = await freshPoint(d.point.id); d.point = clone(p); if (d.type === 'editPoint') d.data = { name: p.name, location: p.location || '', active: p.active !== false, reason: '' }; else d.data.confirmBasis = false; }
+      if (d.type === 'config' || d.type === 'editPoint') { const p = await freshPoint(d.point.id); d.point = clone(p); if (d.type === 'editPoint') d.data = { name: p.name, location: p.location || '', panel: p.panel || '', active: p.active !== false, reason: '' }; else d.data.confirmBasis = false; }
       else if (d.original) {
         const remote = S.conflict.current || S.conflict.currentRecord || S.conflict.details && S.conflict.details.current;
         if (!remote || remote.id !== d.original.id || !remote.kind) throw fail('冲突响应未包含完整远端记录，请收起草稿并在记录列表刷新查看');
@@ -896,10 +1084,20 @@
       else if (name === 'tab') selectTab(id);
       else if (name === 'unit') { S.filters.unit = id; S.filters.pointId = ''; resetPage(); renderFilters(); await refresh(); }
       else if (name === 'focusPoint') { if (!id) return; S.filters.pointId = id; resetPage(); renderFilters(); await refresh(); }
-      else if (name === 'filterMonth') {
-        if (!/^\d{4}-\d{2}$/.test(String(id || ''))) return;
-        S.filters.from = core().toInputTime(monthStartOf(id));
-        S.filters.to = core().toInputTime(monthStartOf(nextMonthKey(id)));
+      else if (name === 'focusMonthPoint') {
+        const month = button.dataset.month;
+        if (!id || !/^\d{4}-\d{2}$/.test(String(month || ''))) return;
+        S.filters.pointId = id;
+        S.filters.from = core().toInputTime(monthStartOf(month));
+        S.filters.to = core().toInputTime(monthStartOf(nextMonthKey(month)));
+        resetPage(); renderFilters(); await refresh();
+      }
+      else if (name === 'focusYearPoint') {
+        const year = button.dataset.year;
+        if (!id || !/^\d{4}$/.test(String(year || ''))) return;
+        S.filters.pointId = id;
+        S.filters.from = core().toInputTime(yearStartOf(year));
+        S.filters.to = core().toInputTime(yearStartOf(nextYearKey(year)));
         resetPage(); renderFilters(); await refresh();
       }
       else if (name === 'reset') { S.filters = { unit: '', sys: '', pointId: '', q: '', from: '', to: '' }; S.tubeCode = ''; resetPage(); renderFilters(); await refresh(); }
@@ -942,7 +1140,7 @@
     else { S.error = '页面切换入口尚未接入，请从导航进入“超温分析”'; renderSync(); }
     if (active()) refresh();
   }
-  window.BTOvertemperature = { init, refresh, request, openForTube, formatDuration };
+  window.BTOvertemperature = { init, refresh, request, openForTube, formatDuration, monthPointMatrix, yearPointMatrix, lifetimeMatrix };
   function start() {
     init();
     // The bundle entry point refreshes after evidence wiring finishes. Static

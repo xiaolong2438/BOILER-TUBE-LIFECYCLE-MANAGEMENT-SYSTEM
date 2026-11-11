@@ -79,12 +79,18 @@ export const getSummary = endpoint(async context => {
   const records = selectRecords(data, points, { ...filter, from: undefined, to: undefined, includeVoid: false });
   const window = { from: filter.from, to: filter.to };
   const summary = core().summarize(records, configs, window);
+  const recordsByPoint = new Map();
+  records.forEach(record => {
+    if (!recordsByPoint.has(record.pointId)) recordsByPoint.set(record.pointId, []);
+    recordsByPoint.get(record.pointId).push(record);
+  });
   const byPoint = points.map(point => {
     const versions = configs.filter(config => config.pointId === point.id);
-    return { point, configs: versions, summary: core().summarize(records.filter(record => record.pointId === point.id), versions, window) };
+    const own = recordsByPoint.get(point.id) || [];
+    return { point, configs: versions, summary: core().summarize(own, versions, window), lifetime: core().lifetimeSummary(own, versions, point, { now: context.now }) };
   });
   const tubeEvidence = filter.tubeCode ? core().summarizeTube(filter.tubeCode, points, configs, records, { ...window, installedAt: filter.installedAt }) : undefined;
-  return { summary, byPoint, ...(tubeEvidence ? { tubeEvidence } : {}), durationSemantics: 'union_across_points_not_sum', serverTime: context.now };
+  return { summary, byPoint, ...(tubeEvidence ? { tubeEvidence } : {}), durationSemantics: 'union_across_points_not_sum', lifetimeSemantics: 'per_exact_unit_tag_since_commissioning', serverTime: context.now };
 });
 export const listHistory = endpoint(async context => {
   const filter = filters(context.request);

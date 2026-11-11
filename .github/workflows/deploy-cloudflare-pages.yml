@@ -47,6 +47,7 @@ jobs:
           python tests/resolve_d1_id.test.py
           python -m pip install openpyxl==3.1.5
           python tests/test_clean_boiler_film_records.py
+          python tests/test_clean_overtemperature_report.py
 
       - name: Prepare static site
         shell: bash

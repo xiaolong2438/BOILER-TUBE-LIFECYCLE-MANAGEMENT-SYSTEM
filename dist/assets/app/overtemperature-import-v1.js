@@ -21,7 +21,9 @@
     limitBasis: ['限值依据', '依据', 'limitbasis'],
     active: ['启用状态', '状态', 'active'],
     system: ['系统码', '系统', 'system'],
-    group: ['测点分组', '分组', 'group']
+    group: ['测点分组', '分组', 'group'],
+    panel: ['管屏', '管屏/部位', 'panel'],
+    commissionedAt: ['投产日期', '投运日期', '投运时间', 'commissionedat']
   };
   var REPORT_ALIASES = {
     tag: ['点位', 'dcstag', '点位编号', '测点编号', 'tag'],
@@ -89,6 +91,35 @@
     var match = /^DCS([12])_/i.exec(text(tag));
     return match ? match[1] : '';
   }
+  var SYSTEM_PATTERNS = [
+    [/全大屏过热器|大屏过热器/, 'DPGRQ'],
+    [/后屏过热器/, 'HPGRQ'],
+    [/高温过热器|高过/, 'GGRQ'],
+    [/低温过热器|低过/, 'DGRQ'],
+    [/高温再热器|高再/, 'GZRQ'],
+    [/低温再热器|低再/, 'DZRQ'],
+    [/省煤器/, 'SMQ'],
+    [/水冷壁/, 'SLB']
+  ];
+  function inferMeasurementType(name) {
+    var raw = text(name);
+    if (/集箱/.test(raw)) return 'header_wall';
+    if (/汽温|蒸汽温度/.test(raw)) return 'steam';
+    if (/烟温|烟气/.test(raw)) return 'flue';
+    return 'tube_wall';
+  }
+  function inferSystem(name) {
+    var raw = text(name);
+    for (var i = 0; i < SYSTEM_PATTERNS.length; i += 1) if (SYSTEM_PATTERNS[i][0].test(raw)) return SYSTEM_PATTERNS[i][1];
+    return '';
+  }
+  function autoPointFrom(item) {
+    return {
+      unit: item.unit, tag: item.tag, name: item.name || item.tag,
+      measurementType: inferMeasurementType(item.name), system: inferSystem(item.name),
+      location: '', panel: '', active: true
+    };
+  }
   function parseDurationSeconds(value) {
     if (value === '' || value === null || value === undefined) return { seconds: null, kind: 'empty' };
     if (typeof value === 'number') {
@@ -130,17 +161,20 @@
       pad(match[4] || 0) + ':' + pad(match[5] || 0) + ':' + pad(match[6] || 0) + zone;
     return parseTime(iso);
   }
-  function normalizePointMatrix(matrix) {
+  function normalizePointMatrix(matrix, parseTime) {
     var parsed = table(matrix);
     var items = [], errors = [];
     parsed.rows.forEach(function (row) {
       var tag = text(pick(row, POINT_ALIASES.tag));
       var name = text(pick(row, POINT_ALIASES.name));
       var unitValue = text(pick(row, POINT_ALIASES.unit));
+      var commissionedRaw = pick(row, POINT_ALIASES.commissionedAt);
+      var commissionedAt = parseTime ? parseTimestamp(commissionedRaw, parseTime) : null;
       var tagUnit = unitFromTag(tag);
       var unitMatch = /([12])/.exec(unitValue);
       var unit = unitMatch ? unitMatch[1] : tagUnit;
       var messages = [];
+      if (text(commissionedRaw) && commissionedAt === null) messages.push('投产日期无效，应为 YYYY-MM-DD');
       if (tagUnit && unitMatch && tagUnit !== unitMatch[1]) messages.push('机组列与 DCS Tag 前缀不一致');
       var measurementType = normalizeType(pick(row, POINT_ALIASES.measurementType));
       var limitC = number(pick(row, POINT_ALIASES.limitC));
@@ -155,10 +189,12 @@
       items.push({
         row: row.__row, unit: unit, tag: tag, name: name, measurementType: measurementType,
         location: text(pick(row, POINT_ALIASES.location)),
+        commissionedAt: commissionedAt,
         limitC: limitC, limitBasis: limitBasis,
         active: toBool(pick(row, POINT_ALIASES.active), true),
         system: text(pick(row, POINT_ALIASES.system)),
         group: text(pick(row, POINT_ALIASES.group)),
+        panel: text(pick(row, POINT_ALIASES.panel)),
         errors: messages
       });
     });
@@ -234,13 +270,19 @@
   }
   function evaluateReport(items, context) {
     var core = context.core, now = context.now, seen = {}, rows = [];
+    var autoCreate = context.autoCreate === true;
     var summary = { total: items.length, ok: 0, duplicate: 0, error: 0 };
     (items || []).forEach(function (item) {
-      var row = { item: item, point: null, config: null, status: 'ok', importable: true, messages: (item.errors || []).slice() };
+      var row = { item: item, point: null, config: null, draftPoint: null, willCreate: false, status: 'ok', importable: true, messages: (item.errors || []).slice() };
       var key = item.unit + '|' + text(item.tag).toUpperCase();
       row.point = context.pointsByTag ? context.pointsByTag[key] : null;
-      if (!row.messages.length && !row.point) row.messages.push('未找到该机组与点位对应的测点，请先导入测点台账');
-      if (!row.messages.length) {
+      if (!row.messages.length && !row.point) {
+        if (!autoCreate) row.messages.push('未找到该机组与点位对应的测点，请先导入测点台账');
+        else if (item.limitC === null || item.limitC <= 0) row.messages.push('未登记测点，且报表缺少有效限值，无法自动建点');
+        else if (!text(item.name)) row.messages.push('未登记测点，且报表缺少描述，无法自动建点');
+        else { row.willCreate = true; row.draftPoint = autoPointFrom(item); }
+      }
+      if (!row.messages.length && row.point) {
         var configs = context.configsFor(row.point.id);
         row.config = core.resolveConfig(configs, row.point.id, item.startAt);
         if (!row.config) row.messages.push('开始时间没有唯一有效配置，无法确定当时限值');
@@ -255,11 +297,12 @@
           if (boundary !== null && item.endAt > boundary) row.messages.push('区间跨越配置生效边界，需先拆分或核对配置版本');
         }
       }
+      if (!row.messages.length && row.willCreate && item.temperatureC < item.limitC) row.messages.push('最值 ' + item.temperatureC + '℃ 低于限值 ' + item.limitC + '℃，不能作为超温区间');
       if (!row.messages.length && item.endAt > now) row.messages.push('记录时间不得位于未来');
-      var fingerprint = row.point ? [row.point.id, item.startAt, item.endAt, 'interval'].join('|') : '';
-      if (!row.messages.length && seen[fingerprint]) { row.status = 'duplicate'; row.importable = false; row.messages = ['文件内重复事件，仅保留首条']; }
-      else if (!row.messages.length && context.existing && context.existing.has(fingerprint)) { row.status = 'duplicate'; row.importable = false; row.messages = ['共享台账中已存在相同区间，跳过']; }
-      seen[fingerprint] = true;
+      var fingerprint = row.point ? [row.point.id, item.startAt, item.endAt, 'interval'].join('|') : row.willCreate ? ['new', item.unit, text(item.tag).toUpperCase(), item.startAt, item.endAt].join('|') : '';
+      if (!row.messages.length && fingerprint && seen[fingerprint]) { row.status = 'duplicate'; row.importable = false; row.messages = ['文件内重复事件，仅保留首条']; }
+      else if (!row.messages.length && fingerprint && row.point && context.existing && context.existing.has(fingerprint)) { row.status = 'duplicate'; row.importable = false; row.messages = ['共享台账中已存在相同区间，跳过']; }
+      if (fingerprint) seen[fingerprint] = true;
       if (row.messages.length && row.status !== 'duplicate') { row.status = 'error'; row.importable = false; }
       summary[row.status === 'ok' ? 'ok' : row.status === 'duplicate' ? 'duplicate' : 'error'] += 1;
       rows.push(row);
@@ -285,6 +328,7 @@
     headerKey: headerKey, table: table, number: number,
     parseDurationSeconds: parseDurationSeconds, parseTimestamp: parseTimestamp,
     normalizeType: normalizeType, unitFromTag: unitFromTag,
+    inferMeasurementType: inferMeasurementType, inferSystem: inferSystem, autoPointFrom: autoPointFrom,
     normalizePointMatrix: normalizePointMatrix, normalizeReportMatrix: normalizeReportMatrix,
     fingerprintOf: fingerprintOf, stableId: stableId,
     evaluatePoints: evaluatePoints, evaluateReport: evaluateReport,

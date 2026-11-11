@@ -76,11 +76,13 @@ test('session validation, missing binding and missing migration give explicit er
 
 test('batch creation is all-or-none, tags unique per unit, internal ids stable, and request retries exact', async t => {
   const { db, second } = fixture(t);
-  const payload = { requestId: 'batch-1', points: [point('p1', { tag: '' }), point('p2')] };
+  const payload = { requestId: 'batch-1', points: [point('p1', { tag: '', panel: '前屏' }), point('p2')] };
   const first = await call(db, pointsPost, 'POST', 'points', payload);
   assert.equal(first.status, 200, JSON.stringify(first.body));
   assert.equal(first.body.items[0].tag, 'INTERNAL-p1');
   assert.equal(first.body.items[0].createdBy, 'alice');
+  assert.equal(first.body.items[0].panel, '前屏', '管屏随测点持久化，供检修后回填');
+  assert.equal(first.body.items[1].panel, '', '未提供的管屏保持留空');
   const retry = await call(second, pointsPost, 'POST', 'points', { points: payload.points, requestId: payload.requestId });
   assert.deepEqual(retry, first);
   assert.equal(count(db, 'temperature_points'), 2);
@@ -98,6 +100,58 @@ test('batch creation is all-or-none, tags unique per unit, internal ids stable, 
   assert.equal(count(db, 'temperature_points'), 2);
   const otherUnit = await seed(db, [point('p5', { unit: '2', tag: 'SYNTH-p2' })]);
   assert.equal(otherUnit.items[0].unit, '2');
+});
+
+test('DCS tags canonicalize to uppercase, stay unique per unit and freeze after configuration', async t => {
+  const { db } = fixture(t);
+  const created = await seed(db, [point('p1', { tag: 'dcs1_lba10ct003', commissionedAt: BASE - 86400000 })]);
+  assert.equal(created.items[0].tag, 'DCS1_LBA10CT003');
+  assert.equal(created.items[0].commissionedAt, BASE - 86400000);
+  const duplicate = await call(db, pointsPost, 'POST', 'points', { requestId: 'case-duplicate', points: [point('p2', { tag: 'DCS1_LBA10CT003' })] });
+  assert.equal(duplicate.status, 409);
+  assert.equal(count(db, 'temperature_points'), 1);
+  const frozen = await call(db, pointPut, 'PUT', 'points/p1', { requestId: 'tag-freeze', revision: 1, tag: 'DCS1_LBA10CT004', commissionedAt: BASE - 2 * 86400000, reason: '试图修改点位编号' }, 'alice', { id: 'p1' });
+  assert.equal(frozen.status, 422);
+  assert.equal(frozen.body.code, 'IMMUTABLE_POINT_TAG', JSON.stringify(frozen.body));
+  const edited = await call(db, pointPut, 'PUT', 'points/p1', { requestId: 'commission-edit', revision: 1, commissionedAt: BASE - 2 * 86400000, reason: '补录投产日期' }, 'alice', { id: 'p1' });
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+  assert.equal(edited.body.item.commissionedAt, BASE - 2 * 86400000);
+  assert.equal(edited.body.item.tag, 'DCS1_LBA10CT003');
+  const bare = await call(db, pointsPost, 'POST', 'points', { requestId: 'bare-create', points: [{ unit: '1', tag: 'lower_tag', name: '无配置测点', measurementType: 'tube_wall', location: '', active: true }] });
+  assert.equal(bare.status, 200, JSON.stringify(bare.body));
+  assert.equal(bare.body.items[0].tag, 'LOWER_TAG');
+  const renamed = await call(db, pointPut, 'PUT', 'points/' + bare.body.items[0].id, { requestId: 'bare-rename', revision: 1, tag: 'new_tag', reason: '纠正编号' }, 'alice', { id: bare.body.items[0].id });
+  assert.equal(renamed.status, 200, JSON.stringify(renamed.body));
+  assert.equal(renamed.body.item.tag, 'NEW_TAG');
+  const invalidDate = await call(db, pointsPost, 'POST', 'points', { requestId: 'bad-commission', points: [point('p3', { tag: 'BAD-DATE', commissionedAt: 'not-a-date' })] });
+  assert.equal(invalidDate.status, 422);
+  const futureDate = await call(db, pointsPost, 'POST', 'points', { requestId: 'future-commission', points: [point('p4', { tag: 'FUTURE-DATE', commissionedAt: Date.now() + 86400000 })] });
+  assert.equal(futureDate.status, 422);
+  assert.equal(futureDate.body.code, 'INVALID_COMMISSIONED_AT');
+  assert.equal(count(db, 'temperature_points'), 2);
+});
+
+test('summary returns lifetime accumulation and exceedance bands per exact point', async t => {
+  const { db } = fixture(t);
+  await seed(db, [point('p1', { commissionedAt: BASE - 2 * HOUR }), point('p2', { tag: 'SYNTH-P2' })]);
+  assert.equal((await addRecord(db, record('p1-a', 'p1', BASE + HOUR, BASE + 2 * HOUR, { temperatureC: 505 }))).status, 200);
+  assert.equal((await addRecord(db, record('p1-b', 'p1', BASE + 2 * HOUR, BASE + 3 * HOUR, { temperatureC: 520 }))).status, 200);
+  assert.equal((await addRecord(db, record('p2-a', 'p2', BASE + HOUR, BASE + 3 * HOUR, { temperatureC: 510 }))).status, 200);
+  const response = await call(db, summaryGet, 'GET', 'summary?pointId=p1,p2&from=' + BASE + '&to=' + (BASE + 4 * HOUR));
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.lifetimeSemantics, 'per_exact_unit_tag_since_commissioning');
+  const p1 = response.body.byPoint.find(row => row.point.id === 'p1');
+  const p2 = response.body.byPoint.find(row => row.point.id === 'p2');
+  assert.equal(p1.lifetime.basis, 'commissioned');
+  assert.equal(p1.lifetime.fromAt, BASE - 2 * HOUR);
+  assert.equal(p1.lifetime.durationMs, 2 * HOUR);
+  assert.deepEqual(p1.lifetime.bands.map(band => band.ms), [0, HOUR, 0, HOUR]);
+  assert.equal(p1.lifetime.bandDurationMs, 2 * HOUR);
+  assert.equal(p2.lifetime.basis, 'earliest_record');
+  assert.equal(p2.lifetime.fromAt, BASE + HOUR);
+  assert.equal(p2.lifetime.durationMs, 2 * HOUR);
+  assert.deepEqual(p2.lifetime.bands.map(band => band.ms), [0, 0, 2 * HOUR, 0]);
+  assert.equal(response.body.byPoint.reduce((sum, row) => sum + row.lifetime.durationMs, 0), 4 * HOUR);
 });
 
 test('two clients retry same request while first response is in flight without duplicate data', async t => {
@@ -131,7 +185,10 @@ test('two-client revision conflict preserves winning point and writes no phantom
   assert.equal(count(db, 'temperature_tx_guard'), 0);
   const identity = await call(db, pointPut, 'PUT', 'points/p1', { requestId: 'identity-change', revision: 2, unit: '2', reason: '修改机组' }, 'alice', { id: 'p1' });
   assert.equal(identity.status, 422);
-  const disabled = await call(db, pointPut, 'PUT', 'points/p1', { requestId: 'disable', revision: 2, active: false, reason: '停用' }, 'alice', { id: 'p1' });
+  const panel = await call(db, pointPut, 'PUT', 'points/p1', { requestId: 'panel-set', revision: 2, panel: '后屏', reason: '检修确认管屏' }, 'alice', { id: 'p1' });
+  assert.equal(panel.status, 200);
+  assert.equal(panel.body.item.panel, '后屏', '检修确认后可回填管屏');
+  const disabled = await call(db, pointPut, 'PUT', 'points/p1', { requestId: 'disable', revision: 3, active: false, reason: '停用' }, 'alice', { id: 'p1' });
   assert.equal(disabled.status, 200);
   assert.equal((await call(db, pointsGet, 'GET', 'points')).body.total, 1);
   assert.equal((await call(db, pointsGet, 'GET', 'points?active=true')).body.total, 0);

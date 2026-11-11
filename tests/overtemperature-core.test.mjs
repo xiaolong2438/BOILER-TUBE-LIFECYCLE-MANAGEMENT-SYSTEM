@@ -32,7 +32,7 @@ const bad = (output, pattern) => { assert.equal(output.ok, false); assert.equal(
 const inputCode = '1G-GGRQ-GQ-L001-F001-Q';
 
 test('stable public API; IIFE exposes browser, worker globalThis and CommonJS', async () => {
-  const expected = ['parseTime','formatTime','toInputTime','validateRegion','expandRegion','matchesRegion','validateConfig','resolveConfig','validateRecord','mergeIntervals','summarize','summarizeTube'];
+  const expected = ['parseTime','formatTime','toInputTime','pointIdentity','validateRegion','expandRegion','matchesRegion','validateConfig','resolveConfig','validateRecord','mergeIntervals','summarize','bandSummary','lifetimeSummary','summarizeTube'];
   expected.forEach(key => assert.equal(typeof Core[key], 'function', key));
   assert.equal(globalThis.BTOvertemperatureCore, Core);
   const sandbox = { window:{}, module:{ exports:{} } };
@@ -424,6 +424,93 @@ test('summary respects historical limits and excludes cross-configuration durati
   assert.equal(s.durationMs, 2*H);
   assert.equal(s.peakC, 710);
   assert.equal(s.maxExcessC, 20);
+});
+
+test('point identity is unit plus exact DCS tag, never the name or description', () => {
+  assert.equal(Core.pointIdentity({ unit:'1', tag:'DCS1_LBA10CT003', name:'测点甲' }), '1|DCS1_LBA10CT003');
+  assert.equal(Core.pointIdentity({ unit:'1', tag:'dcs1_lba10ct003', name:'测点乙' }), '1|DCS1_LBA10CT003');
+  assert.notEqual(Core.pointIdentity({ unit:'2', tag:'DCS1_LBA10CT003', name:'测点甲' }), Core.pointIdentity({ unit:'1', tag:'DCS1_LBA10CT003', name:'测点甲' }));
+  assert.equal(Core.pointIdentity({ unit:'1', tag:'', name:'只有名称' }), null);
+  assert.equal(Core.pointIdentity(null), null);
+  assert.equal(Core.BAND_POLICY.id, 'exceedance-5-10-20');
+  assert.deepEqual(Core.BAND_POLICY.edgesC, [5,10,20]);
+});
+
+test('band summary uses at-limit and exceedance boundaries without inventing a band', () => {
+  const records = [
+    record({ id:'below', startAt:t0, endAt:t0+H, temperatureC:599 }),
+    record({ id:'at-limit', startAt:t0+H, endAt:t0+2*H, temperatureC:600 }),
+    record({ id:'b0', startAt:t0+2*H, endAt:t0+3*H, temperatureC:604.9 }),
+    record({ id:'b1-low', startAt:t0+3*H, endAt:t0+4*H, temperatureC:605 }),
+    record({ id:'b1-high', startAt:t0+4*H, endAt:t0+5*H, temperatureC:609.9 }),
+    record({ id:'b2', startAt:t0+5*H, endAt:t0+6*H, temperatureC:610 }),
+    record({ id:'b3', startAt:t0+6*H, endAt:t0+7*H, temperatureC:620 })
+  ];
+  const out = Core.bandSummary(records, [config()], { from:t0, to:t0+7*H });
+  assert.equal(out.recordCount, 6);
+  assert.equal(out.method, 'interval_peak_highest_overlap');
+  assert.equal(out.policy.id, 'exceedance-5-10-20');
+  assert.deepEqual(out.bands.map(band => band.label), ['0～<5℃','5～<10℃','10～<20℃','≥20℃']);
+  assert.deepEqual(out.bands.map(band => band.ms), [2*H,2*H,H,H]);
+  assert.equal(out.durationMs, 6*H);
+  assert.equal(out.bands.reduce((sum, band) => sum + band.ms, 0), out.durationMs);
+});
+
+test('band overlap is assigned once to the highest band so band totals equal union duration', () => {
+  const records = [
+    record({ id:'low', startAt:t0, endAt:t0+3*H, temperatureC:604 }),
+    record({ id:'high', startAt:t0+H, endAt:t0+2*H, temperatureC:625 }),
+    record({ id:'top', startAt:t0+2*H, endAt:t0+3*H, temperatureC:630 })
+  ];
+  const out = Core.bandSummary(records, [config()], { from:t0, to:t0+3*H });
+  assert.deepEqual(out.bands.map(band => band.ms), [H,0,0,2*H]);
+  assert.equal(out.durationMs, 3*H);
+  assert.equal(out.bands.reduce((sum, band) => sum + band.ms, 0), out.durationMs);
+  assert.equal(out.bands[3].recordCount, 2);
+});
+
+test('lifetime summary starts at commissioning and excludes whole records before the start', () => {
+  const early = config({ effectiveFrom: t0 - 48*H });
+  const lifePoint = { ...point(), commissionedAt: t0 - 24*H };
+  const records = [
+    record({ id:'pre', startAt:t0 - 30*H, endAt:t0 - 29*H, temperatureC:700 }),
+    record({ id:'after', startAt:t0, endAt:t0+H, temperatureC:620 }),
+    observation({ id:'obs', startAt:t0 + 2*H, temperatureC:630 }),
+    record({ id:'open', startAt:t0 + 3*H, endAt:null, verified:false, temperatureC:640 })
+  ];
+  const life = Core.lifetimeSummary(records, [early], lifePoint, { now:t0 + 10*H });
+  assert.equal(life.basis, 'commissioned');
+  assert.equal(life.fromAt, t0 - 24*H);
+  assert.equal(life.beforeStartRecordCount, 1);
+  assert.equal(life.recordCount, 3);
+  assert.equal(life.intervalRecordCount, 2);
+  assert.equal(life.openCount, 1);
+  assert.equal(life.durationMs, H);
+  assert.equal(life.firstEvidenceAt, t0);
+  assert.equal(life.lastEvidenceAt, t0 + H);
+  assert.equal(life.peakC, 630);
+  assert.equal(life.maxExcessC, 30);
+  assert.deepEqual(life.bands.map(band => band.ms), [0,0,0,H]);
+  assert.equal(life.bandDurationMs, life.durationMs);
+  assert.equal(life.bands.reduce((sum, band) => sum + band.ms, 0), life.durationMs);
+});
+
+test('lifetime summary without commissioning falls back to earliest record explicitly', () => {
+  const early = config({ effectiveFrom: t0 - 48*H });
+  const records = [
+    record({ id:'pre', startAt:t0 - 30*H, endAt:t0 - 29*H, temperatureC:700 }),
+    record({ id:'after', startAt:t0, endAt:t0+H, temperatureC:620 })
+  ];
+  const life = Core.lifetimeSummary(records, [early], point(), { now:t0 + 10*H });
+  assert.equal(life.basis, 'earliest_record');
+  assert.equal(life.fromAt, t0 - 30*H);
+  assert.equal(life.beforeStartRecordCount, 0);
+  assert.equal(life.durationMs, 2*H);
+  const none = Core.lifetimeSummary([], [early], point(), { now:t0 + 10*H });
+  assert.equal(none.basis, 'none');
+  assert.equal(none.fromAt, null);
+  assert.equal(none.recordCount, 0);
+  assert.equal(none.bandDurationMs, 0);
 });
 
 test('summaries union durations across distinct points rather than adding duplicated exposure', () => {

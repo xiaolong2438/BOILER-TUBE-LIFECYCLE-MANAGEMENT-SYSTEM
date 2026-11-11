@@ -415,6 +415,122 @@
     s.intervals.forEach(function (r) { var ms = r.endAt - r.startAt; s.durationMs += ms; s.longestMs = Math.max(s.longestMs, ms); });
     return s;
   }
+  /* 精确点位身份：同一机组内 DCS Tag 完全一致才算同一个点；名称、描述不参与身份。 */
+  function pointIdentity(point) {
+    return point && text(point.unit) && text(point.tag) ? point.unit + '|' + String(point.tag).trim().toUpperCase() : null;
+  }
+  /* 超限幅度分档只是筛查模板，不是规范强制阈值。DL/T 654-2022 与
+   * GB/T 30580-2022 采用线性损伤/L-M 法，寿命计算另需材料、壁温、应力、
+   * 运行小时及专业评定；本模块绝不把分档时长折算成寿命损耗。 */
+  var BAND_POLICY = freeze({
+    id: 'exceedance-5-10-20',
+    edgesC: [5, 10, 20],
+    label: '超限幅度分档（0～<5、5～<10、10～<20、≥20℃）',
+    basis: '筛查模板，不是 DL/T 654-2022 或 GB/T 30580-2022 的强制阈值。规范采用线性损伤/L-M 方法，计算蠕变寿命还需材料、金属壁温、应力、运行小时及专业评定；本分档只用于同一测点内的时长归集和排序。'
+  });
+  function bandEdges(edges) {
+    var source = Array.isArray(edges) ? edges : BAND_POLICY.edgesC;
+    var clean = [];
+    source.forEach(function (value) {
+      if (finite(value) && value > 0 && (!clean.length || value > clean[clean.length - 1])) clean.push(value);
+    });
+    return clean.length ? clean : BAND_POLICY.edgesC.slice();
+  }
+  function bandIndex(excess, edges) {
+    if (!finite(excess) || excess < 0) return -1;
+    for (var i = 0; i < edges.length; i += 1) if (excess < edges[i]) return i;
+    return edges.length;
+  }
+  function bandMeta(edges) {
+    var out = [];
+    for (var i = 0; i <= edges.length; i += 1) {
+      var from = i === 0 ? 0 : edges[i - 1];
+      var to = i === edges.length ? null : edges[i];
+      out.push({ key:'b' + i, fromC:from, toC:to, label:to === null ? '≥' + from + '℃' : from + '～<' + to + '℃' });
+    }
+    return out;
+  }
+  /* 每条已核定区间按“最高温度相对当时有效限值”的超限幅度归档。
+   * 重叠时段只计一次，并归入重叠中的最高档；因此各档时长之和等于总并集时长。 */
+  function bandSummary(records, configs, options) {
+    options = object(options) ? options : {};
+    configs = Array.isArray(configs) ? configs : [];
+    var w = windowBounds(options), edges = bandEdges(options.edgesC), meta = bandMeta(edges);
+    var policy = { id: options.policyId || BAND_POLICY.id, edgesC: edges.slice(), basis: options.policyBasis || BAND_POLICY.basis };
+    var bands = meta.map(function (item) { return { key:item.key, label:item.label, fromC:item.fromC, toC:item.toC, ms:0, recordCount:0 }; });
+    var empty = { bands:bands, durationMs:0, recordCount:0, policy:policy, method:'interval_peak_highest_overlap' };
+    if (!w.valid || w.from === w.to) return empty;
+    var pointId = options.pointId === undefined ? null : options.pointId;
+    var intervals = [];
+    latestRecords(records).forEach(function (r) {
+      if (!object(r) || r.status !== 'active' || r.kind !== 'interval' || r.verified !== true) return;
+      if (!finite(r.temperatureC) || !text(r.note)) return;
+      if (pointId !== null && r.pointId !== pointId) return;
+      var start = parseTime(r.startAt), end = r.endAt === null ? null : parseTime(r.endAt);
+      if (start === null || end === null || end <= start) return;
+      if (start >= w.to || end <= w.from) return;
+      var config = configs.find(function (c) { return c && c.id === r.configId && c.pointId === r.pointId; });
+      if (!config || !covers(r, config, configs) || !hasLimit(config) || r.temperatureC < config.limitC) return;
+      var band = bandIndex(Math.max(0, r.temperatureC - config.limitC), edges);
+      if (band < 0) return;
+      var a = Math.max(start, w.from), b = Math.min(end, w.to);
+      if (b <= a) return;
+      intervals.push({ startAt:a, endAt:b, band:band });
+      bands[band].recordCount += 1;
+    });
+    var marks = [];
+    intervals.forEach(function (item) {
+      marks.push({ at:item.startAt, band:item.band, delta:1 });
+      marks.push({ at:item.endAt, band:item.band, delta:-1 });
+    });
+    marks.sort(function (a, b) { return a.at - b.at || a.band - b.band; });
+    var active = new Array(meta.length).fill(0), cursor = null, duration = 0, index = 0;
+    while (index < marks.length) {
+      var at = marks[index].at;
+      if (cursor !== null && at > cursor) {
+        var top = -1;
+        for (var i = meta.length - 1; i >= 0; i -= 1) if (active[i] > 0) { top = i; break; }
+        if (top >= 0) { bands[top].ms += at - cursor; duration += at - cursor; }
+      }
+      while (index < marks.length && marks[index].at === at) {
+        active[marks[index].band] += marks[index].delta;
+        index += 1;
+      }
+      cursor = at;
+    }
+    return { bands:bands, durationMs:duration, recordCount:intervals.length, policy:policy, method:'interval_peak_highest_overlap' };
+  }
+  /* 投产以来累计：只使用同一个测点（unit + 精确 Tag）的记录。
+   * 有投产日期时从投产日期起算；没有时明确回退到最早登记记录，不冒充投产起点。
+   * 起点之前的记录整条排除，不做边界裁剪，避免把投运前事件算进终身累计。 */
+  function lifetimeSummary(records, configs, point, options) {
+    options = object(options) ? options : {};
+    configs = Array.isArray(configs) ? configs : [];
+    var nowAt = parseTime(options.now === undefined ? Date.now() : options.now);
+    var all = (Array.isArray(records) ? records : []).filter(function (r) {
+      return object(r) && r.status === 'active' && (!point || r.pointId === point.id);
+    });
+    var starts = all.map(function (r) { return parseTime(r.startAt); }).filter(finite);
+    var commissionedAt = point ? parseTime(point.commissionedAt) : null;
+    var fromAt = commissionedAt !== null ? commissionedAt : (starts.length ? Math.min.apply(null, starts) : null);
+    var basis = commissionedAt !== null ? 'commissioned' : (fromAt !== null ? 'earliest_record' : 'none');
+    if (nowAt === null || fromAt === null || fromAt > nowAt) {
+      var stopped = bandSummary([], configs, { from:0, to:0, edgesC:options.edgesC });
+      return { basis:basis, fromAt:fromAt, toAt:nowAt, durationMs:0, recordCount:0, intervalRecordCount:0, openCount:0,
+        beforeStartRecordCount:fromAt === null ? 0 : all.length, firstEvidenceAt:null, lastEvidenceAt:null,
+        peakC:null, maxExcessC:null, bands:stopped.bands, bandDurationMs:0, bandPolicy:stopped.policy, bandMethod:stopped.method };
+    }
+    var before = all.filter(function (r) { var start = parseTime(r.startAt); return start !== null && start < fromAt; });
+    var eligible = all.filter(function (r) { var start = parseTime(r.startAt); return start !== null && start >= fromAt; });
+    var summary = summarize(eligible, configs, { from:fromAt, to:nowAt });
+    var bands = bandSummary(eligible, configs, { from:fromAt, to:nowAt, edgesC:options.edgesC });
+    var last = summary.intervals.length ? summary.intervals[summary.intervals.length - 1] : null;
+    return { basis:basis, fromAt:fromAt, toAt:nowAt, durationMs:summary.durationMs, recordCount:summary.recordCount,
+      intervalRecordCount:summary.intervalRecordCount, openCount:summary.openCount, beforeStartRecordCount:before.length,
+      firstEvidenceAt:summary.intervals.length ? summary.intervals[0].startAt : null, lastEvidenceAt:last ? last.endAt : null,
+      peakC:summary.peakC, maxExcessC:summary.maxExcessC, bands:bands.bands, bandDurationMs:bands.durationMs,
+      bandPolicy:bands.policy, bandMethod:bands.method };
+  }
   function summarizeTube(code, points, configs, records, options, matrixRows) {
     options = object(options) ? options : {};
     points = Array.isArray(points) ? points : []; configs = Array.isArray(configs) ? configs : [];
@@ -456,7 +572,7 @@
     return out;
   }
 
-  var api = { MATRIX:MATRIX, parseTime:parseTime, formatTime:formatTime, toInputTime:toInputTime, validateRegion:validateRegion, expandRegion:expandRegion, matchesRegion:matchesRegion, validateConfig:validateConfig, resolveConfig:resolveConfig, validateRecord:validateRecord, mergeIntervals:mergeIntervals, summarize:summarize, summarizeTube:summarizeTube, getConfigEffectiveTo:getConfigEffectiveTo };
+  var api = { MATRIX:MATRIX, BAND_POLICY:BAND_POLICY, parseTime:parseTime, formatTime:formatTime, toInputTime:toInputTime, pointIdentity:pointIdentity, validateRegion:validateRegion, expandRegion:expandRegion, matchesRegion:matchesRegion, validateConfig:validateConfig, resolveConfig:resolveConfig, validateRecord:validateRecord, mergeIntervals:mergeIntervals, summarize:summarize, bandSummary:bandSummary, lifetimeSummary:lifetimeSummary, summarizeTube:summarizeTube, getConfigEffectiveTo:getConfigEffectiveTo };
   root.BTOvertemperatureCore = api;
   if (typeof globalThis !== 'undefined') globalThis.BTOvertemperatureCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
