@@ -1308,7 +1308,7 @@ function backupLocalData() { const backup = JSON.stringify({ version: 'v6.7-loca
 function clearLocalData() { const total = userDB.events.length + userDB.replacements.length; if(total === 0) { showToast('当前没有可清空的本地数据', 'info'); return; } if(confirm(`即将清空 ${total} 条本地数据。清空前将自动导出备份，是否继续？`) && confirm('请再次确认：备份下载后将清空浏览器本地数据。')) { backupLocalData(); userDB = {events:[], replacements:[]}; saveDB(); mlog('clear', { total }); showToast(`已备份并清空 ${total} 条本地数据`, 'ok'); } }
 
 // ========== DATA (基础数据库) ==========
-const COMPONENTS = { ww: { name: '炉膛水冷壁', sys: 'SLB', badge: 'badge-ww', spec: 'Φ63.5×7.5 SA-210C、Φ159×18 20G', mat: '按材料库分项', count: 722, detail: {'前墙':'192根','后墙':'192根','侧墙':'169*2根','循环回路':'24个'} }, rsh: { name: '顶棚过热器', sys: 'RSH', badge: 'badge-sh', spec: 'Φ159×18 20G、Φ48.5×6 15CrMoG', mat: '按材料库分项', count: 128, detail: {'区域':'顶棚 CE','屏/排':'1排','管数':'128根'} }, wsh: { name: '包墙过热器', sys: 'WSH', badge: 'badge-sh', spec: 'Φ51×6 12Cr1MoVG、Φ51×7 12Cr1MoVG、Φ63.5×12 12Cr1MoVG', mat: '按材料库分项', count: 260, detail: {'区域':'前/后/侧包墙','屏/排':'1排','管数':'260根'} }, lsh: { name: '低温过热器', sys: 'DGRQ', badge: 'badge-sh', spec: 'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat: '按材料库分项', count: 112, detail: {'排数':'112排','管圈':'5根','布置':'顺列逆流'} }, psh: { name: '全大屏过热器', sys: 'DPGRQ', badge: 'badge-sh', spec: 'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat: '按材料库分项', count: '6片', detail: {'小屏':'4小屏/片','管数':'14根/小屏'} }, 'hsh-p': { name: '屏式过热器', sys: 'HPGRQ', badge: 'badge-sh', spec: 'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat: '按材料库分项', count: 21, detail: {'屏数':'21屏','管数':'13根/屏'} }, hsh: { name: '高温过热器', sys: 'GGRQ', badge: 'badge-sh', spec: 'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat: '按材料库分项', count: 32, detail: {'片数':'32片','管圈':'12管圈'} }, lrh: { name: '低温再热器', sys: 'DZRQ', badge: 'badge-rh', spec: 'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat: '按材料库分项', count: 112, detail: {'水平':'112片','垂直':'56片'} }, hrh: { name: '高温再热器', sys: 'GZRQ', badge: 'badge-rh', spec: 'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat: '按材料库分项', count: 64, detail: {'片数':'64片','管圈':'7管圈'} }, eco: { name: '省煤器', sys: 'SMQ', badge: 'badge-eco', spec: 'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', mat: '按材料库分项', count: 124, detail: {'排数':'124排 × 3管圈（U上组/D下组）','吊挂管':'112根（F001前/F002后）'} } };
+const COMPONENTS = { ww: { name: '炉膛水冷壁', sys: 'SLB', badge: 'badge-ww', spec: 'Φ63.5×7.5 SA-210C、Φ159×18 20G', mat: '按材料库分项', count: 722, detail: {'前墙':'192根','后墙':'192根','侧墙':'169*2根','循环回路':'24个'} }, rsh: { name: '顶棚过热器', sys: 'RSH', badge: 'badge-sh', spec: 'Φ159×18 20G、Φ48.5×6 15CrMoG', mat: '按材料库分项', count: 128, detail: {'区域':'顶棚 CE','屏/排':'1排','管数':'128根'} }, wsh: { name: '包墙过热器', sys: 'WSH', badge: 'badge-sh', spec: 'Φ51×6 12Cr1MoVG、Φ51×7 12Cr1MoVG、Φ63.5×12 12Cr1MoVG', mat: '按材料库分项', count: 260, detail: {'区域':'前/后/侧包墙','屏/排':'1排','管数':'260根'} }, lsh: { name: '低温过热器', sys: 'DGRQ', badge: 'badge-sh', spec: 'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat: '按材料库分项', count: 112, detail: {'排数':'112排','管圈':'5根','布置':'顺列逆流'} }, psh: { name: '全大屏过热器', sys: 'DPGRQ', badge: 'badge-sh', spec: 'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat: '按材料库分项', count: '6片', detail: {'小屏':'4小屏/片','管数':'14根/小屏'} }, 'hsh-p': { name: '屏式过热器', sys: 'PSGRQ', badge: 'badge-sh', spec: 'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat: '按材料库分项', count: 21, detail: {'屏数':'21屏','管数':'13根/屏'} }, hsh: { name: '高温过热器', sys: 'GGRQ', badge: 'badge-sh', spec: 'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat: '按材料库分项', count: 32, detail: {'片数':'32片','管圈':'12管圈'} }, lrh: { name: '低温再热器', sys: 'DZRQ', badge: 'badge-rh', spec: 'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat: '按材料库分项', count: 112, detail: {'水平':'112片','垂直':'56片'} }, hrh: { name: '高温再热器', sys: 'GZRQ', badge: 'badge-rh', spec: 'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat: '按材料库分项', count: 64, detail: {'片数':'64片','管圈':'7管圈'} }, eco: { name: '省煤器', sys: 'SMQ', badge: 'badge-eco', spec: 'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', mat: '按材料库分项', count: 124, detail: {'排数':'124排 × 3管圈（U上组/D下组）','吊挂管':'112根（F001前/F002后）'} } };
 const MATERIAL_LIBRARY_KEY = 'boiler_material_library';
 const MATERIAL_COMPONENT_BY_TAB = { ww:'炉膛水冷壁', rsh:'顶棚过热器', wsh:'包墙过热器', lsh:'低温过热器', psh:'全大屏过热器', 'hsh-p':'屏式过热器', hsh:'高温过热器', lrh:'低温再热器', hrh:'高温再热器', eco:'省煤器' };
 const MATERIAL_COLUMNS = ['部件名称','系统代码','分段/位置','结构形式','规格型号','管径','壁厚','材质','库存根数','库存总长度(m)','预留位置','备注'];
@@ -1329,13 +1329,13 @@ const MATERIAL_LIBRARY = [
   { component:'低温过热器', sys:'DGRQ', position:'14 低过管子（四）', shape:'蛇形管', spec:'Φ57×8', diameter:'57', wallThickness:'8', material:'12Cr1MoVG', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第47页序号14；直管附加壁厚1.3mm，弯管附加壁厚2.164mm' },
   { component:'全大屏过热器', sys:'DPGRQ', position:'15 全大屏管子（一）', shape:'管子', spec:'Φ51×7', diameter:'51', wallThickness:'7', material:'12Cr1MoVG', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第47页序号15；直管附加壁厚1.2mm，弯管附加壁厚1.956mm' },
   { component:'全大屏过热器', sys:'DPGRQ', position:'16 全大屏管子（二）', shape:'管子', spec:'Φ51×7', diameter:'51', wallThickness:'7', material:'SA-213T91', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第47页序号16；直管附加壁厚0.7mm，弯管附加壁厚1.456mm' },
-  { component:'屏式过热器', sys:'HPGRQ', position:'17 屏式过热器管（一）', shape:'管子', spec:'Φ54×9', diameter:'54', wallThickness:'9', material:'SA-213TP347H', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号17；直管附加壁厚0.9mm，弯管附加壁厚2.7853mm' },
-  { component:'屏式过热器', sys:'HPGRQ', position:'18 屏式过热器管（二）', shape:'管子', spec:'Φ54×8.5', diameter:'54', wallThickness:'8.5', material:'SA-213T91', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号18；直管附加壁厚0.85mm，弯管附加壁厚1.9975mm' },
-  { component:'屏式过热器', sys:'HPGRQ', position:'19 屏式过热器管（三）', shape:'管子', spec:'Φ54×8.5', diameter:'54', wallThickness:'8.5', material:'12Cr1MoVG', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号19；直管附加壁厚1.35mm，弯管附加壁厚2.88mm' },
-  { component:'屏式过热器', sys:'HPGRQ', position:'20 屏式过热器管（四）', shape:'管子', spec:'Φ54×8.5', diameter:'54', wallThickness:'8.5', material:'SA-213TP347H', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号20；直管附加壁厚0.85mm，弯管附加壁厚1.9975mm' },
-  { component:'屏式过热器', sys:'HPGRQ', position:'21 屏式过热器管（五）', shape:'管子', spec:'Φ60×8', diameter:'60', wallThickness:'8', material:'SA-213T91', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号21；直管附加壁厚0.8mm，弯管附加壁厚1.88mm' },
-  { component:'屏式过热器', sys:'HPGRQ', position:'22 屏式过热器管（六）', shape:'管子', spec:'Φ60×9', diameter:'60', wallThickness:'9', material:'SA-213TP347H', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号22；直管附加壁厚0.9mm，弯管附加壁厚2.115mm' },
-  { component:'屏式过热器', sys:'HPGRQ', position:'23 屏式过热器管（七）', shape:'管子', spec:'Φ60×8', diameter:'60', wallThickness:'8', material:'12Cr1MoVG', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号23；直管附加壁厚1.3mm，弯管附加壁厚2.74mm' },
+  { component:'屏式过热器', sys:'PSGRQ', position:'17 屏式过热器管（一）', shape:'管子', spec:'Φ54×9', diameter:'54', wallThickness:'9', material:'SA-213TP347H', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号17；直管附加壁厚0.9mm，弯管附加壁厚2.7853mm' },
+  { component:'屏式过热器', sys:'PSGRQ', position:'18 屏式过热器管（二）', shape:'管子', spec:'Φ54×8.5', diameter:'54', wallThickness:'8.5', material:'SA-213T91', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号18；直管附加壁厚0.85mm，弯管附加壁厚1.9975mm' },
+  { component:'屏式过热器', sys:'PSGRQ', position:'19 屏式过热器管（三）', shape:'管子', spec:'Φ54×8.5', diameter:'54', wallThickness:'8.5', material:'12Cr1MoVG', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号19；直管附加壁厚1.35mm，弯管附加壁厚2.88mm' },
+  { component:'屏式过热器', sys:'PSGRQ', position:'20 屏式过热器管（四）', shape:'管子', spec:'Φ54×8.5', diameter:'54', wallThickness:'8.5', material:'SA-213TP347H', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号20；直管附加壁厚0.85mm，弯管附加壁厚1.9975mm' },
+  { component:'屏式过热器', sys:'PSGRQ', position:'21 屏式过热器管（五）', shape:'管子', spec:'Φ60×8', diameter:'60', wallThickness:'8', material:'SA-213T91', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号21；直管附加壁厚0.8mm，弯管附加壁厚1.88mm' },
+  { component:'屏式过热器', sys:'PSGRQ', position:'22 屏式过热器管（六）', shape:'管子', spec:'Φ60×9', diameter:'60', wallThickness:'9', material:'SA-213TP347H', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号22；直管附加壁厚0.9mm，弯管附加壁厚2.115mm' },
+  { component:'屏式过热器', sys:'PSGRQ', position:'23 屏式过热器管（七）', shape:'管子', spec:'Φ60×8', diameter:'60', wallThickness:'8', material:'12Cr1MoVG', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号23；直管附加壁厚1.3mm，弯管附加壁厚2.74mm' },
   { component:'高温过热器', sys:'GGRQ', position:'24 高过管子（一）', shape:'管子', spec:'Φ51×9', diameter:'51', wallThickness:'9', material:'12Cr1MoVG', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号24；直管附加壁厚1.4mm，弯管附加壁厚2.615mm' },
   { component:'高温过热器', sys:'GGRQ', position:'25 高过管子（二）', shape:'管子', spec:'Φ51×8', diameter:'51', wallThickness:'8', material:'SA-213T91', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号25；直管附加壁厚0.8mm，弯管附加壁厚1.88mm' },
   { component:'高温过热器', sys:'GGRQ', position:'26 高过管子（三）', shape:'管子', spec:'Φ51×8', diameter:'51', wallThickness:'8', material:'SA-213TP304H', inUseQty:'', stockQty:'', totalLengthM:'', reserveLocation:'', remark:'第48页序号26；直管附加壁厚0.8mm，弯管附加壁厚1.88mm' },
@@ -1428,7 +1428,7 @@ const LIFECYCLE_DATA = {
   '1G-GGRQ-GQ-L012-F005-Q001': { name: '1号炉高温过热器炉左往右第12排炉前往后第5根', spec: 'Φ51×8 · SA-213T91', install: '2018-06-15', hours: 58720, status: 'warn', risk: '蠕变损伤68%', timeline: [{date:'2018-06-15',t:'安装',d:'合格'},{date:'2025-12-15',t:'评估',d:'剩余寿命8.2万h'}] },
   '2G-GZRQ-GQ-L032-F004-Q001': { name: '2号炉高温再热器炉左往右第32排炉前往后第4根', spec: 'Φ60×4 · SA-213TP304H', install: '2017-11-05', hours: 65830, status: 'danger', risk: '壁厚减薄至3.3mm', timeline: [{date:'2017-11-05',t:'安装',d:'壁厚4.0'},{date:'2025-09-15',t:'测厚',d:'壁厚3.3'}] },
   '1G-DPGRQ-GQ-L001-F002-F007-Q001': { name: '1号炉全大屏过热器第1片第2小屏炉前往后第7根', spec: 'Φ51×7 · 12Cr1MoVG', install: '2017-05-20', hours: 68900, status: 'warn', risk: '屏底结渣区需关注', timeline: [{date:'2017-05-20',t:'安装',d:'合格'},{date:'2026-01-10',t:'测厚',d:'壁厚6.2'}] },
-  '2G-HPGRQ-GQ-L015-F009-Q001': { name: '2号炉后屏过热器炉左往右第15屏炉前往后第9根', spec: 'Φ54×9 · SA-213TP347H', install: '2018-03-18', hours: 60110, status: 'warn', risk: '高温腐蚀区金相复查', timeline: [{date:'2018-03-18',t:'安装',d:'合格'},{date:'2025-10-20',t:'金相',d:'组织轻度球化'}] },
+  '2G-PSGRQ-GQ-L015-F009-Q001': { name: '2号炉后屏过热器炉左往右第15屏炉前往后第9根', spec: 'Φ54×9 · SA-213TP347H', install: '2018-03-18', hours: 60110, status: 'warn', risk: '高温腐蚀区金相复查', timeline: [{date:'2018-03-18',t:'安装',d:'合格'},{date:'2025-10-20',t:'金相',d:'组织轻度球化'}] },
   '1G-DGRQ-GQ-2KJ-L045-D003-Q001': { name: '1号炉低温过热器第2检修空间第45排自下而上第3根', spec: 'Φ57×6 · 15CrMoG', install: '2016-08-02', hours: 71230, status: 'ok', risk: '状态良好', timeline: [{date:'2016-08-02',t:'安装',d:'壁厚6.0'},{date:'2025-06-18',t:'测厚',d:'壁厚5.4'}] },
   '1G-DZRQ-GQ-4KJ-L065-Q001': { name: '1号炉低温再热器第4检修空间炉左往右第65排', spec: 'Φ63.5×4 · SA-210C', install: '2015-12-11', hours: 76850, status: 'ok', risk: '状态良好', timeline: [{date:'2015-12-11',t:'安装',d:'壁厚4.0'},{date:'2025-04-05',t:'测厚',d:'壁厚3.7'}] },
   '2G-SLB-LHD-F000-L016-Q001': { name: '2号炉冷灰斗前坡炉左往右第16根', spec: 'Φ63.5×7.5 · SA-210C', install: '2016-03-10', hours: 72540, status: 'warn', risk: '灰斗冲刷区磨损', timeline: [{date:'2016-03-10',t:'安装',d:'壁厚7.5'},{date:'2025-08-22',t:'测厚',d:'壁厚5.9'}] },
@@ -1447,7 +1447,7 @@ const matrix = [
   { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['F','B'], p2Max:4, dirs:['F','B'], tMax:14, loopPairing: true, spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat:'按材料库分项', badge:'badge-sh' },
   /* 后屏：编号数腿，回路k=F00k+F(27−k)，13回路/26管位（图纸148M215-0，2026-11-01确认） */
   /* 后屏：编号数回路（148M215-0，2026-11-01确认），入口段F00k/出口段B00k/底弯W记入口段位，13回路 */
-  { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing: true, spec:'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat:'按材料库分项', badge:'badge-sh' },
+  { name:'后屏过热器', sys:'PSGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing: true, spec:'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat:'按材料库分项', badge:'badge-sh' },
   /* 高过：统一回路编号（2026-11-01）——入口段F00k、出口段B00k、底弯W记入口段位，12回路；历史腿号F013–F024由归一自动迁移 */
   { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:12, loopPairing: true, spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
   /* 高再：7回路，F001~F007 入口腿、B001~B007 出口腿；底弯W统一记F位，历史超范围管位待核 */
@@ -1470,7 +1470,7 @@ const CODE_SYSTEMS = [
   { sys:'SLB', label:'水冷壁', comps:['WB','LHD','RSQ'] },
   { sys:'GZRQ', label:'高温再热器', comps:['GQ'] },
   { sys:'GGRQ', label:'高温过热器', comps:['GQ'] },
-  { sys:'HPGRQ', label:'后屏过热器', comps:['GQ'] },
+  { sys:'PSGRQ', label:'后屏过热器', comps:['GQ'] },
   { sys:'DPGRQ', label:'全大屏过热器', comps:['GQ'] },
   { sys:'DGRQ', label:'低温过热器', comps:['GQ'] },
   { sys:'DZRQ', label:'低温再热器', comps:['GQ'] },
@@ -1498,13 +1498,13 @@ const WALL_THICKNESS_WARNING_RULES = [
   { no:14, sys:'DGRQ', name:'低过管子（四）', diameter:'57', wall:'8', material:'12Cr1MoVG', pressure:19.36, temperature:540, allowableStress:79, straight:6.22, bendRadius:150, bend:5.73 },
   { no:15, sys:'DPGRQ', name:'全大屏管子（一）', diameter:'51', wall:'7', material:'12Cr1MoVG', pressure:19.12, temperature:486, allowableStress:122, straight:3.71, bendRadius:160, bend:3.45 },
   { no:16, sys:'DPGRQ', name:'全大屏管子（二）', diameter:'51', wall:'7', material:'SA-213T91', pressure:19.12, temperature:514, allowableStress:120, straight:4.02, bendRadius:160, bend:3.74 },
-  { no:17, sys:'HPGRQ', name:'屏式过热器管（一）', diameter:'54', wall:'9', material:'SA-213TP347H', pressure:18.86, temperature:596, allowableStress:95, straight:5.15, bendRadius:58, bend:4.33 },
-  { no:18, sys:'HPGRQ', name:'屏式过热器管（二）', diameter:'54', wall:'8.5', material:'SA-213T91', pressure:18.86, temperature:545, allowableStress:109, straight:4.57, bendRadius:120, bend:4.15 },
-  { no:19, sys:'HPGRQ', name:'屏式过热器管（三）', diameter:'54', wall:'8.5', material:'12Cr1MoVG', pressure:18.86, temperature:527, allowableStress:90, straight:5.12, bendRadius:96, bend:4.56 },
-  { no:20, sys:'HPGRQ', name:'屏式过热器管（四）', diameter:'54', wall:'8.5', material:'SA-213TP347H', pressure:18.86, temperature:565, allowableStress:110, straight:4.53, bendRadius:120, bend:4.12 },
-  { no:21, sys:'HPGRQ', name:'屏式过热器管（五）', diameter:'60', wall:'8', material:'SA-213T91', pressure:18.86, temperature:529, allowableStress:115, straight:4.85, bendRadius:120, bend:4.36 },
-  { no:22, sys:'HPGRQ', name:'屏式过热器管（六）', diameter:'60', wall:'9', material:'SA-213TP347H', pressure:18.86, temperature:597, allowableStress:94, straight:5.77, bendRadius:120, bend:5.19 },
-  { no:23, sys:'HPGRQ', name:'屏式过热器管（七）', diameter:'60', wall:'8', material:'12Cr1MoVG', pressure:18.86, temperature:442, allowableStress:129, straight:4.09, bendRadius:120, bend:3.68 },
+  { no:17, sys:'PSGRQ', name:'屏式过热器管（一）', diameter:'54', wall:'9', material:'SA-213TP347H', pressure:18.86, temperature:596, allowableStress:95, straight:5.15, bendRadius:58, bend:4.33 },
+  { no:18, sys:'PSGRQ', name:'屏式过热器管（二）', diameter:'54', wall:'8.5', material:'SA-213T91', pressure:18.86, temperature:545, allowableStress:109, straight:4.57, bendRadius:120, bend:4.15 },
+  { no:19, sys:'PSGRQ', name:'屏式过热器管（三）', diameter:'54', wall:'8.5', material:'12Cr1MoVG', pressure:18.86, temperature:527, allowableStress:90, straight:5.12, bendRadius:96, bend:4.56 },
+  { no:20, sys:'PSGRQ', name:'屏式过热器管（四）', diameter:'54', wall:'8.5', material:'SA-213TP347H', pressure:18.86, temperature:565, allowableStress:110, straight:4.53, bendRadius:120, bend:4.12 },
+  { no:21, sys:'PSGRQ', name:'屏式过热器管（五）', diameter:'60', wall:'8', material:'SA-213T91', pressure:18.86, temperature:529, allowableStress:115, straight:4.85, bendRadius:120, bend:4.36 },
+  { no:22, sys:'PSGRQ', name:'屏式过热器管（六）', diameter:'60', wall:'9', material:'SA-213TP347H', pressure:18.86, temperature:597, allowableStress:94, straight:5.77, bendRadius:120, bend:5.19 },
+  { no:23, sys:'PSGRQ', name:'屏式过热器管（七）', diameter:'60', wall:'8', material:'12Cr1MoVG', pressure:18.86, temperature:442, allowableStress:129, straight:4.09, bendRadius:120, bend:3.68 },
   { no:24, sys:'GGRQ', name:'高过管子（一）', diameter:'51', wall:'9', material:'12Cr1MoVG', pressure:18.49, temperature:553, allowableStress:69, straight:6.03, bendRadius:120, bend:5.50 },
   { no:25, sys:'GGRQ', name:'高过管子（二）', diameter:'51', wall:'8', material:'SA-213T91', pressure:18.49, temperature:578, allowableStress:78, straight:5.66, bendRadius:120, bend:5.16 },
   { no:26, sys:'GGRQ', name:'高过管子（三）', diameter:'51', wall:'8', material:'SA-213TP304H', pressure:18.49, temperature:579, allowableStress:77, straight:5.72, bendRadius:120, bend:5.22 },
@@ -1720,13 +1720,13 @@ function genCode() {
 }
 /* ========== 新编码规则 ==========
  * 模板：{机组}G-SYS-COMP-{方位}{三位排/片号}-{方位}{三位排/屏号}-{方向}{三位管号}-Q{序号}
- * 机组：1G/2G；系统：SLB/GZRQ/GGRQ/HPGRQ/DPGRQ/DGRQ/DZRQ/SMQ；部件：GQ/WB/SG/LHD/RSQ
+ * 机组：1G/2G；系统：SLB/GZRQ/GGRQ/PSGRQ/DPGRQ/DGRQ/DZRQ/SMQ；部件：GQ/WB/SG/LHD/RSQ
  * 方位/方向：A侧→R、B侧→L、炉左往右→L、炉右往左→R、炉前往后→F、炉后往前→B；受热面管序用 F/B（高再管数待核），
  * 省煤器 U=上组/D=下组（数字位=圈号001~003）、吊挂管 F=前后排（F001前/F002后）；
  * 无明确排/屏号用 000 占位；方向不明不得臆造字母，保持原样进「待确认」人工核实；低过/低再默认第 1 检修空间可省略 */
 function parseTubeCode(code) {
   const raw = String(code || '').trim().toUpperCase();
-  const head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ)(?:-(.*))?$/);
+  const head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|PSGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ)(?:-(.*))?$/);
   if(!head) return null;
   const parsed = { raw, unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], pos: null, posNum: null, pos2: null, pos2Num: null, space: null, corner: null, layer: '', nozzle: null, dir: null, tube: null, seq: null };
   const parts = head[4] ? head[4].split('-') : [];
@@ -1738,7 +1738,7 @@ function parseTubeCode(code) {
   const POS_RE = /^([FBLR])(\d{3})$/;
   /* 管序 F/B：高过/高再/大屏/后屏/低过/低再（[UD] 继续放行解析，历史 U/D 码由矩阵行判合法性后进待确认）；
      省煤器 U=上组/D=下组/F=吊挂管前后排（2026-11-08 新口径，数字位=圈号/排向序号） */
-  const TUBE_RE = /^(?:GGRQ|GZRQ|DPGRQ|HPGRQ|DGRQ|DZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UDF])(\d{3})$/;
+  const TUBE_RE = /^(?:GGRQ|GZRQ|DPGRQ|PSGRQ|DGRQ|DZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UDF])(\d{3})$/;
   const WALL_RE = /^([FBLR])000$/;
   if(parsed.sys === 'SLB' && (parsed.comp === 'WB' || parsed.comp === 'LHD')) {
     if(parts.length !== 2) return null;
@@ -1764,7 +1764,7 @@ function parseTubeCode(code) {
     parsed.dir = tb[1]; parsed.tube = Number(tb[2]);
     return parsed;
   }
-  if(['GGRQ','GZRQ','HPGRQ','SMQ'].includes(parsed.sys)) {
+  if(['GGRQ','GZRQ','PSGRQ','SMQ'].includes(parsed.sys)) {
     if(parts.length !== 2) return null;
     const p1 = parts[0].match(POS_RE), tb = parts[1].match(TUBE_RE);
     if(!p1 || !tb) return null;
@@ -1856,7 +1856,7 @@ const DASHBOARD_SURFACE_HEALTH = [
   { sys: 'SLB', name: '水冷壁', score: 88, unit1: 1, unit2: -1, meta: '磨损/腐蚀' },
   { sys: 'DGRQ', name: '低温过热器', score: 76, unit1: 2, unit2: -2, meta: '积灰/低温腐蚀' },
   { sys: 'DPGRQ', name: '全大屏过热器', score: 68, unit1: 1, unit2: -3, meta: '结渣/夹持管' },
-  { sys: 'HPGRQ', name: '屏式过热器', score: 71, unit1: 2, unit2: -2, meta: '高温腐蚀' },
+  { sys: 'PSGRQ', name: '屏式过热器', score: 71, unit1: 2, unit2: -2, meta: '高温腐蚀' },
   { sys: 'GGRQ', name: '高温过热器', score: 58, unit1: 2, unit2: -5, meta: '蠕变/氧化皮' },
   { sys: 'GZRQ', name: '高温再热器', score: 52, unit1: 3, unit2: -6, meta: '减薄/烟温偏差' },
   { sys: 'SMQ', name: '省煤器', score: 82, unit1: 1, unit2: -2, meta: '冲刷/低温腐蚀' }
@@ -2424,7 +2424,7 @@ document.addEventListener('visibilitychange', () => {
 });
 updateClock();
 function animateCounters() { document.querySelectorAll('[data-count]').forEach(el => { const target = parseInt(el.dataset.count); let cur = 0; const step = Math.max(1, Math.floor(target / 40)); const int = setInterval(() => { cur += step; if (cur >= target) { cur = target; clearInterval(int); } el.textContent = cur.toLocaleString(); }, 30); }); }
-function buildBarChart() { const box = document.getElementById('barChart'); if(!box) return; const data = [{l:'水冷壁',sys:'SLB',v:722,c:'var(--ok)'},{l:'低过',sys:'DGRQ',v:1120,c:'var(--accent)'},{l:'大屏',sys:'DPGRQ',v:336,c:'var(--accent)'},{l:'屏过',sys:'HPGRQ',v:273,c:'var(--chart-orange)'},{l:'高过',sys:'GGRQ',v:384,c:'var(--danger)'},{l:'低再',sys:'DZRQ',v:1344,c:'var(--chart-violet)'},{l:'高再',sys:'GZRQ',v:448,c:'var(--chart-pink)'},{l:'省煤器',sys:'SMQ',v:856,c:'var(--ok)'}]; const max = Math.max(...data.map(d => d.v)); box.innerHTML = data.map(d => `<button type="button" class="bar-item" data-sys="${escapeHTML(d.sys)}" onclick="openComponentLifecycle('${escapeHTML(d.sys)}','${escapeHTML(d.l)}')" title="查看${escapeHTML(d.l)}检修记录"><div class="bar" data-val="${d.v}" style="height:${(d.v/max)*85}%; background:linear-gradient(180deg, ${d.c}, var(--chart-bar-base));"></div><div class="bar-label">${escapeHTML(d.l)}</div></button>`).join(''); }
+function buildBarChart() { const box = document.getElementById('barChart'); if(!box) return; const data = [{l:'水冷壁',sys:'SLB',v:722,c:'var(--ok)'},{l:'低过',sys:'DGRQ',v:1120,c:'var(--accent)'},{l:'大屏',sys:'DPGRQ',v:336,c:'var(--accent)'},{l:'屏过',sys:'PSGRQ',v:273,c:'var(--chart-orange)'},{l:'高过',sys:'GGRQ',v:384,c:'var(--danger)'},{l:'低再',sys:'DZRQ',v:1344,c:'var(--chart-violet)'},{l:'高再',sys:'GZRQ',v:448,c:'var(--chart-pink)'},{l:'省煤器',sys:'SMQ',v:856,c:'var(--ok)'}]; const max = Math.max(...data.map(d => d.v)); box.innerHTML = data.map(d => `<button type="button" class="bar-item" data-sys="${escapeHTML(d.sys)}" onclick="openComponentLifecycle('${escapeHTML(d.sys)}','${escapeHTML(d.l)}')" title="查看${escapeHTML(d.l)}检修记录"><div class="bar" data-val="${d.v}" style="height:${(d.v/max)*85}%; background:linear-gradient(180deg, ${d.c}, var(--chart-bar-base));"></div><div class="bar-label">${escapeHTML(d.l)}</div></button>`).join(''); }
 function copyCode() { if(window._curCode) { navigator.clipboard?.writeText(window._curCode); showToast(`已复制编码：${window._curCode}`, 'ok'); } }
 
 function getTubeProfileData(rawCode) {
@@ -2708,7 +2708,7 @@ const MATERIAL_CLASSIFICATION_RULES = [
   { sys:'WSH', start:8, end:10 },
   { sys:'DGRQ', start:11, end:14 },
   { sys:'DPGRQ', start:15, end:16 },
-  { sys:'HPGRQ', start:17, end:23 },
+  { sys:'PSGRQ', start:17, end:23 },
   { sys:'GGRQ', start:24, end:31 },
   { sys:'GZRQ', start:32, end:39 },
   { sys:'DZRQ', start:40, end:44 }
@@ -3107,9 +3107,9 @@ const MAINTENANCE_UNIT_BASELINES = {
   '1': { historyLabels: ['2022A修', '2024C修', '2026C修'], nextA: '2028年4月', cycleStartYear: 2026 }
 };
 const MAINTENANCE_INSPECTION_ITEMS = ['割管取样', '射线', '测厚', '硬度', '防磨防爆检查'];
-const MAINTENANCE_SYSTEM_PRIORITY = ['GZRQ', 'GGRQ', 'HPGRQ', 'DPGRQ', 'DZRQ', 'DGRQ', 'SLB', 'RSH', 'WSH', 'SMQ'];
+const MAINTENANCE_SYSTEM_PRIORITY = ['GZRQ', 'GGRQ', 'PSGRQ', 'DPGRQ', 'DZRQ', 'DGRQ', 'SLB', 'RSH', 'WSH', 'SMQ'];
 function maintenanceFocusForSurface(sys) {
-  if(['GGRQ', 'GZRQ', 'HPGRQ', 'DPGRQ'].includes(sys)) return '高温蠕变、氧化皮堆积、异种钢焊口和弯头外弧减薄';
+  if(['GGRQ', 'GZRQ', 'PSGRQ', 'DPGRQ'].includes(sys)) return '高温蠕变、氧化皮堆积、异种钢焊口和弯头外弧减薄';
   if(['DGRQ', 'DZRQ', 'SMQ'].includes(sys)) return '烟气冲刷、磨损减薄、支吊卡涩和积灰腐蚀';
   if(sys === 'SLB') return '水冷壁高热负荷区、防磨瓦、鳍片焊缝和局部鼓包';
   return '吊挂、密封、包覆区域和历史缺陷复查';
@@ -3231,7 +3231,7 @@ function buildAntiWearExpansionRecommendation(surface, latestContext) {
     SLB: '扩大检查范围：高热负荷区、燃烧器周边、卫燃带边界、相邻±3排及鳍片焊缝',
     GGRQ: '扩大检查范围：同屏相邻±2屏、外圈弯头、夹持管、异种钢焊口和吹灰器覆盖区',
     GZRQ: '扩大检查范围：同屏相邻±2屏、外圈弯头、定位管夹、入口喷水影响区和烟气走廊',
-    HPGRQ: '扩大检查范围：屏底外圈、包扎管、相邻±2屏、管排晃动磨损和高温腐蚀区',
+    PSGRQ: '扩大检查范围：屏底外圈、包扎管、相邻±2屏、管排晃动磨损和高温腐蚀区',
     DPGRQ: '扩大检查范围：屏底夹持管、外圈迎烟面、结渣冲刷区和相邻小屏',
     DGRQ: '扩大检查范围：水平段迎烟面、吹灰器附近、积灰桥接区、同排上下游管组',
     DZRQ: '扩大检查范围：水平段下部、支撑块/管卡接触点、低速积灰区和垂直段过渡区',
@@ -3364,7 +3364,7 @@ function tubeLedgerMatrixStats() {
     const count = matrixRowCount(item);
     stats.total += count;
     if(item.sys === 'SLB') stats.slb += count;
-    else if(['DGRQ', 'DPGRQ', 'HPGRQ', 'GGRQ'].includes(item.sys)) stats.sh += count;
+    else if(['DGRQ', 'DPGRQ', 'PSGRQ', 'GGRQ'].includes(item.sys)) stats.sh += count;
     else stats.rhEco += count;
   });
   return stats;
@@ -3784,10 +3784,12 @@ function getLLMFormConfig() {
     const value = el && typeof el.value === 'string' ? el.value.trim() : '';
     return value === '' ? fallback : value;
   };
+  // API Key 以表单为准：空值表示明确清空本地 Key（改用服务端代理），不能回退到已保存值。
+  const keyInput = document.getElementById('llm-api-key');
   return {
     provider: readField('llm-provider', saved.provider),
     baseUrl: normalizeLLMBaseUrl(readField('llm-base-url', saved.baseUrl)),
-    apiKey: readField('llm-api-key', saved.apiKey),
+    apiKey: keyInput && typeof keyInput.value === 'string' ? keyInput.value.trim() : saved.apiKey,
     model: readField('llm-model', saved.model),
     temperature: Number(readField('llm-temperature', saved.temperature))
   };
@@ -3809,7 +3811,12 @@ function loadLLMConfigToForm() {
 function syncLLMConfigStatus() {
   const config = readLLMConfigFromStorage();
   if(llmServerStatus?.serverKey && !config.apiKey) {
-    setLLMStatus('已就绪：未填本地 API Key，模型调用将走服务端代理（密钥不出浏览器）。', 'ok');
+    const serverModel = String(llmServerStatus.model || '').trim();
+    setLLMStatus('已就绪：模型调用走服务端代理' + (serverModel ? '（模型：' + serverModel + '）' : '') + '，密钥不会下发到浏览器。', 'ok');
+    return;
+  }
+  if(llmServerStatus?.serverKey && config.apiKey) {
+    setLLMStatus('检测到本地 API Key：当前走浏览器直连。若服务商不支持跨域，请清空 API Key 并保存，改用服务端代理。', 'warn');
     return;
   }
   if(config.baseUrl && config.apiKey && config.model) {
@@ -3840,18 +3847,41 @@ async function refreshLLMServerStatus() {
   }
   // 助手模块（独立 IIFE）通过该标志感知服务端密钥模式
   window.__llmServerKey = Boolean(llmServerStatus?.serverKey);
+  applyLLMServerDefaults();
   updateLLMServerHint();
   syncLLMConfigStatus();
 }
-function updateLLMServerHint() {
+/* 服务端已配置默认地址/模型时先回填表单：某些网关不支持 /models，
+   用户无需点“识别可用模型”就能直接测试连接。本地已保存的值优先。 */
+function applyLLMServerDefaults() {
   if(!llmServerStatus?.serverKey) return;
   const saved = readLLMConfigFromStorage();
-  const keyInput = document.getElementById('llm-api-key');
-  if(keyInput && !keyInput.value && !saved.apiKey) {
-    keyInput.placeholder = '留空即使用服务端密钥（推荐）';
-    const note = keyInput.closest('.form-group')?.querySelector('.llm-note');
-    if(note) note.textContent = '服务端已配置模型密钥：API Key 留空即走服务端代理，密钥不会出现在浏览器；也可填写自己的 Key 直连服务商。';
+  const baseInput = document.getElementById('llm-base-url');
+  if(baseInput && !baseInput.value.trim() && !saved.baseUrl && llmServerStatus.baseUrl) {
+    baseInput.value = llmServerStatus.baseUrl;
   }
+  const serverModel = String(llmServerStatus.model || '').trim();
+  if(!serverModel || saved.model) return;
+  const modelInput = document.getElementById('llm-model');
+  if(!modelInput || modelInput.value.trim()) return;
+  modelInput.value = serverModel;
+  const datalist = document.getElementById('llm-model-options');
+  if(datalist && ![...datalist.options].some(option => option.value === serverModel)) {
+    const option = document.createElement('option');
+    option.value = serverModel;
+    datalist.appendChild(option);
+  }
+}
+function updateLLMServerHint() {
+  if(!llmServerStatus?.serverKey) return;
+  const keyInput = document.getElementById('llm-api-key');
+  if(!keyInput) return;
+  if(!keyInput.value) keyInput.placeholder = '留空即使用服务端密钥（推荐）';
+  const note = keyInput.closest('.form-group')?.querySelector('.llm-note');
+  if(!note) return;
+  note.textContent = keyInput.value
+    ? '服务端已配置模型密钥，但当前填写了本地 Key：将走浏览器直连。若直连失败（例如网关不支持跨域），请清空此输入框并保存，改用服务端代理。'
+    : '服务端已配置模型密钥：API Key 留空即走服务端代理，密钥不会出现在浏览器；也可填写自己的 Key 直连服务商。';
 }
 function applyLLMProviderPreset() {
   const provider = document.getElementById('llm-provider').value;
@@ -4228,6 +4258,9 @@ async function discoverLLMModelsFromUI() {
 async function ensureLLMModelSelected() {
   let config = getLLMFormConfig();
   if(config.model) return config;
+  // 服务端已配置默认模型时直接使用，避免再请求网关可能不支持的 /models。
+  const serverModel = String(llmServerStatus?.model || '').trim();
+  if(usingServerLLM(config) && serverModel) return { ...config, model: serverModel };
   try {
     await discoverLLMModels({ silent: true });
   } catch (err) {
@@ -4556,7 +4589,7 @@ function assessReplacementWarning(current, thresholdInfo) {
    区间含义：slow=同类机组偏慢、fast=偏快；均为占位经验值，可按电厂实际修订。 */
 const PRIOR_THINNING_RATES = {
   SLB: { slow: 0.05, fast: 0.15 }, RSH: { slow: 0.03, fast: 0.08 }, WSH: { slow: 0.03, fast: 0.08 },
-  DGRQ: { slow: 0.05, fast: 0.12 }, DPGRQ: { slow: 0.06, fast: 0.15 }, HPGRQ: { slow: 0.08, fast: 0.18 },
+  DGRQ: { slow: 0.05, fast: 0.12 }, DPGRQ: { slow: 0.06, fast: 0.15 }, PSGRQ: { slow: 0.08, fast: 0.18 },
   GGRQ: { slow: 0.08, fast: 0.20 }, DZRQ: { slow: 0.05, fast: 0.12 }, GZRQ: { slow: 0.08, fast: 0.20 },
   SMQ: { slow: 0.03, fast: 0.08 }
 };
@@ -5045,7 +5078,7 @@ function renderAIChart(data) {
 function typeWriter(elementId, text, speed = 20) { const el = document.getElementById(elementId); el.innerHTML = ''; let i = 0; const cursor = '<span class="ai-cursor"></span>'; function type() { if (i < text.length) { el.innerHTML = text.substring(0, i + 1).replace(/\n/g, '<br>') + cursor; i++; setTimeout(type, speed); } else { el.innerHTML = text.replace(/\n/g, '<br>'); } } type(); }
 function generateMockAIData(target, model) { if (model === 'thickness') { return { current: 7.1, threshold: 5.5, rate: '0.085 mm/y', rul: 18500, conf: 92, status: '关注', history: [{year:2018,val:8.0},{year:2020,val:7.8},{year:2023,val:7.4},{year:2025,val:7.1}], prediction: [{year:2026,val:6.9},{year:2028,val:6.5},{year:2030,val:6.1},{year:2032,val:5.7},{year:2033,val:5.5}], report: `【AI 壁厚减薄趋势分析报告】\n对象：${target}\n模型：LSTM 时序预测网络 + 物理约束\n\n1. 趋势分析：历史数据显示该管段壁厚呈非线性减薄趋势，近3年劣化速率从 0.05mm/y 加速至 0.085mm/y，表明内壁可能存在轻微的酸性腐蚀或外壁高温氧化加剧。\n2. 寿命预测：根据当前轨迹，预计将于 2032年底 触及设计最小壁厚阈值(5.5mm)。\n3. 剩余寿命(RUL)：折算运行小时数约 18,500 小时。\n4. AI 建议：建议在下次A级检修中对该管段及同屏相邻管进行超声波测厚(UT)复测，并检查烟气侧是否存在局部冲刷磨损。若减薄速率持续>0.1mm/y，请提前列入更换计划。` }; } else { return { current: 68, threshold: 90, rate: '1.2 %/y', rul: 22000, conf: 88, status: '预警', history: [{year:2018,val:10},{year:2020,val:25},{year:2023,val:45},{year:2025,val:68}], prediction: [{year:2026,val:75},{year:2028,val:82},{year:2030,val:88},{year:2031,val:90}], report: `【AI 蠕变损伤评估报告】\n对象：${target}\n模型：Larson-Miller 参数融合神经网络\n\n1. 损伤评估：当前蠕变损伤度已达 68%，进入加速蠕变阶段(第三阶段)。金相组织可能已出现明显的碳化物球化和晶界微裂纹。\n2. 趋势预测：预计在未来 5 年内损伤度将突破 90% 的安全红线。\n3. AI 建议：立即安排现场金相复型检验，重点关注热影响区(HAZ)。建议降低该区域管段的运行壁温控制设定值 5-10℃，以延缓蠕变进程。` }; } }
 
-const ZONES = { qdp: {title:'全大屏过热器', sys:'DPGRQ', spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', count:'6片×4小屏', desc:'位于炉膛上方，全辐射式受热面。工作条件极为恶劣，屏底外圈采用 SA-213T91 耐热钢。', params:'吸收炉膛高温辐射热 | 烟气侧易结渣 | 需重点监控夹持管状态'}, hp: {title:'后屏/屏式过热器', sys:'HPGRQ', spec:'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', count:'21屏', desc:'布置于炉膛出口处，辐射对流式受热面。回路1-3及包扎管（回路13）底弯采用 TP347H，回路7-12整根 12Cr1MoVG（148M215-0）。', params:'承受炉膛出口高温烟气冲刷 | 易发生高温腐蚀 | 节距 S1=685.8'}, gg: {title:'高温过热器 (高过)', sys:'GGRQ', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', count:'32片', desc:'悬吊于水平烟道内，顺列顺流布置。12管圈U形绕制，暴露在最外侧的管子采用 TP304H。', params:'蒸汽温度最高区 | 烟气流向转折区 | 需防范管排晃动磨损'}, gz: {title:'高温再热器 (高再)', sys:'GZRQ', spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', count:'64片', desc:'位于水平烟道后部，7根管圈绕制。入口设有喷水减温器，控制再热汽温。', params:'带喷水减温控制 | 烟气温度开始下降 | 管间由带状机械管夹定位'}, dwgr: {title:'低温过热器 (低过)', sys:'DGRQ', spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', count:'112排', desc:'布置于尾部竖井前烟道，顺列逆流布置。水平段分4组，留有检修空间。', params:'入口烟温 876.6℃ | 出口烟温 382.7℃ | 压降 -0.3kPa | 易积灰'}, dwzr: {title:'低温再热器 (低再)', sys:'DZRQ', spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', count:'112片+56片', desc:'布置于尾部竖井后烟道，与低过并列。水平段5组，垂直段每2排并1排。', params:'入口烟温 840.3℃ | 出口烟温 349.4℃ | 压降 -0.2kPa | 支撑块承重'}, scr: {title:'SCR 脱硝反应器', sys:'SCR', spec:'氨注射栅格 + 催化剂', count:'A/B侧', desc:'位于尾部烟道下方，喷氨格栅将氨气与烟气均匀混合，通过催化剂还原 NOx。', params:'入口NOx ~278 mg/Nm³ | 出口NOx 25.1 mg/Nm³ | 脱硝效率 99.9% | 氨逃逸 <3ppm'}, smq: {title:'省煤器', sys:'SMQ', spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', count:'124排×3圈+吊挂管112根', desc:'分上、下两级串联布置于烟气挡板之后的下行竖井内，利用尾部烟气余热加热锅炉给水，降低排烟温度。', params:'上/下两级分级串联 | 烟温 287.5℃ → 289.0℃ | 易发生低温腐蚀与飞灰磨损'} };
+const ZONES = { qdp: {title:'全大屏过热器', sys:'DPGRQ', spec:'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', count:'6片×4小屏', desc:'位于炉膛上方，全辐射式受热面。工作条件极为恶劣，屏底外圈采用 SA-213T91 耐热钢。', params:'吸收炉膛高温辐射热 | 烟气侧易结渣 | 需重点监控夹持管状态'}, hp: {title:'后屏/屏式过热器', sys:'PSGRQ', spec:'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', count:'21屏', desc:'布置于炉膛出口处，辐射对流式受热面。回路1-3及包扎管（回路13）底弯采用 TP347H，回路7-12整根 12Cr1MoVG（148M215-0）。', params:'承受炉膛出口高温烟气冲刷 | 易发生高温腐蚀 | 节距 S1=685.8'}, gg: {title:'高温过热器 (高过)', sys:'GGRQ', spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', count:'32片', desc:'悬吊于水平烟道内，顺列顺流布置。12管圈U形绕制，暴露在最外侧的管子采用 TP304H。', params:'蒸汽温度最高区 | 烟气流向转折区 | 需防范管排晃动磨损'}, gz: {title:'高温再热器 (高再)', sys:'GZRQ', spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', count:'64片', desc:'位于水平烟道后部，7根管圈绕制。入口设有喷水减温器，控制再热汽温。', params:'带喷水减温控制 | 烟气温度开始下降 | 管间由带状机械管夹定位'}, dwgr: {title:'低温过热器 (低过)', sys:'DGRQ', spec:'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', count:'112排', desc:'布置于尾部竖井前烟道，顺列逆流布置。水平段分4组，留有检修空间。', params:'入口烟温 876.6℃ | 出口烟温 382.7℃ | 压降 -0.3kPa | 易积灰'}, dwzr: {title:'低温再热器 (低再)', sys:'DZRQ', spec:'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', count:'112片+56片', desc:'布置于尾部竖井后烟道，与低过并列。水平段5组，垂直段每2排并1排。', params:'入口烟温 840.3℃ | 出口烟温 349.4℃ | 压降 -0.2kPa | 支撑块承重'}, scr: {title:'SCR 脱硝反应器', sys:'SCR', spec:'氨注射栅格 + 催化剂', count:'A/B侧', desc:'位于尾部烟道下方，喷氨格栅将氨气与烟气均匀混合，通过催化剂还原 NOx。', params:'入口NOx ~278 mg/Nm³ | 出口NOx 25.1 mg/Nm³ | 脱硝效率 99.9% | 氨逃逸 <3ppm'}, smq: {title:'省煤器', sys:'SMQ', spec:'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', count:'124排×3圈+吊挂管112根', desc:'分上、下两级串联布置于烟气挡板之后的下行竖井内，利用尾部烟气余热加热锅炉给水，降低排烟温度。', params:'上/下两级分级串联 | 烟温 287.5℃ → 289.0℃ | 易发生低温腐蚀与飞灰磨损'} };
 function showZone(z) { const info = ZONES[z]; const el = document.getElementById('zoneDetail'); el.style.display = 'block'; el.innerHTML = `<div class="card-title"><span class="badge badge-ww">${info.sys}</span> ${info.title}</div><div class="info-grid"><div class="info-item"><div class="k">规格/材质</div><div class="v">${info.spec}</div></div><div class="info-item"><div class="k">数量/规模</div><div class="v">${info.count}</div></div><div class="info-item" style="grid-column:span 2;"><div class="k">湛江#1机组 实时运行参数</div><div class="v" style="font-size:13px; color:var(--warn);">${info.params}</div></div><div class="info-item" style="grid-column:span 2;"><div class="k">工艺与防磨防爆描述</div><div class="v" style="font-size:12px;">${info.desc}</div></div></div>`; el.scrollIntoView({behavior:'smooth', block:'nearest'}); }
 
 // ========== AI 数据助手桥接（assistant-v1.js 复用，不得改变既有行为） ==========
@@ -5167,7 +5200,7 @@ const GGRQ_LOOP_BASELINE = [
 // 屏式过热器（后屏）13回路材质分段基准（图纸148M215-0 + 用户确认2026-11-01）。
 // 统一回路编号：回路k = 入口段F00k↓ + 底弯W(F00k-W) + 出口段B00k↑，每回路即一根U形管。
 // 回路1外圈Φ60；回路2-3底弯TP347H；回路4-6底弯T91；回路7-12整根12Cr1MoVG（含底弯）；回路13包扎管底弯Φ54×9 TP347H。
-const HPGRQ_LOOP_BASELINE = [
+const PSGRQ_LOOP_BASELINE = [
   { loop: 1, frontSegs: [['Φ60×8', '12Cr1MoVG'], ['Φ60×8', 'SA-213T91'], ['Φ60×9', 'SA-213TP347H']], rearSegs: [['Φ60×8', 'SA-213T91'], ['Φ60×9', '12Cr1MoVG']] },
   { loop: 2, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213TP347H']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
   { loop: 3, frontSegs: [['Φ54×8.5', '12Cr1MoVG'], ['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', 'SA-213TP347H']], rearSegs: [['Φ54×8.5', 'SA-213T91'], ['Φ54×8.5', '12Cr1MoVG']] },
@@ -5247,7 +5280,7 @@ const SMQ_LOOP_BASELINE = [
 // 悬挂屏回路系统配置：统一回路编号——回路k = 入口段F00k + 底弯W(F00k-W) + 出口段B00k；历史腿号由归一自动迁移。
 const PLATEN_LOOP_SYSTEMS = {
   GGRQ: { loops: 12, baseline: GGRQ_LOOP_BASELINE },
-  HPGRQ: { loops: 13, baseline: HPGRQ_LOOP_BASELINE },
+  PSGRQ: { loops: 13, baseline: PSGRQ_LOOP_BASELINE },
   DPGRQ: { loops: 14, baseline: DPGRQ_LOOP_BASELINE },
   GZRQ: { loops: 7, baseline: GZRQ_LOOP_BASELINE }
 };
@@ -5374,7 +5407,7 @@ function renderGGRQLoopBaseline() {
   const host = document.getElementById('ggrqLoopBaseline');
   if (!host) return;
   host.innerHTML = platenLoopBaselineTable(GGRQ_LOOP_BASELINE, '高温过热器 12 回路材质分段基准（图纸 148M211-0）') +
-    platenLoopBaselineTable(HPGRQ_LOOP_BASELINE, '屏式过热器 13 回路材质分段基准（图纸 148M215-0）') +
+    platenLoopBaselineTable(PSGRQ_LOOP_BASELINE, '屏式过热器 13 回路材质分段基准（图纸 148M215-0）') +
     platenLoopBaselineTable(DPGRQ_LOOP_BASELINE, '全大屏过热器 14 回路材质分段基准（图纸 148M216-0）');
 }
 function tubeLoopBaselineTable(baseline, caption, flowLabel) {

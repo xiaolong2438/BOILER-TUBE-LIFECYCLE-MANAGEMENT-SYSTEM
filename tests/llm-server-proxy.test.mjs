@@ -27,4 +27,13 @@ assert.match(js, /fetch\('\/api\/llm\/chat', \{[\s\S]*?method: 'POST'/);
 assert.match(js, /fetch\('\/api\/llm\/models'\)/);
 assert.match(js, /refreshLLMServerStatus\(\);/);
 
+// 服务端代理可用时：回填服务端默认地址/模型，并提示本地 Key 会绕过代理。
+assert.match(js, /function applyLLMServerDefaults\(/);
+assert.match(js, /applyLLMServerDefaults\(\);/);
+assert.match(js, /usingServerLLM\(config\) && serverModel/);
+assert.match(js, /服务端已配置模型密钥，但当前填写了本地 Key/);
+assert.match(js, /清空 API Key/);
+// 清空输入框必须真正清掉已保存的本地 Key，否则永远切不回服务端代理。
+assert.match(js, /apiKey: keyInput && typeof keyInput\.value === 'string' \? keyInput\.value\.trim\(\) : saved\.apiKey/);
+
 console.log("ok - LLM server-side proxy keeps the API key out of the browser");

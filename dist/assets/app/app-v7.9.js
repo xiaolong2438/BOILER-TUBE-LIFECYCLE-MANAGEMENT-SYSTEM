@@ -3784,10 +3784,12 @@ function getLLMFormConfig() {
     const value = el && typeof el.value === 'string' ? el.value.trim() : '';
     return value === '' ? fallback : value;
   };
+  // API Key 以表单为准：空值表示明确清空本地 Key（改用服务端代理），不能回退到已保存值。
+  const keyInput = document.getElementById('llm-api-key');
   return {
     provider: readField('llm-provider', saved.provider),
     baseUrl: normalizeLLMBaseUrl(readField('llm-base-url', saved.baseUrl)),
-    apiKey: readField('llm-api-key', saved.apiKey),
+    apiKey: keyInput && typeof keyInput.value === 'string' ? keyInput.value.trim() : saved.apiKey,
     model: readField('llm-model', saved.model),
     temperature: Number(readField('llm-temperature', saved.temperature))
   };
@@ -3809,7 +3811,12 @@ function loadLLMConfigToForm() {
 function syncLLMConfigStatus() {
   const config = readLLMConfigFromStorage();
   if(llmServerStatus?.serverKey && !config.apiKey) {
-    setLLMStatus('已就绪：未填本地 API Key，模型调用将走服务端代理（密钥不出浏览器）。', 'ok');
+    const serverModel = String(llmServerStatus.model || '').trim();
+    setLLMStatus('已就绪：模型调用走服务端代理' + (serverModel ? '（模型：' + serverModel + '）' : '') + '，密钥不会下发到浏览器。', 'ok');
+    return;
+  }
+  if(llmServerStatus?.serverKey && config.apiKey) {
+    setLLMStatus('检测到本地 API Key：当前走浏览器直连。若服务商不支持跨域，请清空 API Key 并保存，改用服务端代理。', 'warn');
     return;
   }
   if(config.baseUrl && config.apiKey && config.model) {
@@ -3840,18 +3847,41 @@ async function refreshLLMServerStatus() {
   }
   // 助手模块（独立 IIFE）通过该标志感知服务端密钥模式
   window.__llmServerKey = Boolean(llmServerStatus?.serverKey);
+  applyLLMServerDefaults();
   updateLLMServerHint();
   syncLLMConfigStatus();
 }
-function updateLLMServerHint() {
+/* 服务端已配置默认地址/模型时先回填表单：某些网关不支持 /models，
+   用户无需点“识别可用模型”就能直接测试连接。本地已保存的值优先。 */
+function applyLLMServerDefaults() {
   if(!llmServerStatus?.serverKey) return;
   const saved = readLLMConfigFromStorage();
-  const keyInput = document.getElementById('llm-api-key');
-  if(keyInput && !keyInput.value && !saved.apiKey) {
-    keyInput.placeholder = '留空即使用服务端密钥（推荐）';
-    const note = keyInput.closest('.form-group')?.querySelector('.llm-note');
-    if(note) note.textContent = '服务端已配置模型密钥：API Key 留空即走服务端代理，密钥不会出现在浏览器；也可填写自己的 Key 直连服务商。';
+  const baseInput = document.getElementById('llm-base-url');
+  if(baseInput && !baseInput.value.trim() && !saved.baseUrl && llmServerStatus.baseUrl) {
+    baseInput.value = llmServerStatus.baseUrl;
   }
+  const serverModel = String(llmServerStatus.model || '').trim();
+  if(!serverModel || saved.model) return;
+  const modelInput = document.getElementById('llm-model');
+  if(!modelInput || modelInput.value.trim()) return;
+  modelInput.value = serverModel;
+  const datalist = document.getElementById('llm-model-options');
+  if(datalist && ![...datalist.options].some(option => option.value === serverModel)) {
+    const option = document.createElement('option');
+    option.value = serverModel;
+    datalist.appendChild(option);
+  }
+}
+function updateLLMServerHint() {
+  if(!llmServerStatus?.serverKey) return;
+  const keyInput = document.getElementById('llm-api-key');
+  if(!keyInput) return;
+  if(!keyInput.value) keyInput.placeholder = '留空即使用服务端密钥（推荐）';
+  const note = keyInput.closest('.form-group')?.querySelector('.llm-note');
+  if(!note) return;
+  note.textContent = keyInput.value
+    ? '服务端已配置模型密钥，但当前填写了本地 Key：将走浏览器直连。若直连失败（例如网关不支持跨域），请清空此输入框并保存，改用服务端代理。'
+    : '服务端已配置模型密钥：API Key 留空即走服务端代理，密钥不会出现在浏览器；也可填写自己的 Key 直连服务商。';
 }
 function applyLLMProviderPreset() {
   const provider = document.getElementById('llm-provider').value;
@@ -4228,6 +4258,9 @@ async function discoverLLMModelsFromUI() {
 async function ensureLLMModelSelected() {
   let config = getLLMFormConfig();
   if(config.model) return config;
+  // 服务端已配置默认模型时直接使用，避免再请求网关可能不支持的 /models。
+  const serverModel = String(llmServerStatus?.model || '').trim();
+  if(usingServerLLM(config) && serverModel) return { ...config, model: serverModel };
   try {
     await discoverLLMModels({ silent: true });
   } catch (err) {
