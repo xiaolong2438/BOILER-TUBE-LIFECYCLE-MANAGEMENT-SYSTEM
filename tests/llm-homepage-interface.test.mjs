@@ -16,7 +16,8 @@ const checks = [
   ["dashboard contains standard LLM interface panel", () => {
     assert.match(html, /id="llm-provider"/);
     assert.match(html, /id="llm-api-key"/);
-    assert.match(html, /<select id="llm-model"/);
+    assert.match(html, /<input id="llm-model"[^>]*list="llm-model-options"/);
+    assert.match(html, /<datalist id="llm-model-options"/);
     assert.match(html, /id="llm-prompt"/);
     assert.match(html, /id="llm-result"/);
   }],
@@ -47,6 +48,14 @@ const checks = [
     assert.match(html, /\/models/);
     assert.match(html, /function renderLLMModelOptions\s*\(/);
     assert.match(html, /识别可用模型/);
+  }],
+  ["model id can be entered manually when discovery fails", () => {
+    assert.match(html, /可手动填写/);
+    assert.match(html, /手动填写模型 ID/);
+    // 识别结果只作为 datalist 建议，不得覆盖用户已填写的模型
+    assert.match(html, /const typedModel = String\(document\.getElementById\('llm-model'\)\?\.value \|\| ''\)\.trim\(\)/);
+    assert.match(html, /const selected = typedModel/);
+    assert.match(html, /datalist\.innerHTML = list\.map/);
   }],
   ["network errors render actionable diagnostics for model discovery and chat", () => {
     assert.match(html, /function formatLLMError\s*\(/);

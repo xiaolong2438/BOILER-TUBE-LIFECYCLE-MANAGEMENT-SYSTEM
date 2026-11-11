@@ -3858,8 +3858,9 @@ function applyLLMProviderPreset() {
   const preset = LLM_PROVIDER_PRESETS[provider];
   if(!preset || provider === 'custom') return;
   document.getElementById('llm-base-url').value = preset.baseUrl;
-  renderLLMModelOptions([], '');
-  setLLMStatus(`已套用 ${provider} 预设，请填写或确认 API Key 后识别可用模型。`, 'info');
+  // 预设自带的模型先填入输入框：识别接口不可用时也能直接使用，识别成功后可在建议列表里切换。
+  renderLLMModelOptions(preset.model ? [preset.model] : [], preset.model || '');
+  setLLMStatus(`已套用 ${provider} 预设，请填写或确认 API Key 后识别可用模型，也可直接使用或手动填写模型 ID。`, 'info');
 }
 function buildLLMContext() {
   const localCodes = [...new Set(userDB.events.map(e => e.code))].slice(0, 8);
@@ -3892,17 +3893,18 @@ function extractLLMModels(data) {
   const rawModels = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
   return [...new Set(rawModels.map(item => typeof item === 'string' ? item : item?.id || item?.name).filter(Boolean))].sort();
 }
+/* 模型输入框是可编辑的 combobox：datalist 只提供识别结果的建议，用户始终可以手动填写模型 ID。
+   这样在服务商不提供 /models、接口跨域失败或返回结构不兼容时，不会因为“识别不出模型”而无法调用。 */
 function renderLLMModelOptions(models, selected = '') {
-  const select = document.getElementById('llm-model');
-  if(!select) return;
+  const input = document.getElementById('llm-model');
+  const datalist = document.getElementById('llm-model-options');
   const list = [...new Set(models || [])].filter(Boolean);
-  if(list.length === 0) {
-    select.innerHTML = '<option value="">请先识别可用模型</option>';
-    return;
+  if(datalist) {
+    datalist.innerHTML = list.map(id => `<option value="${escapeHTML(id)}"></option>`).join('');
   }
-  select.innerHTML = '<option value="">请选择模型</option>' + list.map(id => `<option value="${escapeHTML(id)}">${escapeHTML(id)}</option>`).join('');
-  if(selected && list.includes(selected)) select.value = selected;
-  else if(list.length === 1) select.value = list[0];
+  if(!input) return;
+  if(selected) input.value = selected;
+  else if(!input.value && list.length === 1) input.value = list[0];
 }
 function formatLLMError(err, action = '调用') {
   const message = err?.message || String(err);
@@ -4197,17 +4199,21 @@ async function discoverLLMModels(options = {}) {
   try { data = raw ? JSON.parse(raw) : {}; } catch (err) { throw new Error(`模型列表接口返回非JSON内容：${raw.slice(0, 240)}`); }
   if(!response.ok) throw new Error(`HTTP ${response.status}: ${data.error?.message || data.error || raw.slice(0, 240) || '模型列表请求失败'}`);
   const models = extractLLMModels(data);
-  if(models.length === 0) throw new Error('接口已响应，但未在 /models 返回中找到可用模型 id。');
+  if(models.length === 0) throw new Error('接口已响应，但没有返回可识别的模型列表。可直接在「可用模型」输入框手动填写模型 ID（参考服务商文档）后保存或测试连接。');
   const previous = JSON.parse(localStorage.getItem(LLM_CONFIG_KEY) || '{}');
   const serverDefault = llmServerStatus?.model;
-  const selected = (previous.model && models.includes(previous.model)) ? previous.model
-    : (serverDefault && models.includes(serverDefault)) ? serverDefault
-    : models[0];
+  // 手动填写的模型优先保留：识别到新列表时不覆盖用户输入，只把它作为下拉建议。
+  const typedModel = String(document.getElementById('llm-model')?.value || '').trim();
+  const selected = typedModel
+    || ((previous.model && models.includes(previous.model)) ? previous.model : '')
+    || ((serverDefault && models.includes(serverDefault)) ? serverDefault : '')
+    || models[0];
   renderLLMModelOptions(models, selected);
   localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify({ ...config, model: selected, models }));
   if(!options.silent) {
+    const manualNote = typedModel && !models.includes(typedModel) ? '（手动填写，未出现在接口列表中）' : '';
     renderLLMResult(`已识别 ${models.length} 个可用模型：\n${models.join('\n')}`);
-    setLLMStatus(`模型识别完成，当前选择：${selected}`, 'ok');
+    setLLMStatus(`模型识别完成，当前使用：${selected}${manualNote}`, 'ok');
   }
   return models;
 }
@@ -4215,16 +4221,20 @@ async function discoverLLMModelsFromUI() {
   try {
     await discoverLLMModels();
   } catch (err) {
-    renderLLMResult(formatLLMError(err, '模型识别'));
-    setLLMStatus('模型识别失败，详情见结果框。', 'error');
+    renderLLMResult(formatLLMError(err, '模型识别') + '\n\n如果服务商不提供 /models 接口或返回格式不兼容，请在「可用模型」输入框直接手动填写模型 ID（例如 deepseek-chat、qwen-plus），保存配置后即可调用。');
+    setLLMStatus('模型识别失败，可手动填写模型 ID 后重试，详情见结果框。', 'error');
   }
 }
 async function ensureLLMModelSelected() {
   let config = getLLMFormConfig();
   if(config.model) return config;
-  await discoverLLMModels({ silent: true });
+  try {
+    await discoverLLMModels({ silent: true });
+  } catch (err) {
+    throw new Error(`自动识别模型失败：${err?.message || err}。请在「可用模型」输入框中手动填写模型 ID 后重试。`);
+  }
   config = getLLMFormConfig();
-  if(!config.model) throw new Error('未选择可用模型，请先识别模型并选择。');
+  if(!config.model) throw new Error('未选择可用模型：请先识别模型并选择，或在「可用模型」中手动填写模型 ID。');
   return config;
 }
 async function sendLLMMessages(messages, maxTokens = 1800, options = {}) {
