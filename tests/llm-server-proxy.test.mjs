@@ -36,4 +36,9 @@ assert.match(js, /清空 API Key/);
 // 清空输入框必须真正清掉已保存的本地 Key，否则永远切不回服务端代理。
 assert.match(js, /apiKey: keyInput && typeof keyInput\.value === 'string' \? keyInput\.value\.trim\(\) : saved\.apiKey/);
 
+// 未指定 timeoutMs 的普通连接/分析请求应有合理的默认超时，而不是被钳制为 1 秒。
+assert.match(js, /Number\(options\.timeoutMs\) \|\| 60000/);
+assert.match(js, /sendLLMMessages\(messages, maxTokens, \{ timeoutMs: 8000 \}\)/);
+assert.match(js, /sendLLMMessages\(messages, maxTokens, \{ timeoutMs: 90000 \}\)/);
+
 console.log("ok - LLM server-side proxy keeps the API key out of the browser");

@@ -4274,7 +4274,7 @@ async function sendLLMMessages(messages, maxTokens = 1800, options = {}) {
   const config = await ensureLLMModelSelected();
   if(!config.model) throw new Error('未识别到可用模型。');
   localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(config));
-  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 0);
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 60000);
   const controller = timeoutMs && typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   const payload = { model: config.model, messages, temperature: config.temperature, max_tokens: maxTokens };
