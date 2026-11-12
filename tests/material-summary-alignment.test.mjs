@@ -19,14 +19,14 @@ const expectedBySys = new Map([
   ["WSH", "Φ51×6 12Cr1MoVG、Φ51×7 12Cr1MoVG、Φ63.5×12 12Cr1MoVG"],
   ["DGRQ", "Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG"],
   ["DPGRQ", "Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91"],
-  ["HPGRQ", "Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H"],
+  ["PSGRQ", "Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H"],
   ["GGRQ", "Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG"],
   ["GZRQ", "Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG"],
   ["DZRQ", "Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG"],
 ]);
 
 /* 顶棚(RSH)/包墙(WSH)仅存在于材料库与部件清单，不参与新编码规则 → 只校验部件摘要 */
-const CODED_SYSTEMS = ["DPGRQ", "HPGRQ", "GGRQ", "GZRQ", "DGRQ", "DZRQ", "SMQ", "SLB"];
+const CODED_SYSTEMS = ["DPGRQ", "PSGRQ", "GGRQ", "GZRQ", "DGRQ", "DZRQ", "SMQ", "SLB"];
 for (const [sys, summary] of expectedBySys) {
   const escaped = summary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   assert.match(html, new RegExp(`sys: '${sys}'[\\s\\S]*?spec: '${escaped}'[\\s\\S]*?mat: '按材料库分项'`), `${sys} component summary should align to material library`);
@@ -35,7 +35,7 @@ for (const [sys, summary] of expectedBySys) {
   }
 }
 
-for (const [sys, summary] of [...expectedBySys].filter(([sys]) => ["DPGRQ", "HPGRQ", "GGRQ", "GZRQ", "DGRQ", "DZRQ", "SMQ"].includes(sys))) {
+for (const [sys, summary] of [...expectedBySys].filter(([sys]) => ["DPGRQ", "PSGRQ", "GGRQ", "GZRQ", "DGRQ", "DZRQ", "SMQ"].includes(sys))) {
   const escaped = summary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   assert.match(html, new RegExp(`sys:'${sys}', spec:'${escaped}'`), `${sys} schematic summary should align to material library`);
 }

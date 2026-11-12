@@ -503,7 +503,7 @@ const checks = [
     assert.match(parsed.description, /高温过热器/);
     assert.equal(Core.parseQuery("2号炉水冷壁前墙的事件", {}).filters.zone, "F000");
     const wide = Core.parseQuery("1 号炉所有过热器的事件", {});
-    assert.deepEqual(wide.filters.sys, ["RSH", "WSH", "DGRQ", "DPGRQ", "HPGRQ", "GGRQ"]);
+    assert.deepEqual(wide.filters.sys, ["RSH", "WSH", "DGRQ", "DPGRQ", "PSGRQ", "GGRQ"]);
     assert.match(wide.description, /顶棚过热器/);
     assert.equal(Core.parseQuery("全厂的事故", {}).filters.unit, undefined, "全厂不设 unit");
   }],

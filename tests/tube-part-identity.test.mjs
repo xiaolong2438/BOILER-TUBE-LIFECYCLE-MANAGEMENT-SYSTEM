@@ -34,7 +34,7 @@ const ctx = vm.createContext({
   Date, Set, Map
 });
 for (const name of [
-  'normalizeCodeDirection', 'normalizedTubeCode', 'dmDuplicateKey', 'tubePositionKey', 'sameTubeMeasurement',
+  'canonicalizeSystemAliases', 'normalizeCodeDirection', 'normalizedTubeCode', 'dmDuplicateKey', 'tubePositionKey', 'sameTubeMeasurement',
   'isExactInspectionDate', 'tubeEvidenceEvents', 'currentTubeEvents', 'parseTubeCode',
   'matrixRowMatches', 'matchComponentFromCode', 'validateCodeAgainstMatrix', 'validateCodeAgainstRules',
   'extractThicknessData', 'getTubeProfileData', 'matrixExpandCodes', 'matrixRowCount',
@@ -139,14 +139,14 @@ assert.equal(ctx.ggrqLoopBinding('1G-GGRQ-GQ-L025-B024-Q').frontCode, '1G-GGRQ-G
 assert.equal(ctx.ggrqLoopBinding('1G-SLB-WB-F000-R025-Q'), null, '非悬挂屏不做回路绑定');
 assert.match(app, /回路\$\{loopBind\.loop\} 绑定/, '档案页接入回路绑定条');
 // 后屏过热器：编号数回路（F001–F013 入口段 / B001–B013 出口段），13回路；旧腿号F014–F026自动迁移
-const hbind1 = ctx.ggrqLoopBinding('1G-HPGRQ-GQ-L010-F001-Q');
+const hbind1 = ctx.ggrqLoopBinding('1G-PSGRQ-GQ-L010-F001-Q');
 assert.equal(hbind1.loop, 1, '后屏外圈为回路1');
-assert.equal(hbind1.rearCode, '1G-HPGRQ-GQ-L010-B001-Q', 'F001 绑定出口段B001');
-assert.equal(ctx.ggrqLoopBinding('1G-HPGRQ-GQ-L010-B001-Q').current.rear, true, 'B001-Q 是回路1出口段');
-assert.equal(ctx.ggrqLoopBinding('1G-HPGRQ-GQ-L010-F013-Q').loop, 13, 'F013 是回路13（包扎管）入口段');
-assert.equal(ctx.ggrqLoopBinding('1G-HPGRQ-GQ-L010-B013-Q').frontCode, '1G-HPGRQ-GQ-L010-F013-Q', 'B013 绑定入口段F013');
-assert.equal(ctx.ggrqLoopBinding('1G-HPGRQ-GQ-L010-F013-W').current.bend, true, '后屏底弯同样记入口段位');
-assert.equal(ctx.ggrqLoopBinding('1G-HPGRQ-GQ-L010-F026-Q').rearCode, '1G-HPGRQ-GQ-L010-B001-Q', '旧腿号F026迁移为出口段B001');
+assert.equal(hbind1.rearCode, '1G-PSGRQ-GQ-L010-B001-Q', 'F001 绑定出口段B001');
+assert.equal(ctx.ggrqLoopBinding('1G-PSGRQ-GQ-L010-B001-Q').current.rear, true, 'B001-Q 是回路1出口段');
+assert.equal(ctx.ggrqLoopBinding('1G-PSGRQ-GQ-L010-F013-Q').loop, 13, 'F013 是回路13（包扎管）入口段');
+assert.equal(ctx.ggrqLoopBinding('1G-PSGRQ-GQ-L010-B013-Q').frontCode, '1G-PSGRQ-GQ-L010-F013-Q', 'B013 绑定入口段F013');
+assert.equal(ctx.ggrqLoopBinding('1G-PSGRQ-GQ-L010-F013-W').current.bend, true, '后屏底弯同样记入口段位');
+assert.equal(ctx.ggrqLoopBinding('1G-PSGRQ-GQ-L010-F026-Q').rearCode, '1G-PSGRQ-GQ-L010-B001-Q', '旧腿号F026迁移为出口段B001');
 const gzbind = ctx.ggrqLoopBinding('1G-GZRQ-GQ-L032-F001-Q');
 assert.equal(gzbind.rearCode, '1G-GZRQ-GQ-L032-B001-Q', '高再入口绑定同回路出口');
 assert.equal(ctx.ggrqLoopBinding('1G-GZRQ-GQ-L032-B001-Q').current.rear, true);
@@ -162,17 +162,17 @@ assert.ok(ctx.getTubeProfileData('1G-DPGRQ-GQ-L001-F002-F008-Q').data.spec.inclu
 ctx.userDB.events.push(event('1G-DPGRQ-GQ-L001-F002-F014-Q', '2026-04', '测厚', { thickness: '6.5' }));
 assert.ok(ctx.getTubeProfileData('1G-DPGRQ-GQ-L001-F002-F014-Q').data.spec.startsWith('回路14 入口段 F014（顶入口→底弯）：Φ51×7 12Cr1MoVG → Φ51×7 SA-213T91【底弯前】'), '最内圈（夹持管外套）分段链');
 // 后屏规格材质链：外圈Φ60、回路2-3/13底弯TP347H、回路4-6底弯T91、回路7-12整根12Cr1MoVG
-ctx.userDB.events.push(event('1G-HPGRQ-GQ-L010-F001-Q', '2026-04', '测厚', { thickness: '7.8' }));
-assert.ok(ctx.getTubeProfileData('1G-HPGRQ-GQ-L010-F001-Q').data.spec.startsWith('回路1 入口段 F001（顶入口→底弯）：Φ60×8 12Cr1MoVG → Φ60×8 SA-213T91【底弯前】'), '后屏外圈入口段分段链');
-ctx.userDB.events.push(event('1G-HPGRQ-GQ-L010-F002-W', '2026-04', '测厚', { thickness: '7.2' }));
-assert.ok(ctx.getTubeProfileData('1G-HPGRQ-GQ-L010-F002-W').data.spec.startsWith('回路2 底弯段 Φ54×8.5 SA-213TP347H'), '后屏回路2底弯TP347H');
-ctx.userDB.events.push(event('1G-HPGRQ-GQ-L010-F004-W', '2026-04', '测厚', { thickness: '7.3' }));
-assert.ok(ctx.getTubeProfileData('1G-HPGRQ-GQ-L010-F004-W').data.spec.startsWith('回路4 底弯段 Φ54×8.5 SA-213T91'), '后屏回路4-6底弯T91');
-ctx.userDB.events.push(event('1G-HPGRQ-GQ-L010-F009-Q', '2026-04', '测厚', { thickness: '7.0' }));
-assert.ok(ctx.getTubeProfileData('1G-HPGRQ-GQ-L010-F009-Q').data.spec.includes('Φ54×8.5 12Cr1MoVG【底弯前】'), '后屏回路7-12整根12Cr1MoVG');
-ctx.userDB.events.push(event('1G-HPGRQ-GQ-L010-F013-Q', '2026-04', '测厚', { thickness: '7.5' }));
-assert.ok(ctx.getTubeProfileData('1G-HPGRQ-GQ-L010-F013-Q').data.spec.startsWith('回路13 入口段 F013（顶入口→底弯）：Φ54×8.5 12Cr1MoVG → Φ54×8.5 SA-213T91【底弯前】'), '包扎管入口段分段链');
-assert.equal(ctx.tubeSpecMaterialSummary('1G-HPGRQ-GQ-L010-F013-W', []).startsWith('回路13 底弯段 Φ54×9 SA-213TP347H'), true, '包扎管底弯为Φ54×9 TP347H');
+ctx.userDB.events.push(event('1G-PSGRQ-GQ-L010-F001-Q', '2026-04', '测厚', { thickness: '7.8' }));
+assert.ok(ctx.getTubeProfileData('1G-PSGRQ-GQ-L010-F001-Q').data.spec.startsWith('回路1 入口段 F001（顶入口→底弯）：Φ60×8 12Cr1MoVG → Φ60×8 SA-213T91【底弯前】'), '后屏外圈入口段分段链');
+ctx.userDB.events.push(event('1G-PSGRQ-GQ-L010-F002-W', '2026-04', '测厚', { thickness: '7.2' }));
+assert.ok(ctx.getTubeProfileData('1G-PSGRQ-GQ-L010-F002-W').data.spec.startsWith('回路2 底弯段 Φ54×8.5 SA-213TP347H'), '后屏回路2底弯TP347H');
+ctx.userDB.events.push(event('1G-PSGRQ-GQ-L010-F004-W', '2026-04', '测厚', { thickness: '7.3' }));
+assert.ok(ctx.getTubeProfileData('1G-PSGRQ-GQ-L010-F004-W').data.spec.startsWith('回路4 底弯段 Φ54×8.5 SA-213T91'), '后屏回路4-6底弯T91');
+ctx.userDB.events.push(event('1G-PSGRQ-GQ-L010-F009-Q', '2026-04', '测厚', { thickness: '7.0' }));
+assert.ok(ctx.getTubeProfileData('1G-PSGRQ-GQ-L010-F009-Q').data.spec.includes('Φ54×8.5 12Cr1MoVG【底弯前】'), '后屏回路7-12整根12Cr1MoVG');
+ctx.userDB.events.push(event('1G-PSGRQ-GQ-L010-F013-Q', '2026-04', '测厚', { thickness: '7.5' }));
+assert.ok(ctx.getTubeProfileData('1G-PSGRQ-GQ-L010-F013-Q').data.spec.startsWith('回路13 入口段 F013（顶入口→底弯）：Φ54×8.5 12Cr1MoVG → Φ54×8.5 SA-213T91【底弯前】'), '包扎管入口段分段链');
+assert.equal(ctx.tubeSpecMaterialSummary('1G-PSGRQ-GQ-L010-F013-W', []).startsWith('回路13 底弯段 Φ54×9 SA-213TP347H'), true, '包扎管底弯为Φ54×9 TP347H');
 assert.equal(ctx.collectAICompositeSignals(q).inspectionEvents.length, 2);
 assert.equal(ctx.getGeneratedTubeLedgerRows('1').filter(row => ctx.tubePositionKey(row.code) === ctx.tubePositionKey(q)).length, 1);
 assert.equal(ctx.buildMaintenanceOverdueRows(2026, '1').find(row => ctx.tubePositionKey(row.code) === ctx.tubePositionKey(q)).hasRecord, true);

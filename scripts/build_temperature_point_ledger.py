@@ -36,7 +36,7 @@ FAMILIES = [
      "type": "tube_wall", "type_label": "管壁温度", "system": "DPGRQ",
      "surface": "全大屏过热器", "equipment": "出口管壁"},
     {"key": "HAH70", "name": "后屏过热器管壁温度", "count": 12, "limit": 498,
-     "type": "tube_wall", "type_label": "管壁温度", "system": "HPGRQ",
+     "type": "tube_wall", "type_label": "管壁温度", "system": "PSGRQ",
      "surface": "后屏过热器", "equipment": "管壁"},
     {"key": "HAH80", "name": "高温过热器出口集箱管壁温度", "count": 16, "limit": 568,
      "type": "header_wall", "type_label": "集箱壁温", "system": "GGRQ",

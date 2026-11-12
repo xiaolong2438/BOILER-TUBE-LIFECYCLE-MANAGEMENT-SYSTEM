@@ -21,7 +21,7 @@ const ctx = vm.createContext({
   canManageTubeData: () => canManage,
   escapeHTML: value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
 });
-for (const name of ['normalizedTubeCode', 'dmDuplicateKey', 'dmDuplicateGroups', 'dmDuplicateRemovals', 'dmToggleDuplicateReport', 'renderDmDuplicateReport']) {
+for (const name of ['canonicalizeSystemAliases', 'normalizedTubeCode', 'dmDuplicateKey', 'dmDuplicateGroups', 'dmDuplicateRemovals', 'dmToggleDuplicateReport', 'renderDmDuplicateReport']) {
   vm.runInContext(functionSource(name), ctx);
 }
 const base = { date: '2026-04', code: '1G-GGRQ-GQ-L028-F001-W', type: '无损检测', desc: '方法：射线；结果：合格', inspectionResult: '合格' };

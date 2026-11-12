@@ -65,7 +65,7 @@ assert.equal(vm.runInContext("designDrawingsForSys('').length", ctx), 3, "全部
 assert.match(html, /id="ggrqLoopBaseline"/, "分段基准表容器应存在");
 assert.match(html, /高温过热器材质分段基准（12回路）/, "分段基准卡片标题应存在");
 assert.match(js, /const GGRQ_LOOP_BASELINE = \[/);
-assert.match(js, /const HPGRQ_LOOP_BASELINE = \[/, "屏式过热器13回路分段基准应存在");
+assert.match(js, /const PSGRQ_LOOP_BASELINE = \[/, "屏式过热器13回路分段基准应存在");
 assert.match(js, /function ggrqLoopForTube\(/);
 assert.match(js, /function ggrqBottomBendAttrs\(/);
 assert.match(js, /function renderGGRQLoopBaseline\(\)/);
@@ -204,6 +204,7 @@ for (const m of pyLoops) {
 }
 
 // 档案页「规格材质」取值：tubeSpecMaterialSummary（与基线同上下文，parseTubeCode 需先注入）
+vm.runInContext(js.slice(js.indexOf("function canonicalizeSystemAliases"), js.indexOf("/* 方向感知归一")), baselineCtx);
 vm.runInContext(js.slice(js.indexOf("function parseTubeCode"), js.indexOf("function isValidTubeCodeStructure")), baselineCtx);
 assert.match(js, /const specSummary = tubeSpecMaterialSummary\(code, localEvents\);/, "档案页本地录入分支应接入规格材质摘要");
 const summaryOf = (code, events) => vm.runInContext(
@@ -226,21 +227,21 @@ assert.ok(summaryOf('1G-DPGRQ-GQ-L001-F002-F001-Q', []).startsWith('回路1 入�
 assert.ok(summaryOf('1G-GZRQ-GQ-L001-F001-W', []).startsWith('回路1 底弯段 Φ60×4 SA-213TP304H'), '高再底弯使用确认基准');
 assert.ok(summaryOf('1G-GZRQ-GQ-L001-B001-Q', []).startsWith('回路1 出口段 B001（底弯→顶出口）：Φ60×5 SA-213T91'), '高再出口腿单独显示材质链');
 assert.ok(summaryOf('1G-GZRQ-GQ-L001-F005-Q', []).includes('Φ60×4 12Cr1MoVG【底弯前】'), '入口与底弯同材质不能省略入口直管');
-assert.ok(summaryOf('1G-HPGRQ-GQ-L001-F007-Q', []).includes('Φ54×8.5 12Cr1MoVG'), '屏过同材质入口直管规格完整显示');
+assert.ok(summaryOf('1G-PSGRQ-GQ-L001-F007-Q', []).includes('Φ54×8.5 12Cr1MoVG'), '屏过同材质入口直管规格完整显示');
 baselineCtx.escapeHTML = value => String(value);
 const gzrqTable = vm.runInContext("platenLoopBaselineTable(GZRQ_LOOP_BASELINE, '高再')", baselineCtx);
 assert.ok(gzrqTable.includes('F001↓ + B001↑') && gzrqTable.includes('F007↓ + B007↑'), '高再表格统一F入口/B出口');
 assert.equal((gzrqTable.match(/【底弯】/g) || []).length, 7, '每回路独立标注底弯');
 const f005Row = gzrqTable.slice(gzrqTable.indexOf('>回路5<'), gzrqTable.indexOf('>回路6<'));
 assert.equal((f005Row.match(/Φ60×4 12Cr1MoVG/g) || []).length, 2, '表格保留同规格材质入口和底弯两个位置');
-const hpTable = vm.runInContext("platenLoopBaselineTable(HPGRQ_LOOP_BASELINE, '后屏')", baselineCtx);
+const hpTable = vm.runInContext("platenLoopBaselineTable(PSGRQ_LOOP_BASELINE, '后屏')", baselineCtx);
 const hp7Row = hpTable.slice(hpTable.indexOf('>回路7<'), hpTable.indexOf('>回路8<'));
 assert.equal((hp7Row.match(/Φ54×8.5 12Cr1MoVG/g) || []).length, 3, '同材质入口、底弯、出口分别显示且不重复补段');
 
 // 三类受热面同规格材质的入口/底弯必须在数据、表格、Q/W摘要中各自保留。
 for (const [sys, name, first, last, spec, material] of [
   ['GGRQ', 'GGRQ_LOOP_BASELINE', 8, 11, 'Φ51×9', '12Cr1MoVG'],
-  ['HPGRQ', 'HPGRQ_LOOP_BASELINE', 7, 12, 'Φ54×8.5', '12Cr1MoVG'],
+  ['PSGRQ', 'PSGRQ_LOOP_BASELINE', 7, 12, 'Φ54×8.5', '12Cr1MoVG'],
   ['DPGRQ', 'DPGRQ_LOOP_BASELINE', 4, 13, 'Φ51×7', '12Cr1MoVG']
 ]) {
   const loops = JSON.parse(vm.runInContext(`JSON.stringify(${name})`, baselineCtx));

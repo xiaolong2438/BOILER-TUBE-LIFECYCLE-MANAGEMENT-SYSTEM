@@ -15,7 +15,7 @@ const app = read('assets/app/app-v7.9.js');
 
 /* 编码系统码：CODE_SYSTEMS + 仅存在于材料库的顶棚/包墙 */
 const codeSystems = [...app.matchAll(/\{ sys:'([A-Z]+)', label:'[^']+'/g)].map((m) => m[1]);
-for (const sys of ['SLB', 'GZRQ', 'GGRQ', 'HPGRQ', 'DPGRQ', 'DGRQ', 'DZRQ', 'SMQ', 'RSH', 'WSH']) {
+for (const sys of ['SLB', 'GZRQ', 'GGRQ', 'PSGRQ', 'DPGRQ', 'DGRQ', 'DZRQ', 'SMQ', 'RSH', 'WSH']) {
   assert.ok(codeSystems.includes(sys), `CODE_SYSTEMS 缺少 ${sys}`);
 }
 const allowed = new Set([...codeSystems, 'all']);
@@ -31,7 +31,7 @@ for (const value of filterValues) {
 }
 
 /* 2. 炉管分布图：标注使用系统码，不再出现旧缩写 */
-for (const [label, code] of [['全大屏', 'DPGRQ'], ['后屏', 'HPGRQ'], ['高过', 'GGRQ'], ['高再', 'GZRQ'], ['顶棚过热器', 'RSH']]) {
+for (const [label, code] of [['全大屏', 'DPGRQ'], ['后屏', 'PSGRQ'], ['高过', 'GGRQ'], ['高再', 'GZRQ'], ['顶棚过热器', 'RSH']]) {
   assert.ok(html.includes(`${label} ${code}`), `分布图「${label}」标注应为 ${code}`);
 }
 for (const code of ['DZRQ', 'DGRQ']) {

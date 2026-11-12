@@ -15,9 +15,18 @@
   var VERSION = 'v1';
   var DEFAULT_UNITS = ['1', '2'];
 
+  /* 历史系统码别名：后屏过热器由 HPGRQ 统一为 PSGRQ。
+     读取历史管码时归一到新码；保存路径复用同一归一逻辑，避免旧记录断链。 */
+  var LEGACY_SYSTEM_ALIASES = { HPGRQ: 'PSGRQ' };
+  function canonicalizeSystemAliases(value) {
+    var text = String(value === null || value === undefined ? '' : value);
+    return text.replace(/^([12]G)-HPGRQ(?=-)/i, '$1-PSGRQ').replace(/^HPGRQ$/i, 'PSGRQ');
+  }
+
   /* 新编码规则：{机组}G-SYS-COMP-位置-Q/W，字母即部位身份（Q=管子、W=弯头）；
-     位置段唯一确定物理对象，历史流水数字仅兼容旧数据（解析后忽略）。 */
-  var TUBE_CODE_SOURCE = '[12]G-(?:SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|LHD|RSQ)-(?:[FBLR]000-[FBLR]\\d{3}|J\\d{1,2}-[A-Z]\\d{1,2}|[FBLR]\\d{3}-[FBLR]\\d{3}-[FBLRUD]\\d{3}|[FBLR]\\d{3}-[FBLRUD]\\d{3}|(?:[1-9]\\d?KJ-)?[FBLR]\\d{3}(?:-[FBLRUD]\\d{3})?)-[QW]\\d{0,3}';
+     位置段唯一确定物理对象，历史流水数字仅兼容旧数据（解析后忽略）。
+     正则保留 HPGRQ 分支，供未先经 normalizeCode 的原始匹配路径识别旧码。 */
+  var TUBE_CODE_SOURCE = '[12]G-(?:SLB|GZRQ|GGRQ|PSGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|LHD|RSQ)-(?:[FBLR]000-[FBLR]\\d{3}|J\\d{1,2}-[A-Z]\\d{1,2}|[FBLR]\\d{3}-[FBLR]\\d{3}-[FBLRUD]\\d{3}|[FBLR]\\d{3}-[FBLRUD]\\d{3}|(?:[1-9]\\d?KJ-)?[FBLR]\\d{3}(?:-[FBLRUD]\\d{3})?)-[QW]\\d{0,3}';
   var TUBE_CODE_PATTERN = new RegExp('^' + TUBE_CODE_SOURCE + '$');
 
   /* 受热面系统代码（与页面 CODE_SYSTEMS 一致） */
@@ -25,7 +34,7 @@
     { sys: 'SLB', label: '水冷壁', comps: ['WB', 'LHD', 'RSQ'] },
     { sys: 'GZRQ', label: '高温再热器', comps: ['GQ'] },
     { sys: 'GGRQ', label: '高温过热器', comps: ['GQ'] },
-    { sys: 'HPGRQ', label: '后屏过热器', comps: ['GQ'] },
+    { sys: 'PSGRQ', label: '后屏过热器', comps: ['GQ'] },
     { sys: 'DPGRQ', label: '全大屏过热器', comps: ['GQ'] },
     { sys: 'DGRQ', label: '低温过热器', comps: ['GQ'] },
     { sys: 'DZRQ', label: '低温再热器', comps: ['GQ'] },
@@ -457,7 +466,7 @@
 
   function normalizeCode(value) {
     if (value === null || value === undefined) return '';
-    return String(value).replace(/^\uFEFF/, '').trim().toUpperCase();
+    return canonicalizeSystemAliases(String(value).replace(/^\uFEFF/, '').trim()).toUpperCase();
   }
 
   function toNumber(value) {
@@ -487,7 +496,7 @@
   /* 新编码解析（与页面 parseTubeCode 同构）：结构合法返回 parts，否则 valid=false */
   function parseTubeCodeParts(code) {
     var raw = normalizeCode(code);
-    var head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ)(?:-(.*))?$/);
+    var head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|PSGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ)(?:-(.*))?$/);
     if (!head) return null;
     var parsed = { unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], space: null, pos: '', posNum: null, pos2: '', pos2Num: null, corner: null, layer: '', nozzle: null, dir: '', tube: null, seq: null };
     var parts = head[4] ? head[4].split('-') : [];
@@ -499,7 +508,7 @@
     var POS_RE = /^([FBLR])(\d{3})$/;
     /* 管序 F/B：高过/高再/大屏/后屏/低过/低再（[UD] 继续放行解析，历史 U/D 码由矩阵行判合法性）；
        省煤器 U=上组/D=下组/F=吊挂管前后排（2026-11-08 新口径，数字位=圈号/排向序号） */
-    var TUBE_RE = /^(?:GGRQ|GZRQ|DPGRQ|HPGRQ|DGRQ|DZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UDF])(\d{3})$/;
+    var TUBE_RE = /^(?:GGRQ|GZRQ|DPGRQ|PSGRQ|DGRQ|DZRQ)$/.test(parsed.sys) ? /^([FBUD])(\d{3})$/ : /^([UDF])(\d{3})$/;
     var WALL_RE = /^([FBLR])000$/;
     if (parsed.sys === 'SLB' && (parsed.comp === 'WB' || parsed.comp === 'LHD')) {
       if (parts.length !== 2) return null;
@@ -524,7 +533,7 @@
       parsed.dir = tb[1]; parsed.tube = Number(tb[2]);
       return parsed;
     }
-    if (['GGRQ', 'GZRQ', 'HPGRQ', 'SMQ'].indexOf(parsed.sys) >= 0) {
+    if (['GGRQ', 'GZRQ', 'PSGRQ', 'SMQ'].indexOf(parsed.sys) >= 0) {
       if (parts.length !== 2) return null;
       var q1 = parts[0].match(POS_RE), q2 = parts[1].match(TUBE_RE);
       if (!q1 || !q2) return null;
@@ -1757,7 +1766,7 @@
     { sys: 'WSH', re: /包墙过热器|包墙/ },
     { sys: 'DGRQ', re: /低温过热器|低过/ },
     { sys: 'DPGRQ', re: /全大屏过热器|全大屏/ },
-    { sys: 'HPGRQ', re: /后屏过热器|屏过|屏式/ },
+    { sys: 'PSGRQ', re: /后屏过热器|屏过|屏式/ },
     { sys: 'GGRQ', re: /高温过热器|高过/ },
     { sys: 'DZRQ', re: /低温再热器|低再/ },
     { sys: 'GZRQ', re: /高温再热器|高再/ },
@@ -1781,9 +1790,9 @@
       if (item.re.test(text) && result.indexOf(item.sys) < 0) result.push(item.sys);
     });
     if (result.length) return result;
-    var codeMatch = text.match(/(?:^|[^A-Z])(SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ|RSH|WSH)(?:[^A-Z]|$)/);
-    if (codeMatch) return [codeMatch[1]];
-    if (genericHeat) return ['RSH', 'WSH', 'DGRQ', 'DPGRQ', 'HPGRQ', 'GGRQ'];
+    var codeMatch = text.match(/(?:^|[^A-Z])(SLB|GZRQ|GGRQ|PSGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ|RSH|WSH)(?:[^A-Z]|$)/);
+    if (codeMatch) return [LEGACY_SYSTEM_ALIASES[codeMatch[1]] || codeMatch[1]];
+    if (genericHeat) return ['RSH', 'WSH', 'DGRQ', 'DPGRQ', 'PSGRQ', 'GGRQ'];
     if (genericReheat) return ['DZRQ', 'GZRQ'];
     return [];
   }
@@ -2541,6 +2550,7 @@
     normalizeDateText: normalizeDateText,
     normalizeEventType: normalizeEventType,
     normalizeCode: normalizeCode,
+    canonicalizeSystemAliases: canonicalizeSystemAliases,
     validateTubeCode: validateTubeCode,
     formatNumber: formatNumber,
     escapeHtml: escapeHtml,

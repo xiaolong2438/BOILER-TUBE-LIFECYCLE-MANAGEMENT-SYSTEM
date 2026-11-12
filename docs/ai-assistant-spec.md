@@ -253,7 +253,7 @@ formatNumber(value)         // 千分位
 
 - 事件类型（与页面 `dm-type` 对齐）：`测厚、金相分析、无损检测、割管取样、检修维护`，另有导入可能出现的 `报废更换、安装投运`。
 - 数据分类：`事件 / event`、`更换 / replacement`（大小写不敏感）。
-- 受热面系统代码：`SLB、RSH、WSH、DGRQ、DPGRQ、HPGRQ、GGRQ、DZRQ、GZRQ、SMQ`（显示名与页面 `CODE_SYSTEMS` 一致：水冷壁、顶棚过热器、包墙过热器、低温过热器、全大屏过热器、屏式过热器、高温过热器、低温再热器、高温再热器、省煤器）。
+- 受热面系统代码：`SLB、RSH、WSH、DGRQ、DPGRQ、PSGRQ、GGRQ、DZRQ、GZRQ、SMQ`（显示名与页面 `CODE_SYSTEMS` 一致：水冷壁、顶棚过热器、包墙过热器、低温过热器、全大屏过热器、屏式过热器、高温过热器、低温再热器、高温再热器、省煤器）。
 
 ### 2.10 分析与可视化（§2.10）
 

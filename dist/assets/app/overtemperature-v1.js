@@ -5,7 +5,29 @@
   const DRAFT_KEY = 'bt_overtemperature_ui_draft_v1';
   const PAGE_SIZE = 50;
   const TYPES = { tube_wall: '管壁温度', header_wall: '集箱壁温', steam: '蒸汽温度', flue: '烟气温度', other: '其他测量' };
-  const SYSTEMS = { SLB: '水冷壁', DPGRQ: '全大屏过热器', HPGRQ: '后屏过热器', GGRQ: '高温过热器', GZRQ: '高温再热器', DGRQ: '低温过热器', DZRQ: '低温再热器', SMQ: '省煤器' };
+  const SYSTEMS = { SLB: '水冷壁', DPGRQ: '全大屏过热器', PSGRQ: '后屏过热器', GGRQ: '高温过热器', GZRQ: '高温再热器', DGRQ: '低温过热器', DZRQ: '低温再热器', SMQ: '省煤器' };
+  /* 历史系统码别名：后屏过热器由 HPGRQ 统一为 PSGRQ；旧草稿/旧配置读取时归一。 */
+  const SYSTEM_ALIASES = { HPGRQ: 'PSGRQ' };
+  function canonicalSys(value) {
+    const sys = String(value || '').trim().toUpperCase();
+    return SYSTEM_ALIASES[sys] || sys;
+  }
+  function systemLabel(sys) { return SYSTEMS[canonicalSys(sys)] || sys; }
+  function normalizeSystemFields(entity) {
+    if (!entity || typeof entity !== 'object') return entity;
+    if (entity.sys) entity.sys = canonicalSys(entity.sys);
+    if (entity.system) entity.system = canonicalSys(entity.system);
+    if (Array.isArray(entity.regions)) entity.regions.forEach(region => { if (region && region.sys) region.sys = canonicalSys(region.sys); });
+    return entity;
+  }
+  function normalizeDraft(draft) {
+    if (!draft || typeof draft !== 'object') return draft;
+    normalizeSystemFields(draft.data);
+    normalizeSystemFields(draft.point);
+    normalizeSystemFields(draft.original);
+    if (draft.data && draft.data.point) normalizeSystemFields(draft.data.point);
+    return draft;
+  }
   const REGION_KEYS = ['sys', 'comp', 'wall', 'spaces', 'posFrom', 'posTo', 'pos2From', 'pos2To', 'tubeFrom', 'tubeTo', 'dirs', 'parts', 'corners', 'layers', 'nozzles'];
   const NUM_KEYS = ['posFrom', 'posTo', 'pos2From', 'pos2To', 'tubeFrom', 'tubeTo'];
   const ARRAY_KEYS = ['spaces', 'dirs', 'parts', 'corners', 'layers', 'nozzles'];
@@ -73,15 +95,15 @@
   function query(values) { const params = new URLSearchParams(); Object.entries(values).forEach(([key, value]) => { if (value !== '' && value != null) params.set(key, String(value)); }); return '?' + params.toString(); }
   function configsFor(id) { return Array.from(S.configs.values()).filter(c => c.pointId === id); }
   function accept(data) {
-    (data.points || []).forEach(p => { if (p && p.id) S.points.set(p.id, p); });
-    (data.configs || []).forEach(c => { if (c && c.id) S.configs.set(c.id, c); });
+    (data.points || []).forEach(p => { if (p && p.id) S.points.set(p.id, normalizeSystemFields(p)); });
+    (data.configs || []).forEach(c => { if (c && c.id) S.configs.set(c.id, normalizeSystemFields(c)); });
   }
   function knownPoints() { return Array.from(S.points.values()).sort((a, b) => (a.unit + a.name).localeCompare(b.unit + b.name, 'zh-CN')); }
   function pointOptions(current, unit, activeOnly) {
     return option('', '请选择已登记测点', current) + knownPoints().filter(p => (!unit || p.unit === unit) && (!activeOnly || p.active !== false || p.id === current)).map(p => option(p.id, p.unit + '# · ' + p.name + ' · ' + p.tag + (p.active === false ? '（停用）' : ''), current)).join('');
   }
   function matrix() { return core() && Array.isArray(core().MATRIX) ? core().MATRIX : []; }
-  function systemOptions(value) { return option('', '全部受热面', value) + unique(matrix().map(r => r.sys)).map(sys => option(sys, SYSTEMS[sys] || sys, value)).join(''); }
+  function systemOptions(value) { return option('', '全部受热面', value) + unique(matrix().map(r => r.sys)).map(sys => option(sys, systemLabel(sys), value)).join(''); }
   function field(label, html, help) { return '<label class="form-group ot-field"><span>' + esc(label) + '</span>' + html + (help ? '<small>' + esc(help) + '</small>' : '') + '</label>'; }
   function input(name, value, type, attrs) { return '<input name="' + esc(name) + '" type="' + (type || 'text') + '" value="' + esc(value) + '" ' + (attrs || '') + '>'; }
   function textarea(name, value, attrs) { return '<textarea name="' + esc(name) + '" rows="3" ' + (attrs || '') + '>' + esc(value) + '</textarea>'; }
@@ -100,7 +122,7 @@
     return labels.join(' ');
   }
   function readStoredDraft() {
-    try { const raw = window.localStorage.getItem(DRAFT_KEY); if (!raw) return; const d = JSON.parse(raw); if (!d || d.version !== 1 || !['point', 'editPoint', 'config', 'record', 'void'].includes(d.type) || !d.data) throw new Error('草稿格式不兼容'); S.storedDraft = d; }
+    try { const raw = window.localStorage.getItem(DRAFT_KEY); if (!raw) return; const d = JSON.parse(raw); if (!d || d.version !== 1 || !['point', 'editPoint', 'config', 'record', 'void'].includes(d.type) || !d.data) throw new Error('草稿格式不兼容'); S.storedDraft = normalizeDraft(d); }
     catch (_) { S.storageWarning = '本地草稿不可读取。新输入仍可提交，但请自行保留内容。'; }
   }
   function persist() {
@@ -558,7 +580,7 @@
     const all = matrix(), candidates = all.filter(row => row.sys === r.sys && row.comp === r.comp), rows = candidates.filter(row => !r.wall || row.pos === r.wall);
     const has = key => rows.some(row => !!row[key]);
     let html = '<fieldset class="ot-region"><legend>区域 ' + (index + 1) + '</legend><div class="ot-region-actions">' + action('删除本区域', 'removeRegion', index) + (r.sys ? action('查看受热面图纸', 'drawings', r.sys) : '') + '</div><div class="ot-form-grid">';
-    html += regionField(index, 'sys', '系统 / 受热面', '<select required>' + option('', '请选择系统', r.sys) + unique(all.map(row => row.sys)).map(sys => option(sys, (SYSTEMS[sys] || sys) + ' · ' + sys, r.sys)).join('') + '</select>');
+    html += regionField(index, 'sys', '系统 / 受热面', '<select required>' + option('', '请选择系统', r.sys) + unique(all.map(row => row.sys)).map(sys => option(sys, systemLabel(sys) + ' · ' + sys, r.sys)).join('') + '</select>');
     html += regionField(index, 'comp', '矩阵部件', '<select required>' + option('', '请选择矩阵支持的部件', r.comp) + unique(all.filter(row => row.sys === r.sys).map(row => row.comp)).map(comp => { const row = all.find(row => row.sys === r.sys && row.comp === comp); return option(comp, comp + ' · ' + row.name.replace(/[-（].*/, ''), r.comp); }).join('') + '</select>');
     if (candidates.some(row => row.pos)) html += regionField(index, 'wall', '墙位', '<select>' + option('', '全部墙位（null）', r.wall || '') + candidates.filter(row => row.pos).map(row => option(row.pos, row.name + ' · ' + row.pos, r.wall)).join('') + '</select>');
     if (has('spaces')) html += regionMulti(index, 'spaces', '空间集合', unique(rows.flatMap(row => rangeValues(row.spaces))), r.spaces);
@@ -1119,7 +1141,7 @@
       else if (name === 'editRecord' || name === 'void') { const r = S.records.get(id); if (!r) throw fail('记录未载入，请刷新'); openDraft(name === 'void' ? 'void' : 'record', r); }
       else if (name === 'closeDraft') { persist(); S.draft = null; renderForm(); renderDraftStatus(); }
       else if (name === 'discard') { if (window.confirm('丢弃本机未共享草稿？共享台账和记录不会受影响。')) clearDraft(); }
-      else if (name === 'restore') { if (S.storedDraft) { S.draft = clone(S.storedDraft); S.preview = null; S.formErrors = []; S.conflict = null; if (S.draft.point && !S.points.has(S.draft.point.id)) S.points.set(S.draft.point.id, S.draft.point); renderForm(); renderDraftStatus(); } }
+      else if (name === 'restore') { if (S.storedDraft) { S.draft = normalizeDraft(clone(S.storedDraft)); S.preview = null; S.formErrors = []; S.conflict = null; if (S.draft.point && !S.points.has(S.draft.point.id)) S.points.set(S.draft.point.id, S.draft.point); renderForm(); renderDraftStatus(); } }
       else if (name === 'addRegion') { if (S.draft.data.regions.length >= 24) throw fail('单次配置最多编辑 24 条区域，请合并有据范围'); S.draft.data.regions.push(blankRegion()); S.draft.data.confirmBasis = false; S.preview = null; changed(); renderForm(); }
       else if (name === 'removeRegion') { S.draft.data.regions.splice(Number(id), 1); S.draft.data.confirmBasis = false; S.preview = null; changed(); renderForm(); }
       else if (name === 'previewRegions') { S.preview = previewRegions(S.draft); renderPreview(); }

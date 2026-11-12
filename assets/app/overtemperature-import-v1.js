@@ -93,7 +93,7 @@
   }
   var SYSTEM_PATTERNS = [
     [/全大屏过热器|大屏过热器/, 'DPGRQ'],
-    [/后屏过热器/, 'HPGRQ'],
+    [/后屏过热器/, 'PSGRQ'],
     [/高温过热器|高过/, 'GGRQ'],
     [/低温过热器|低过/, 'DGRQ'],
     [/高温再热器|高再/, 'GZRQ'],
@@ -101,6 +101,12 @@
     [/省煤器/, 'SMQ'],
     [/水冷壁/, 'SLB']
   ];
+  /* 历史系统码别名：导入旧台账时把 HPGRQ 归一为 PSGRQ，避免新建测点沿用旧码。 */
+  var SYSTEM_ALIASES = { HPGRQ: 'PSGRQ' };
+  function canonicalSystem(value) {
+    var raw = text(value);
+    return SYSTEM_ALIASES[raw.toUpperCase()] || raw;
+  }
   function inferMeasurementType(name) {
     var raw = text(name);
     if (/集箱/.test(raw)) return 'header_wall';
@@ -192,7 +198,7 @@
         commissionedAt: commissionedAt,
         limitC: limitC, limitBasis: limitBasis,
         active: toBool(pick(row, POINT_ALIASES.active), true),
-        system: text(pick(row, POINT_ALIASES.system)),
+        system: canonicalSystem(pick(row, POINT_ALIASES.system)),
         group: text(pick(row, POINT_ALIASES.group)),
         panel: text(pick(row, POINT_ALIASES.panel)),
         errors: messages

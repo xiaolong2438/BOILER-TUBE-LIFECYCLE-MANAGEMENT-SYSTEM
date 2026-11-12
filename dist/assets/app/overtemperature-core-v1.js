@@ -19,7 +19,7 @@
     { name:'冷灰斗-后坡', sys:'SLB', comp:'LHD', pos:'B000', dirs:['L','R'], tMax:96 },
     { name:'燃烧器区域', sys:'SLB', comp:'RSQ', special:'rsq', corners:[1,4], layers:['A','B','C','D','E','F'], nozzles:[1,8] },
     { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['F','B'], p2Max:4, dirs:['F','B'], tMax:14, loopPairing:true },
-    { name:'后屏过热器', sys:'HPGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing:true },
+    { name:'后屏过热器', sys:'PSGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing:true },
     { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:12, loopPairing:true },
     { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['F','B'], tMax:7, loopPairing:true },
     { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:5 },
@@ -73,6 +73,12 @@
   var REGION_KEYS = ['sys','comp','wall','spaces','posFrom','posTo','pos2From','pos2To','tubeFrom','tubeTo','dirs','parts','corners','layers','nozzles'];
   var ARRAY_KEYS = ['spaces','dirs','parts','corners','layers','nozzles'];
   var NUMBER_KEYS = ['posFrom','posTo','pos2From','pos2To','tubeFrom','tubeTo'];
+  /* 历史系统码别名：后屏过热器由 HPGRQ 统一为 PSGRQ；读取旧配置区域时归一，避免匹配不到矩阵。 */
+  var SYSTEM_ALIASES = { HPGRQ: 'PSGRQ' };
+  function canonicalSys(value) {
+    var sys = typeof value === 'string' ? value.trim().toUpperCase() : '';
+    return SYSTEM_ALIASES[sys] || sys;
+  }
   /* loopPairing（悬挂屏F/B腿）与 dualDir（省煤器U上组/D下组，2026-11-08）：两个方向字母都是不同物理管段，双向都算规范方向 */
   function canonicalDirs(row) { return (row.loopPairing || row.dualDir) ? row.dirs : [row.dirs[0]]; }
   function between(n, lo, hi) { return n >= lo && n <= hi; }
@@ -87,6 +93,7 @@
     Object.keys(region).forEach(function (k) { if (REGION_KEYS.indexOf(k) < 0) errors.push('未知 region 字段: ' + k); });
     var r = {};
     REGION_KEYS.forEach(function (k) { r[k] = Array.isArray(region[k]) ? region[k].slice() : region[k]; });
+    r.sys = canonicalSys(r.sys);
     if (!text(r.sys) || !text(r.comp)) errors.push('sys/comp 必须为系统和部件代码');
     if (r.wall !== null && ['F000','B000','L000','R000'].indexOf(r.wall) < 0) errors.push('wall 无效');
     NUMBER_KEYS.forEach(function (k) { if (r[k] !== null && (!Number.isSafeInteger(r[k]) || r[k] < 1)) errors.push(k + ' 必须为正整数或 null'); });

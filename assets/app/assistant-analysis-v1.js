@@ -1972,7 +1972,7 @@
   /* 把管码、证件号、手机号、邮箱从要外发的文本里抹掉 */
   function maskPii(value) {
     var text = String(value === null || value === undefined ? '' : value);
-    text = text.replace(/[12]G-(?:SLB|GZRQ|GGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|LHD|RSQ)-[^\s，,。；;）)]+/g, '[管码]');
+    text = text.replace(/[12]G-(?:SLB|GZRQ|GGRQ|PSGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|LHD|RSQ)-[^\s，,。；;）)]+/g, '[管码]');
     text = text.replace(/[0-9]{18}/g, '[证件号]');
     text = text.replace(/[0-9]{11}/g, '[手机号]');
     text = text.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}/g, '[邮箱]');
