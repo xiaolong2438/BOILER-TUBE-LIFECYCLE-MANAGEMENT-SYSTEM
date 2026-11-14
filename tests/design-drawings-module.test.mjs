@@ -259,4 +259,64 @@ for (const [sys, name, first, last, spec, material] of [
   }
 }
 
-console.log("ok - design drawings module: nav/view/upload/viewer/delete/linkage + loop segment baselines and inlet/bend preservation");
+// 云端启动同步（跨电脑可见性的关键修复）
+assert.match(js, /cloudStorageRequest\(DESIGN_DRAWINGS_KEY\)/, "bootstrap 应从云端拉取图纸键");
+assert.match(js, /syncDesignDrawingsFromCloud\(remoteDrawings\);/, "bootstrap 应调用图纸云端同步");
+assert.match(js, /function syncDesignDrawingsFromCloud\(remoteDrawings\)/);
+assert.match(js, /本机浏览器存储空间不足/, "localStorage 配额不足时应兜底提示并仍推云端");
+
+// 行为验证：启动同步按 id 并集合并（不覆盖、不删除、双向补齐）
+const syncFn = js.slice(js.indexOf("function syncDesignDrawingsFromCloud"), js.indexOf("async function loadAuthSession"));
+function makeSyncContext(localDrawings) {
+  const calls = { queue: [], toasts: [], saved: [] };
+  const ctx = vm.createContext({
+    DESIGN_DRAWINGS_KEY: 'boiler_design_drawings',
+    designDrawings: JSON.parse(JSON.stringify(localDrawings)),
+    queueCloudStorageSave: (key, value) => calls.queue.push({ key, value }),
+    localStorage: { setItem: (k, v) => calls.saved.push({ k, v }) },
+    renderDesignDrawings: () => {},
+    showToast: (msg) => calls.toasts.push(String(msg))
+  });
+  vm.runInContext(syncFn, ctx);
+  return { ctx, calls };
+}
+const remoteA = { id: 'a', name: '云端A', sys: 'GGRQ' };
+const remoteB = { id: 'b', name: '云端B', sys: '' };
+const localA = { id: 'a', name: '本机改名A', sys: 'GGRQ' };
+const localX = { id: 'x', name: '仅本机', sys: 'DGRQ' };
+
+// 本机为空：整批采用云端，不回推
+const emptyLocal = makeSyncContext([]);
+vm.runInContext(`syncDesignDrawingsFromCloud({ found: true, value: ${JSON.stringify([remoteA, remoteB])} })`, emptyLocal.ctx);
+assert.equal(emptyLocal.ctx.designDrawings.length, 2, "本机为空应整批载入云端图纸");
+assert.equal(emptyLocal.calls.queue.length, 0, "纯载入不应回推云端");
+assert.equal(emptyLocal.calls.saved.length, 1, "应写入本机 localStorage");
+assert.match(emptyLocal.calls.toasts[0], /已从云端新增 2 张/);
+
+// 两端各有新增：并集合并并回推并集
+const bothSides = makeSyncContext([localX]);
+vm.runInContext(`syncDesignDrawingsFromCloud({ found: true, value: ${JSON.stringify([remoteA, remoteB])} })`, bothSides.ctx);
+assert.deepEqual(bothSides.ctx.designDrawings.map(d => d.id), ['x', 'a', 'b'], "并集合并应保留两端全部图纸");
+assert.equal(bothSides.calls.queue.length, 1, "本机独有图纸应随并集回推云端");
+assert.match(bothSides.calls.toasts[0], /本机 1 张 \+ 云端新增 2 张/);
+
+// 同 id 以本机为准：本机改名不被云端旧名称覆盖
+const renamed = makeSyncContext([localA]);
+vm.runInContext(`syncDesignDrawingsFromCloud({ found: true, value: ${JSON.stringify([remoteA, remoteB])} })`, renamed.ctx);
+assert.equal(renamed.ctx.designDrawings.find(d => d.id === 'a').name, '本机改名A', "同 id 保留本机版本");
+assert.equal(renamed.ctx.designDrawings.length, 2, "云端新增图纸仍应并入");
+assert.equal(renamed.calls.queue.length, 0, "仅新增云端侧时无本机独有项不回推");
+
+// 云端尚无图纸键：把本机存量推上去
+const cloudMissing = makeSyncContext([localX]);
+vm.runInContext('syncDesignDrawingsFromCloud({ found: false })', cloudMissing.ctx);
+assert.equal(cloudMissing.calls.queue.length, 1, "云端缺键应推送本机存量");
+
+// 网络失败（远端 null）：保持本机现状，不做任何动作
+const offline = makeSyncContext([localX]);
+vm.runInContext('syncDesignDrawingsFromCloud(null)', offline.ctx);
+assert.equal(offline.calls.queue.length, 0);
+assert.equal(offline.calls.toasts.length, 0);
+assert.equal(offline.ctx.designDrawings.length, 1);
+
+console.log("ok - design drawings module: nav/view/upload/viewer/delete/linkage + cloud bootstrap sync + loop segment baselines and inlet/bend preservation");

@@ -185,10 +185,12 @@ function prepareCloud(h) {
   h.ctx.cloudStorageRequest = key => new Promise(resolve => pending.set(key, resolve));
   h.ctx.queueCloudStorageSave = (...args) => h.calls.push(['upload', ...args]);
   h.ctx.showToast = (...args) => h.calls.push(['toast', ...args]);
-  vm.runInContext("const LOCAL_DB_AT_KEY = 'boiler_user_db_local_at'; const DB_BACKUP_KEY = 'boiler_user_db_backup'; const MATERIAL_BACKUP_KEY = 'boiler_material_library_backup';\n" + ['safeParseJson', 'parseCloudTime', 'bootstrapCloudStorage'].map(functionSource).join('\n'), h.ctx);
+  h.ctx.designDrawings = [];
+  vm.runInContext("const LOCAL_DB_AT_KEY = 'boiler_user_db_local_at'; const DB_BACKUP_KEY = 'boiler_user_db_backup'; const MATERIAL_BACKUP_KEY = 'boiler_material_library_backup'; const DESIGN_DRAWINGS_KEY = 'boiler_design_drawings';\n" + ['safeParseJson', 'parseCloudTime', 'bootstrapCloudStorage', 'syncDesignDrawingsFromCloud'].map(functionSource).join('\n'), h.ctx);
   return (db = h.ctx.userDB, materials = [{ material: 'T91' }]) => {
     pending.get('boiler_user_db')({ found: true, value: db, updatedAt: '2026-11-05T00:00:00Z' });
     pending.get('boiler_material_library')({ found: true, value: materials });
+    pending.get('boiler_design_drawings')({ found: false });
   };
 }
 await check('identical cloud content does not dirty or redraw initialized pages', async () => {

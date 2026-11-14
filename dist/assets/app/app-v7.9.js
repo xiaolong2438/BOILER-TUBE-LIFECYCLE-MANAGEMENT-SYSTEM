@@ -113,9 +113,10 @@ function queueCloudStorageSave(key, value) {
 }
 async function bootstrapCloudStorage() {
   if(!cloudStorageEnabled()) return;
-  const [remoteUserDB, remoteMaterialLibrary] = await Promise.all([
+  const [remoteUserDB, remoteMaterialLibrary, remoteDrawings] = await Promise.all([
     cloudStorageRequest('boiler_user_db'),
-    cloudStorageRequest('boiler_material_library')
+    cloudStorageRequest('boiler_material_library'),
+    cloudStorageRequest(DESIGN_DRAWINGS_KEY)
   ]);
   let changed = false;
   let conflictNotice = '';
@@ -174,6 +175,7 @@ async function bootstrapCloudStorage() {
     const localMaterials = JSON.parse(localStorage.getItem('boiler_material_library') || '[]');
     if(Array.isArray(localMaterials) && localMaterials.length) queueCloudStorageSave('boiler_material_library', localMaterials);
   }
+  syncDesignDrawingsFromCloud(remoteDrawings);
   if(changed) invalidateTubeViews();
   if(conflictNotice) {
     showToast(conflictNotice, 'warn', 9000);
@@ -182,6 +184,36 @@ async function bootstrapCloudStorage() {
         window.BTMaintenanceLog.hook('system', { summary: conflictNotice });
       }
     } catch(err) { /* 留痕失败不影响主流程 */ }
+  }
+}
+/* 图纸云端同步：按 id 并集合并，两端各自新增的图纸互相补齐，不覆盖不删除。
+   本机删除/改名不跨设备同步（避免云端旧版本把已删图纸带回来）。 */
+function syncDesignDrawingsFromCloud(remoteDrawings) {
+  if(!remoteDrawings) return; /* 网络失败：保持本机现状 */
+  if(remoteDrawings.found !== true || !Array.isArray(remoteDrawings.value)) {
+    if(remoteDrawings.found === false && Array.isArray(designDrawings) && designDrawings.length) {
+      queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings); /* 云端还没有图纸键：把本机存量推上去 */
+    }
+    return;
+  }
+  const remoteList = remoteDrawings.value.filter(d => d && d.id);
+  const localList = (Array.isArray(designDrawings) ? designDrawings : []).filter(d => d && d.id);
+  const remoteIds = new Set(remoteList.map(d => d.id));
+  const localIds = new Set(localList.map(d => d.id));
+  const localOnly = localList.filter(d => !remoteIds.has(d.id));
+  const missing = remoteList.filter(d => !localIds.has(d.id));
+  if(!missing.length) {
+    if(localOnly.length) queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings); /* 此前上传未同步成功的本机图纸补推云端 */
+    return;
+  }
+  designDrawings = localList.concat(missing);
+  try { localStorage.setItem(DESIGN_DRAWINGS_KEY, JSON.stringify(designDrawings)); } catch (err) { /* 配额不足：留在内存，下次刷新重新从云端拉取 */ }
+  renderDesignDrawings();
+  if(localOnly.length) {
+    queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings);
+    showToast('受热面图纸已合并：本机 ' + localOnly.length + ' 张 + 云端新增 ' + missing.length + ' 张，共 ' + designDrawings.length + ' 张。', 'ok', 8000);
+  } else {
+    showToast('已从云端新增 ' + missing.length + ' 张受热面设计图纸，本机现共 ' + designDrawings.length + ' 张。', 'ok', 8000);
   }
 }
 async function loadAuthSession() {
@@ -5456,7 +5488,12 @@ try { designDrawings = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '
 if (!Array.isArray(designDrawings)) designDrawings = [];
 
 function saveDesignDrawings() {
-  localStorage.setItem(DESIGN_DRAWINGS_KEY, JSON.stringify(designDrawings));
+  try {
+    localStorage.setItem(DESIGN_DRAWINGS_KEY, JSON.stringify(designDrawings));
+  } catch (err) {
+    /* 本机配额不足（4MB 图纸 base64 后约 5.3MB，超 localStorage 限额）：仍推云端，刷新后由启动同步拉回 */
+    showToast('本机浏览器存储空间不足，图纸已保存到云端；刷新页面后将自动从云端载入。', 'warn', 8000);
+  }
   queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings);
   renderDesignDrawings();
 }
