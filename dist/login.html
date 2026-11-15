@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>登录 | 锅炉炉管全生命周期管理系统</title>
-<link rel="preload" as="image" href="assets/power-station-boiler-bg.webp" type="image/webp" media="(min-width: 901px)" fetchpriority="high">
-<link rel="preload" as="image" href="assets/power-station-boiler-bg-mobile.webp" type="image/webp" media="(max-width: 900px)" fetchpriority="high">
+<link rel="preload" as="image" href="assets/power-station-boiler-bg-v5.webp" type="image/webp" media="(min-width: 901px)" fetchpriority="high">
+<link rel="preload" as="image" href="assets/power-station-boiler-bg-v5-mobile.webp" type="image/webp" media="(max-width: 900px)" fetchpriority="high">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --login-bg-image: url("assets/power-station-boiler-bg.png");
+    --login-bg-image: url("assets/power-station-boiler-bg-v5.png");
     --cyan: #22d9ff;
     --cyan-soft: rgba(34, 217, 255, .22);
     --blue: #147bff;
@@ -20,11 +20,11 @@
     --danger: #ff6b85;
     --ok: #57f0b0;
   }
-  @supports (background-image: image-set(url("assets/power-station-boiler-bg.webp") type("image/webp"))) {
+  @supports (background-image: image-set(url("assets/power-station-boiler-bg-v5.webp") type("image/webp"))) {
     :root {
       --login-bg-image: image-set(
-        url("assets/power-station-boiler-bg.webp") type("image/webp"),
-        url("assets/power-station-boiler-bg.png") type("image/png")
+        url("assets/power-station-boiler-bg-v5.webp") type("image/webp"),
+        url("assets/power-station-boiler-bg-v5.png") type("image/png")
       );
     }
   }
@@ -40,8 +40,8 @@
     min-height: 100vh;
     padding: 50px 70px 54px;
     background:
-      linear-gradient(90deg, rgba(2, 12, 39, .18) 0%, rgba(0, 24, 73, .08) 52%, rgba(0, 22, 69, .72) 100%),
-      linear-gradient(180deg, rgba(0, 10, 30, .05) 0%, rgba(0, 7, 24, .24) 100%),
+      linear-gradient(90deg, rgba(2, 12, 39, .04) 0%, rgba(0, 24, 73, 0) 45%, rgba(0, 22, 69, .42) 100%),
+      linear-gradient(180deg, rgba(0, 10, 30, .01) 0%, rgba(0, 7, 24, .08) 100%),
       var(--login-bg-image) left center / cover no-repeat;
   }
   .page::before {
@@ -58,7 +58,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle at 52% 66%, rgba(34,217,255,.2), transparent 24%);
+    background: radial-gradient(circle at 52% 66%, rgba(34,217,255,.06), transparent 24%);
     pointer-events: none;
   }
   .content {
@@ -135,12 +135,12 @@
     border: 1px solid rgba(34,217,255,.5);
     border-radius: 18px;
     background:
-      linear-gradient(160deg, rgba(9, 48, 108, .55), rgba(1, 20, 66, .76)),
-      radial-gradient(circle at 18% 0%, rgba(34,217,255,.18), transparent 36%);
+      linear-gradient(160deg, rgba(20, 70, 140, .38), rgba(6, 32, 84, .52)),
+      radial-gradient(circle at 18% 0%, rgba(34,217,255,.14), transparent 36%);
     box-shadow:
       inset 0 1px 0 rgba(255,255,255,.14),
       0 0 0 1px rgba(34,217,255,.08),
-      0 30px 70px -18px rgba(0, 8, 26, .65),
+      0 30px 70px -18px rgba(0, 8, 26, .45),
       0 0 44px -10px rgba(34,217,255,.3);
     backdrop-filter: blur(14px);
     animation: cardIn .6s cubic-bezier(.22,1,.36,1) both;
@@ -196,7 +196,7 @@
     padding: 0 18px 0 58px;
     border: 1px solid rgba(126, 222, 255, .36);
     border-radius: 6px;
-    background: rgba(0, 31, 92, .36);
+    background: rgba(10, 45, 105, .28);
     color: var(--text);
     font: inherit;
     font-size: 16px;
@@ -303,11 +303,11 @@
     .login-card { padding: 54px 44px 42px; }
   }
   @media (max-width: 900px) {
-    @supports (background-image: image-set(url("assets/power-station-boiler-bg-mobile.webp") type("image/webp"))) {
+    @supports (background-image: image-set(url("assets/power-station-boiler-bg-v5-mobile.webp") type("image/webp"))) {
       :root {
         --login-bg-image: image-set(
-          url("assets/power-station-boiler-bg-mobile.webp") type("image/webp"),
-          url("assets/power-station-boiler-bg.png") type("image/png")
+          url("assets/power-station-boiler-bg-v5-mobile.webp") type("image/webp"),
+          url("assets/power-station-boiler-bg-v5.png") type("image/png")
         );
       }
     }
