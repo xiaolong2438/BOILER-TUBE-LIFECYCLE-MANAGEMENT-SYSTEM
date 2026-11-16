@@ -15,10 +15,14 @@ assert.match(html, /id="drawingFileInput"[^>]*accept="image\/png,image\/jpeg,ima
 assert.match(html, /id="drawingsGrid"/, "图纸卡片网格应存在");
 assert.match(html, /id="drawingSysFilter"/, "受热面筛选应存在");
 
-// 模块函数与存储
+// 模块函数与存储（元数据/内容分离）
+assert.match(js, /const DESIGN_DRAWINGS_META_KEY = 'boiler_design_drawings_meta';/);
 assert.match(js, /const DESIGN_DRAWINGS_KEY = 'boiler_design_drawings';/);
-assert.match(js, /queueCloudStorageSave\(DESIGN_DRAWINGS_KEY, designDrawings\)/, "图纸元数据应随KV云端同步");
+assert.match(js, /const DRAWING_CONTENT_PREFIX = 'boiler_drawing_content:'/);
 assert.match(js, /const DRAWING_MAX_BYTES = 4 \* 1024 \* 1024;/, "单文件4MB上限");
+assert.match(js, /function normalizeDrawingMeta\(/);
+assert.match(js, /async function ensureDrawingContent\(/);
+assert.match(js, /cloudStorageRequest\(drawingContentKey\(id\)\)/, "图纸内容按需从云端读取");
 assert.match(js, /function handleDrawingUpload\(event\)/);
 assert.match(js, /function renderDesignDrawings\(\)/);
 assert.match(js, /function openDrawingViewer\(id\)/);
@@ -31,17 +35,26 @@ assert.match(js, /function canManageTubeData\(\)/, "上传/删除前有权限校
 assert.match(js, /renderDesignDrawings\(\);/, "INIT 应渲染图纸模块");
 
 // 只读权限拦截
-const uploadFn = js.slice(js.indexOf("function handleDrawingUpload"), js.indexOf("function deleteDesignDrawing"));
-assert.match(uploadFn, /if \(!canManageTubeData\(\)\) \{ showToast\('当前权限为只读，不能上传图纸。', 'warn'\); event\.target\.value = ''; return; \}/);
-const deleteFn = js.slice(js.indexOf("function deleteDesignDrawing"), js.indexOf("function drawingSurfaceLabel"));
+const uploadFn = js.slice(js.indexOf("async function handleDrawingUpload"), js.indexOf("async function deleteDesignDrawing"));
+assert.match(uploadFn, /canManageTubeData\(\)/);
+assert.match(uploadFn, /当前权限为只读，不能上传图纸/);
+assert.match(uploadFn, /cloudStorageWrite\(drawingContentKey\(id\), data\)/, "先写内容键");
+assert.match(uploadFn, /const persisted = await persistDrawingMeta\(\)/, "再等待元数据云端确认");
+assert.match(uploadFn, /if \(!persisted\.ok\)[\s\S]*?云端保存未确认/, "元数据未确认不得报告上传成功");
+const deleteFn = js.slice(js.indexOf("async function deleteDesignDrawing"), js.indexOf("function drawingSurfaceLabel"));
 assert.match(deleteFn, /当前权限为只读，不能删除图纸。/);
 assert.match(deleteFn, /if \(!confirm\(/, "删除图纸需确认");
+assert.match(deleteFn, /releaseDrawingContent\(id\)/, "删除时释放内容缓存");
 
-// 查看器：图片/PDF 分支与 Blob 释放
-const viewerFn = js.slice(js.indexOf("function openDrawingViewer"), js.indexOf("function closeDrawingViewer"));
-assert.match(viewerFn, /drawing\.fileType === 'pdf' \? 'application\/pdf' : mime/);
-assert.match(viewerFn, /<iframe src="' \+ drawingViewerUrl/, "PDF 用内嵌框架查看");
-assert.match(viewerFn, /URL\.revokeObjectURL\(drawingViewerUrl\)/, "关闭时释放 Blob URL");
+// 查看器：按需加载内容、校验 data URL、无内联事件
+assert.match(js, /async function openDrawingViewer\(id\)/);
+assert.match(js, /const entry = await ensureDrawingContent\(id\)/, "查看器按需拉取内容");
+assert.match(js, /if \(!entry\)/, "内容不可信/缺失时显示错误而不是渲染");
+assert.match(js, /<iframe src="' \+ entry\.url/, "PDF 用内嵌框架查看");
+assert.doesNotMatch(js, /onclick="openDrawingViewer\(/, "不得使用内联事件拼接图纸 id");
+assert.doesNotMatch(js, /'<img src="' \+ d\.data/, "列表不得直接拼接 base64 内容");
+assert.match(js, /data-drawing-thumb=/, "图片缩略图按需加载");
+assert.match(js, /data-drawing-action="view"/, "卡片使用事件委托属性");
 
 // 数据页/生成器联动
 assert.match(html, /onclick="openDrawingsForSys\(document\.getElementById\('f-system'\)\?\.value \|\| ''\)"/, "编码生成器应有一键打开对应受热面图纸");
@@ -259,64 +272,121 @@ for (const [sys, name, first, last, spec, material] of [
   }
 }
 
-// 云端启动同步（跨电脑可见性的关键修复）
-assert.match(js, /cloudStorageRequest\(DESIGN_DRAWINGS_KEY\)/, "bootstrap 应从云端拉取图纸键");
-assert.match(js, /syncDesignDrawingsFromCloud\(remoteDrawings\);/, "bootstrap 应调用图纸云端同步");
-assert.match(js, /function syncDesignDrawingsFromCloud\(remoteDrawings\)/);
-assert.match(js, /本机浏览器存储空间不足/, "localStorage 配额不足时应兜底提示并仍推云端");
+// 云端启动同步：元数据/内容分离后只拉元数据；旧格式内容逐张迁移
+assert.match(js, /cloudStorageRequest\(DESIGN_DRAWINGS_META_KEY\)/, "bootstrap 应先拉取图纸元数据键");
+assert.match(js, /await syncDesignDrawingsFromCloud\(remoteDrawingMeta, remoteLegacyDrawings\)/, "bootstrap 应等待元数据同步");
+assert.match(js, /remoteDrawingMeta\?\.found === false[\s\S]*?cloudStorageRequest\(DESIGN_DRAWINGS_KEY\)/, "仅元数据缺失时才读取旧键");
+assert.match(js, /图纸元数据已排队同步云端/, "本机配额不足时只提示元数据排队，不再假称内容已存云端");
 
-// 行为验证：启动同步按 id 并集合并（不覆盖、不删除、双向补齐）
-const syncFn = js.slice(js.indexOf("function syncDesignDrawingsFromCloud"), js.indexOf("async function loadAuthSession"));
-function makeSyncContext(localDrawings) {
-  const calls = { queue: [], toasts: [], saved: [] };
+const normalizeFn = js.slice(js.indexOf("function normalizeDrawingMeta"), js.indexOf("function drawingContentKey"));
+const contentKeyFn = js.slice(js.indexOf("function drawingContentKey"), js.indexOf("async function ensureDrawingContent"));
+const syncFn = js.slice(js.indexOf("async function syncDesignDrawingsFromCloud"), js.indexOf("async function loadAuthSession"));
+
+function makeSyncContext(localDrawings = [], legacy = null) {
+  const calls = { content: [], meta: [], saved: [], removed: [], toasts: [] };
   const ctx = vm.createContext({
+    console,
     DESIGN_DRAWINGS_KEY: 'boiler_design_drawings',
-    designDrawings: JSON.parse(JSON.stringify(localDrawings)),
-    queueCloudStorageSave: (key, value) => calls.queue.push({ key, value }),
-    localStorage: { setItem: (k, v) => calls.saved.push({ k, v }) },
+    DESIGN_DRAWINGS_META_KEY: 'boiler_design_drawings_meta',
+    DRAWING_CONTENT_PREFIX: 'boiler_drawing_content:',
+    DRAWING_ID_RE: /^[A-Za-z0-9_-]{1,64}$/,
+    DRAWING_DATA_RE: /^data:(image\/(?:png|jpeg|jpg|webp)|application\/pdf);base64,[A-Za-z0-9+/=\s]+$/,
+    var_designDrawings: null,
+    cloudStorageWrite: async (key, value) => { calls.content.push({ key, length: String(value).length }); return { ok: true }; },
+    persistDrawingMeta: async options => {
+      calls.meta.push({ options });
+      calls.saved.push({ k: 'boiler_design_drawings_meta', v: JSON.stringify(vm.runInContext('designDrawings', ctx)) });
+      return { ok: true };
+    },
+    localStorage: {
+      setItem: (k, v) => calls.saved.push({ k, v }),
+      removeItem: k => calls.removed.push(k)
+    },
     renderDesignDrawings: () => {},
-    showToast: (msg) => calls.toasts.push(String(msg))
+    showToast: msg => calls.toasts.push(String(msg))
   });
-  vm.runInContext(syncFn, ctx);
-  return { ctx, calls };
+  vm.runInContext(`var designDrawings = ${JSON.stringify(localDrawings)}; var legacyLocalDrawings = ${JSON.stringify(legacy)};`, ctx);
+  vm.runInContext(normalizeFn + '\n' + contentKeyFn + '\n' + syncFn, ctx);
+  const run = (remoteMeta, remoteLegacy) => vm.runInContext(
+    `syncDesignDrawingsFromCloud(${JSON.stringify(remoteMeta)}, ${JSON.stringify(remoteLegacy)})`, ctx);
+  const drawings = () => JSON.parse(vm.runInContext('JSON.stringify(designDrawings)', ctx));
+  return { ctx, calls, run, drawings };
 }
-const remoteA = { id: 'a', name: '云端A', sys: 'GGRQ' };
-const remoteB = { id: 'b', name: '云端B', sys: '' };
-const localA = { id: 'a', name: '本机改名A', sys: 'GGRQ' };
-const localX = { id: 'x', name: '仅本机', sys: 'DGRQ' };
+const remoteA = { id: 'a', name: '云端A', sys: 'GGRQ', fileType: 'image', size: 10, data: 'data:image/png;base64,QUFB' };
+const remoteB = { id: 'b', name: '云端B', sys: '', fileType: 'pdf', size: 20 };
+const localA = { id: 'a', name: '本机改名A', sys: 'GGRQ', fileType: 'image', size: 10 };
+const localX = { id: 'x', name: '仅本机', sys: 'DGRQ', fileType: 'image', size: 5 };
 
-// 本机为空：整批采用云端，不回推
-const emptyLocal = makeSyncContext([]);
-vm.runInContext(`syncDesignDrawingsFromCloud({ found: true, value: ${JSON.stringify([remoteA, remoteB])} })`, emptyLocal.ctx);
-assert.equal(emptyLocal.ctx.designDrawings.length, 2, "本机为空应整批载入云端图纸");
-assert.equal(emptyLocal.calls.queue.length, 0, "纯载入不应回推云端");
-assert.equal(emptyLocal.calls.saved.length, 1, "应写入本机 localStorage");
-assert.match(emptyLocal.calls.toasts[0], /已从云端新增 2 张/);
+await (async () => {
+  // 本机为空：载入云端元数据，纯载入不回推
+  const emptyLocal = makeSyncContext([]);
+  await emptyLocal.run({ found: true, value: [remoteA, remoteB], updatedAt: '2026-11-16T00:00:00Z' }, null);
+  assert.deepEqual(emptyLocal.drawings().map(d => d.id), ['a', 'b']);
+  assert.equal(emptyLocal.calls.meta.length, 0, '纯载入不应回推云端');
+  assert.equal(emptyLocal.calls.saved.length, 1, '应写入本机元数据');
+  assert.match(emptyLocal.calls.toasts[0], /云端新增 2 张/);
+  assert.equal(emptyLocal.drawings().find(d => d.id === 'a').data, undefined, '元数据不得包含 base64 内容');
 
-// 两端各有新增：并集合并并回推并集
-const bothSides = makeSyncContext([localX]);
-vm.runInContext(`syncDesignDrawingsFromCloud({ found: true, value: ${JSON.stringify([remoteA, remoteB])} })`, bothSides.ctx);
-assert.deepEqual(bothSides.ctx.designDrawings.map(d => d.id), ['x', 'a', 'b'], "并集合并应保留两端全部图纸");
-assert.equal(bothSides.calls.queue.length, 1, "本机独有图纸应随并集回推云端");
-assert.match(bothSides.calls.toasts[0], /本机 1 张 \+ 云端新增 2 张/);
+  // 两端各有新增：并集合并并回推
+  const bothSides = makeSyncContext([localX]);
+  await bothSides.run({ found: true, value: [remoteA, remoteB] }, null);
+  assert.deepEqual(bothSides.drawings().map(d => d.id), ['x', 'a', 'b']);
+  assert.equal(bothSides.calls.meta.length, 1, '本机独有图纸应回推元数据');
+  assert.match(bothSides.calls.toasts[0], /云端新增 2 张.*本机 1 张已补推/);
 
-// 同 id 以本机为准：本机改名不被云端旧名称覆盖
-const renamed = makeSyncContext([localA]);
-vm.runInContext(`syncDesignDrawingsFromCloud({ found: true, value: ${JSON.stringify([remoteA, remoteB])} })`, renamed.ctx);
-assert.equal(renamed.ctx.designDrawings.find(d => d.id === 'a').name, '本机改名A', "同 id 保留本机版本");
-assert.equal(renamed.ctx.designDrawings.length, 2, "云端新增图纸仍应并入");
-assert.equal(renamed.calls.queue.length, 0, "仅新增云端侧时无本机独有项不回推");
+  // 同 id 以本机为准
+  const renamed = makeSyncContext([localA]);
+  await renamed.run({ found: true, value: [remoteA, remoteB] }, null);
+  assert.equal(renamed.drawings().find(d => d.id === 'a').name, '本机改名A');
+  assert.equal(renamed.drawings().length, 2);
 
-// 云端尚无图纸键：把本机存量推上去
-const cloudMissing = makeSyncContext([localX]);
-vm.runInContext('syncDesignDrawingsFromCloud({ found: false })', cloudMissing.ctx);
-assert.equal(cloudMissing.calls.queue.length, 1, "云端缺键应推送本机存量");
+  // 云端缺元数据：把本机存量推上去
+  const cloudMissing = makeSyncContext([localX]);
+  await cloudMissing.run({ found: false }, null);
+  assert.equal(cloudMissing.calls.meta.length, 1, '云端缺键应推送本机元数据');
 
-// 网络失败（远端 null）：保持本机现状，不做任何动作
-const offline = makeSyncContext([localX]);
-vm.runInContext('syncDesignDrawingsFromCloud(null)', offline.ctx);
-assert.equal(offline.calls.queue.length, 0);
-assert.equal(offline.calls.toasts.length, 0);
-assert.equal(offline.ctx.designDrawings.length, 1);
+  // 网络失败：保持本机现状
+  const offline = makeSyncContext([localX]);
+  await offline.run(null, null);
+  assert.equal(offline.calls.meta.length, 0);
+  assert.equal(offline.calls.toasts.length, 0);
+  assert.equal(offline.drawings().length, 1);
 
-console.log("ok - design drawings module: nav/view/upload/viewer/delete/linkage + cloud bootstrap sync + loop segment baselines and inlet/bend preservation");
+  // 旧格式迁移：内容先上传，再写元数据，成功后清理本机旧键
+  const migration = makeSyncContext([], null);
+  await migration.run({ found: false }, { found: true, value: [{ id: 'old1', name: '旧图', fileType: 'image', size: 9, data: 'data:image/png;base64,QUJD' }] });
+  assert.equal(migration.calls.content.length, 1);
+  assert.equal(migration.calls.content[0].key, 'boiler_drawing_content:old1');
+  assert.deepEqual(migration.drawings().map(d => d.id), ['old1']);
+  assert.equal(migration.calls.meta.length, 1);
+  assert.ok(migration.calls.removed.includes('boiler_design_drawings'), '迁移成功后清理本机旧键');
+  assert.match(migration.calls.toasts[0], /旧格式迁移 1 张/);
+
+  // 旧格式中的非法 id / 非图片内容必须被拒绝，不得写入内容键
+  const malicious = makeSyncContext([], null);
+  await malicious.run({ found: false }, { found: true, value: [
+    { id: '<img src=x onerror=alert(1)>', name: '恶意', fileType: 'image', data: 'data:image/png;base64,QUJD' },
+    { id: 'bad2', name: 'HTML', fileType: 'image', data: 'data:text/html;base64,PHNjcmlwdD4=' }
+  ] });
+  assert.equal(malicious.calls.content.length, 0);
+  assert.equal(malicious.drawings().length, 0);
+})();
+
+// 元数据校验与 data URL 白名单
+const metaCtx = vm.createContext({
+  DRAWING_ID_RE: /^[A-Za-z0-9_-]{1,64}$/,
+  DRAWING_DATA_RE: /^data:(image\/(?:png|jpeg|jpg|webp)|application\/pdf);base64,[A-Za-z0-9+/=\s]+$/
+});
+vm.runInContext(normalizeFn, metaCtx);
+const normalize = value => vm.runInContext(`normalizeDrawingMeta(${JSON.stringify(value)})`, metaCtx);
+assert.equal(normalize({ id: '<img src=x>', fileType: 'image' }), null, '非法 id 必须拒绝');
+assert.equal(normalize({ id: 'ok', fileType: 'text' }), null, '非法类型必须拒绝');
+assert.equal(
+  JSON.stringify(normalize({ id: 'ok', name: '图'.repeat(300), fileType: 'image', size: '12', data: 'data:image/png;base64,QUJD' })),
+  JSON.stringify({ id: 'ok', name: '图'.repeat(200), drawingNo: '', sys: '', fileName: '', fileType: 'image', size: 12, uploadedAt: '' }),
+  '元数据必须剥离 data 并截断字符串'
+);
+assert.equal(vm.runInContext("DRAWING_DATA_RE.test('data:text/html;base64,PHNjcmlwdD4=')", metaCtx), false);
+assert.equal(vm.runInContext("DRAWING_DATA_RE.test('data:image/png;base64,QUJD')", metaCtx), true);
+assert.equal(vm.runInContext("DRAWING_DATA_RE.test('data:application/pdf;base64,QUJD')", metaCtx), true);
+console.log("ok - design drawings module: nav/view/upload/viewer/delete/linkage + lazy cloud content + metadata migration + loop segment baselines and inlet/bend preservation");
