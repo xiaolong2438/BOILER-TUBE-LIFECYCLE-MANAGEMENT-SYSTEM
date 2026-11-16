@@ -598,7 +598,7 @@
         <button class="btn btn-outline" onclick="exportLifecycleDataToXLSX()">📊 导出筛选范围 Excel</button>
         <label class="btn" style="cursor:pointer;">📤 导入 Excel 数据 <input type="file" id="importXlsxFile" accept=".xlsx,.xls" style="display:none;" onchange="importXLSX(event)"></label>
         <label class="btn btn-outline" style="cursor:pointer;">📤 导入 CSV 数据 <input type="file" id="importFile" accept=".csv" style="display:none;" onchange="importCSV(event)"></label>
-        <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="clearLocalData()">🗑 备份并清空本地数据</button>
+        <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="clearLocalData()" title="仅清理本浏览器缓存；云端共享数据保持不变，刷新后会自动重新载入">🗑 备份并清理本机缓存</button>
       </div>
       <div id="dm-batch-bar" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;"></div>
       <div id="dm-duplicate-report" class="dm-duplicate-report" aria-live="polite" hidden></div>
@@ -951,7 +951,7 @@
         <select id="drawingSysFilter" onchange="renderDesignDrawings()" style="padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text);">
           <option value="">全部受热面</option>
         </select>
-        <span style="font-size:12px; color:var(--text-dim);">单个文件 ≤ 4MB；图纸保存在本机浏览器并随配置云端同步，换设备需重新上传文件。</span>
+        <span style="font-size:12px; color:var(--text-dim);">单个文件 ≤ 4MB；图纸列表与云端同步，图片/PDF 内容按需从云端载入。</span>
       </div>
       <div id="drawingsGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px;"></div>
     </div>
