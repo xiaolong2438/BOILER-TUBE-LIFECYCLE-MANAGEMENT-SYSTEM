@@ -50,10 +50,14 @@ const checks = [
     assert.match(html, /管段存在，但暂无检测或寿命事件记录/);
     assert.match(html, /编码规则有效，但暂无台账矩阵映射/);
   }],
-  ["destructive local-data clear exports a backup first", () => {
+  ["destructive local-data clear exports a backup first and never wipes shared cloud data", () => {
     assert.match(html, /function backupLocalData\s*\(/);
     assert.match(html, /backupLocalData\(\)/);
-    assert.match(html, /清空前将自动导出备份/);
+    assert.match(html, /清理前会自动导出备份/);
+    assert.match(html, /仅清理本机缓存，云端共享数据保持不变/);
+    const clear = html.slice(html.indexOf("function clearLocalData("), html.indexOf("// ========== DATA (基础数据库)"));
+    assert.doesNotMatch(clear, /saveDB\(\)/, "清理本机缓存不得把空库同步到云端");
+    assert.doesNotMatch(clear, /queueCloudStorageSave\(/, "清理本机缓存不得排队上传空数据");
   }],
   ["narrow screens have dedicated responsive rules", () => {
     assert.match(html, /@media \(max-width: 600px\)/);
