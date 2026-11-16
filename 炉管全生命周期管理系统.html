@@ -523,7 +523,7 @@
         <div class="form-group"><label>材质（可选）</label><input type="text" id="dm-material" placeholder="例: SA-210C（可不填）" /></div>
         <div class="form-group"><label>厚度(mm)</label><input type="number" id="dm-thickness" min="0" step="0.01" placeholder="例: 7.10" /></div>
         <div class="form-group"><label>硬度(HB)</label><input type="number" id="dm-hardness" min="0" step="1" placeholder="例: 185" /></div>
-        <div class="form-group"><label>事件类型</label><select id="dm-type"><option>测厚</option><option>金相分析</option><option>无损检测</option><option>割管取样</option><option>检修维护</option></select></div>
+        <div class="form-group"><label>事件类型</label><select id="dm-type"><option>测厚</option><option>硬度</option><option>金相分析</option><option>无损检测</option><option>割管取样</option><option>检修维护</option></select></div>
         <div class="form-group"><label>日期</label><input type="date" id="dm-date" /></div>
         <div class="form-group"><label>详细数据/结论</label><textarea id="dm-desc" rows="3"></textarea></div>
         <button class="btn" style="width:100%;" onclick="addUserEvent()">💾 保存记录</button>
@@ -598,7 +598,7 @@
         <button class="btn btn-outline" onclick="exportLifecycleDataToXLSX()">📊 导出筛选范围 Excel</button>
         <label class="btn" style="cursor:pointer;">📤 导入 Excel 数据 <input type="file" id="importXlsxFile" accept=".xlsx,.xls" style="display:none;" onchange="importXLSX(event)"></label>
         <label class="btn btn-outline" style="cursor:pointer;">📤 导入 CSV 数据 <input type="file" id="importFile" accept=".csv" style="display:none;" onchange="importCSV(event)"></label>
-        <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="clearLocalData()">🗑 备份并清空本地数据</button>
+        <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="clearLocalData()" title="仅清理本浏览器缓存；云端共享数据保持不变，刷新后会自动重新载入">🗑 备份并清理本机缓存</button>
       </div>
       <div id="dm-batch-bar" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; align-items:center;"></div>
       <div id="dm-duplicate-report" class="dm-duplicate-report" aria-live="polite" hidden></div>

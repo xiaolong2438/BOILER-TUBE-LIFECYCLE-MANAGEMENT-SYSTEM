@@ -26,8 +26,10 @@
   /* 新编码规则：{机组}G-SYS-COMP-位置-Q/W，字母即部位身份（Q=管子、W=弯头）；
      位置段唯一确定物理对象，历史流水数字仅兼容旧数据（解析后忽略）。
      正则保留 HPGRQ 分支，供未先经 normalizeCode 的原始匹配路径识别旧码。 */
-  var TUBE_CODE_SOURCE = '[12]G-(?:SLB|GZRQ|GGRQ|PSGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|LHD|RSQ)-(?:[FBLR]000-[FBLR]\\d{3}|J\\d{1,2}-[A-Z]\\d{1,2}|[FBLR]\\d{3}-[FBLR]\\d{3}-[FBLRUD]\\d{3}|[FBLR]\\d{3}-[FBLRUD]\\d{3}|(?:[1-9]\\d?KJ-)?[FBLR]\\d{3}(?:-[FBLRUD]\\d{3})?)-[QW]\\d{0,3}';
-  var TUBE_CODE_PATTERN = new RegExp('^' + TUBE_CODE_SOURCE + '$');
+  var TUBE_CODE_SOURCE = '[12]G-(?:SLB|GZRQ|GGRQ|PSGRQ|HPGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(?:GQ|WB|SG|LHD|RSQ)-(?:[FBLR]000-[FBLR]\\d{3}|J\\d{1,2}-[A-Z]\\d{1,2}|[FBLR]\\d{3}-[FBLR]\\d{3}-[FBLRUD]\\d{3}|[FBLR]\\d{3}-[FBLRUD]\\d{3}|(?:[1-9]\\d?KJ-)?[FBLR]\\d{3}(?:-[FBLRUD]\\d{3})?)-[QW]\\d{0,3}'
+    + '|[12]G-GGRQ-(?:EXOUT|EXIN)-[FBLR]\\d{3}-[BF]\\d{3}-SQ-[UD]';
+  /* 高过集箱进出口侧蛇形管（2026-11-15）：EXOUT 固定 B 腿/EXIN 固定 F 腿由解析分支按部件校验 */
+  var TUBE_CODE_PATTERN = new RegExp('^(?:' + TUBE_CODE_SOURCE + ')$');
 
   /* 受热面系统代码（与页面 CODE_SYSTEMS 一致） */
   var CODE_SYSTEMS = [
@@ -496,10 +498,24 @@
   /* 新编码解析（与页面 parseTubeCode 同构）：结构合法返回 parts，否则 valid=false */
   function parseTubeCodeParts(code) {
     var raw = normalizeCode(code);
-    var head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|PSGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ)(?:-(.*))?$/);
+    var head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|PSGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ|EXIN|EXOUT)(?:-(.*))?$/);
     if (!head) return null;
     var parsed = { unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], space: null, pos: '', posNum: null, pos2: '', pos2Num: null, corner: null, layer: '', nozzle: null, dir: '', tube: null, seq: null };
     var parts = head[4] ? head[4].split('-') : [];
+    /* 集箱进出口侧蛇形管段（EXOUT/EXIN，2026-11-15 炉顶大包口径）：
+       L{片}-{B|F}{根}-SQ-{U|D}，出口侧固定 B 腿、进口侧固定 F 腿，无 Q/W 尾段 */
+    if (parsed.comp === 'EXOUT' || parsed.comp === 'EXIN') {
+      if (parts.length !== 4) return null;
+      var segPosM = parts[0].match(/^([FBLR])(\d{3})$/);
+      var segLegM = parts[1].match(/^([BF])(\d{3})$/);
+      if (!segPosM || !segLegM || parts[2] !== 'SQ' || !/^[UD]$/.test(parts[3])) return null;
+      if ((parsed.comp === 'EXOUT' && segLegM[1] !== 'B') || (parsed.comp === 'EXIN' && segLegM[1] !== 'F')) return null;
+      parsed.pos = parts[0]; parsed.posNum = Number(segPosM[2]);
+      parsed.pos2 = parts[1]; parsed.pos2Num = Number(segLegM[2]);
+      parsed.dir = parts[3]; parsed.tube = null;
+      parsed.partKind = 'SQ';
+      return parsed;
+    }
     /* 尾段 Q=直管、W=弯头；字母即身份，历史流水数字可选（兼容旧数据），解析后忽略 */
     var tail = parts.length && /^[QW]\d{0,3}$/.test(parts[parts.length - 1]) ? parts.pop() : null;
     if (!tail) return null;
@@ -683,7 +699,7 @@
         pos2SegP = pos2CanonicalP + pad3(row.p2Max + 1 - parsed.pos2Num);
         changedP = true;
       }
-      var dirSegP = parsed.dir + pad3(parsed.tube);
+      var dirSegP = parsed.tube !== null ? parsed.dir + pad3(parsed.tube) : parsed.dir;
       if (parsed.partKind === 'W' && parsed.dir === 'B') {
         dirSegP = 'F' + pad3(parsed.tube);
         changedP = true;
@@ -696,10 +712,12 @@
         if (parsed.space !== null) bodyP.push(parsed.space + 'KJ');
         bodyP.push(posSegP);
         if (pos2SegP) bodyP.push(pos2SegP);
+        if (row.segSuffix) bodyP.push(row.segSuffix);
         bodyP.push(dirSegP);
       }
       var segsP = normalized.split('-');
-      var canonicalP = [segsP[0], segsP[1], segsP[2]].concat(bodyP, [segsP[segsP.length - 1]]).join('-');
+      /* segSuffix 行（集箱侧蛇形管 SQ-U/D）无 Q/W 尾段，最后一段是方向本身，不重复拼接 */
+      var canonicalP = [segsP[0], segsP[1], segsP[2]].concat(bodyP, row.segSuffix ? [] : [segsP[segsP.length - 1]]).join('-');
       var reparsedP = parseTubeCodeParts(canonicalP);
       if (!reparsedP) return null;
       var stillMatchedP = false;

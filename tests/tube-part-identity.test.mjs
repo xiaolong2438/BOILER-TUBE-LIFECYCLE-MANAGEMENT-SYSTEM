@@ -74,8 +74,20 @@ assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-F020-Q', matrix).code, '1G-
 assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-F024-W', matrix).code, '1G-GGRQ-GQ-L012-F001-W', '旧腿号迁移：F024弯头→回路1底弯F001-W');
 assert.equal(Core.canonicalTubeCode('1G-GGRQ-GQ-L012-B020-Q', matrix).code, '1G-GGRQ-GQ-L012-F005-Q', '旧腿号迁移：B020≙旧F005入口段→F005');
 /* 11192 + 省煤器新口径（2026-11-08）：蛇形管 124排×3圈×2组(U/D)=744、吊挂管 56×2=112（原 124，+732）；
-   进/出口集箱不属回路管段（2026-11-08 用户确认），从矩阵移除 -248 → 11676 */
-assert.equal(matrix.reduce((sum, row) => sum + ctx.matrixRowCount(row), 0), 11676);
+   进/出口集箱不属回路管段（2026-11-08 用户确认），从矩阵移除 -248；
+   + 高过集箱进出口侧蛇形管段（2026-11-15 炉顶大包检测口径，用户确认扩库）：
+   EXOUT 32片×24根×2(U/D)=1536、EXIN 同 → +3072 → 14748 */
+assert.equal(matrix.reduce((sum, row) => sum + ctx.matrixRowCount(row), 0), 14748);
+/* 集箱进出口侧蛇形管（2026-11-15 炉顶大包口径）：EXOUT 固定 B 腿/EXIN 固定 F 腿 + SQ-U/D 段位；
+   B013+ 不做旧腿号迁移（进出侧根号即身份），R 片号镜像到 L 规范侧，台账双向展开 1536/行 */
+assert.equal(ctx.parseTubeCode('1G-GGRQ-EXOUT-L001-B001-SQ-U').partKind, 'SQ');
+assert.equal(ctx.parseTubeCode('1G-GGRQ-EXIN-L002-F005-SQ-D').dir, 'D');
+assert.equal(ctx.parseTubeCode('1G-GGRQ-EXOUT-L001-F001-SQ-U'), null, 'EXOUT 不接受 F 腿');
+assert.equal(ctx.parseTubeCode('1G-GGRQ-EXOUT-L001-B001-SQ-X'), null, '蛇形管部位仅 U/D');
+assert.equal(ctx.validateCodeAgainstMatrix('1G-GGRQ-EXOUT-L001-B001-SQ-U').row.name, '高温过热器出口集箱侧蛇形管');
+assert.equal(Core.canonicalTubeCode('1G-GGRQ-EXOUT-L001-B013-SQ-U', matrix), null, '进出侧根号即身份：B013+ 不迁移');
+assert.equal(Core.canonicalTubeCode('1G-GGRQ-EXOUT-R032-B001-SQ-U', matrix).code, '1G-GGRQ-EXOUT-L001-B001-SQ-U', 'R 片号镜像到 L 规范侧');
+assert.equal(ctx.matrixRowCount(matrix.find(row => row.comp === 'EXOUT')), 1536);
 assert.equal(ctx.parseTubeCode(w).partKind, 'W');
 assert.equal(ctx.parseTubeCode(w).seq, null);
 assert.equal(ctx.parseTubeCode(legacyW).seq, 1);

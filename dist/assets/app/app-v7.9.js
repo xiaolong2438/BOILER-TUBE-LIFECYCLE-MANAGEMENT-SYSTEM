@@ -923,7 +923,7 @@ function deleteEvent(ts) { if(confirm('确定删除？')) { const removed = user
 
 /* ---------------- 单条记录编辑维护（事件 / 更换登记） ----------------
  * 与 AI 助手共用同一权限口径：viewer 只读；所有修改写入维护记录留痕。 */
-const DATA_EDIT_TYPES = ['测厚', '金相分析', '无损检测', '割管取样', '检修维护', '报废更换', '安装投运'];
+const DATA_EDIT_TYPES = ['测厚', '硬度', '金相分析', '无损检测', '割管取样', '检修维护', '报废更换', '安装投运'];
 const DATA_EDIT_FIELD_LABELS = { boiler: '机组', code: '管段编码', spec: '规格', material: '材质', thickness: '厚度', hardness: '硬度', type: '事件类型', date: '日期', desc: '详细数据/结论', oldCode: '旧管段编码', newCode: '新管段编码', reason: '更换原因' };
 
 function openDataEditModal(html) {
@@ -1488,6 +1488,10 @@ const matrix = [
   { name:'后屏过热器', sys:'PSGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing: true, spec:'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat:'按材料库分项', badge:'badge-sh' },
   /* 高过：统一回路编号（2026-11-01）——入口段F00k、出口段B00k、底弯W记入口段位，12回路；历史腿号F013–F024由归一自动迁移 */
   { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:12, loopPairing: true, spec:'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat:'按材料库分项', badge:'badge-sh' },
+  /* 集箱进出口侧蛇形管段（2026-11-15 炉顶大包检测口径）：L{片}-{B出口腿|F进口腿}{根001~024}-SQ-{U上部|D下部}，
+     双向进台账（dualDir，U/D 互不镜像）；出口侧 EXOUT 固定 B 腿、进口侧 EXIN 固定 F 腿，与 32片×12管圈 管屏行同范围 */
+  { name:'高温过热器出口集箱侧蛇形管', sys:'GGRQ', comp:'EXOUT', posLetters:['L','R'], pMax:32, pos2Letters:['B'], p2Max:24, dirs:['U','D'], tubeOptional:true, dualDir:true, segSuffix:'SQ', dirLabels:{U:'蛇形管上部', D:'蛇形管下部'}, spec:'按材料库分项', mat:'按材料库分项', badge:'badge-sh' },
+  { name:'高温过热器进口集箱侧蛇形管', sys:'GGRQ', comp:'EXIN', posLetters:['L','R'], pMax:32, pos2Letters:['F'], p2Max:24, dirs:['U','D'], tubeOptional:true, dualDir:true, segSuffix:'SQ', dirLabels:{U:'蛇形管上部', D:'蛇形管下部'}, spec:'按材料库分项', mat:'按材料库分项', badge:'badge-sh' },
   /* 高再：7回路，F001~F007 入口腿、B001~B007 出口腿；底弯W统一记F位，历史超范围管位待核 */
   { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['F','B'], tMax:7, loopPairing:true, spec:'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat:'按材料库分项', badge:'badge-rh' },
   /* 低过：5根蛇形管自下而上 D001~D005，排号沿烟道宽度 L001~L112；
@@ -1507,7 +1511,7 @@ const matrix = [
 const CODE_SYSTEMS = [
   { sys:'SLB', label:'水冷壁', comps:['WB','LHD','RSQ'] },
   { sys:'GZRQ', label:'高温再热器', comps:['GQ'] },
-  { sys:'GGRQ', label:'高温过热器', comps:['GQ'] },
+  { sys:'GGRQ', label:'高温过热器', comps:['GQ','EXOUT','EXIN'] },
   { sys:'PSGRQ', label:'后屏过热器', comps:['GQ'] },
   { sys:'DPGRQ', label:'全大屏过热器', comps:['GQ'] },
   { sys:'DGRQ', label:'低温过热器', comps:['GQ'] },
@@ -1516,7 +1520,7 @@ const CODE_SYSTEMS = [
 ];
 /* 顶棚过热器/包墙过热器仅存在于材料库，不参与新编码规则 */
 const ALL_CODE_SYSTEMS = [...CODE_SYSTEMS, { sys:'RSH', label:'顶棚过热器' }, { sys:'WSH', label:'包墙过热器' }];
-const COMPONENT_LABELS = { GQ:'管屏', WB:'水冷壁管', SG:'省煤器蛇形管', LHD:'冷灰斗', RSQ:'燃烧器区域' };
+const COMPONENT_LABELS = { GQ:'管屏', WB:'水冷壁管', SG:'省煤器蛇形管', LHD:'冷灰斗', RSQ:'燃烧器区域', EXOUT:'出口集箱侧蛇形管', EXIN:'进口集箱侧蛇形管' };
 /* 方位/方向字母含义（规则第4条） */
 const CODE_DIR_LABELS = { A:'A侧', B:'炉后往前/B侧', F:'炉前往后', L:'炉左往右', R:'炉右往左/A侧', U:'上往下', D:'下往上' };
 const WALL_THICKNESS_WARNING_RULES = [
@@ -1685,6 +1689,13 @@ function renderGeneratorFields() {
     html = `<div class="form-group"><label>角号</label><select id="f-corner">${corners.join('')}</select></div>
       <div class="form-group"><label>喷口层</label><select id="f-layer">${row.layers.map(l => `<option value="${l}">${l} 层</option>`).join('')}</select></div>
       <div class="form-group"><label>喷口序号</label><input type="number" id="f-nozzle" min="${row.nozzles[0]}" max="${row.nozzles[1]}" value="1" /></div>`;
+  } else if(row && row.segSuffix) {
+    /* 集箱进出口侧蛇形管：片号方位/片号 + 固定腿根号 + 蛇形管部位（U/D），无管号与检测部位 */
+    const posNums = max => Array.from({length: max}, (_, i) => `<option value="${i + 1}">${m0pad(i + 1, 3)}</option>`).join('');
+    html = `<div class="form-group"><label>片号方位</label><select id="f-pos-letter">${dirOptions(row.posLetters)}</select></div>
+      <div class="form-group"><label>片号 (3位, 1~${row.pMax})</label><select id="f-pos-num">${posNums(row.pMax)}</select></div>
+      <div class="form-group"><label>${comp === 'EXOUT' ? '出口腿' : '进口腿'}根号 (3位, 1~${row.p2Max})</label><select id="f-pos2-num">${posNums(row.p2Max)}</select></div>
+      <div class="form-group"><label>蛇形管部位</label><select id="f-dir">${dirOptions(row.dirs, row.dirLabels)}</select></div>`;
   } else if(row && row.pos) {
     html = `<div class="form-group"><label>方位（墙/坡）</label><select id="f-pos">${(GENERATOR_WALL_OPTIONS[comp] || []).map(([v, label]) => `<option value="${v}">${label}</option>`).join('')}</select></div>
       <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...new Set([...row.fieldDirs, ...row.dirs])] : row.dirs, row.dirLabels)}</select></div>
@@ -1699,7 +1710,7 @@ function renderGeneratorFields() {
       <div class="form-group"><label>管号方向</label><select id="f-dir">${dirOptions(row.fieldDirs ? [...new Set([...row.fieldDirs, ...row.dirs])] : row.dirs, row.dirLabels)}</select></div>
       <div class="form-group"><label>管号 (3位, ${row.fieldDirs ? (row.fieldTMax ? '现场F/B 1~' + row.fieldTMax : '台账F 1~' + row.tMax + ' · B/超出待核') : '1~'}${row.fieldDirs && row.fieldTMax ? '；U/D管圈参考1~' + row.tMax : ''})</label><input type="number" id="f-tube" min="1" max="${row.fieldDirs ? (row.fieldTMax || 999) : row.tMax}" value="1" /></div>`;
   }
-  html += `<div class="form-group"><label for="f-part-kind">检测部位</label><select id="f-part-kind"><option value="Q">Q · 管子</option><option value="W">W · 弯头</option></select></div>`;
+  if(!row || !row.segSuffix) html += `<div class="form-group"><label for="f-part-kind">检测部位</label><select id="f-part-kind"><option value="Q">Q · 管子</option><option value="W">W · 弯头</option></select></div>`;
   box.innerHTML = html;
   box.querySelectorAll('select, input').forEach(el => el.addEventListener('input', genCode));
   const subrowSelect = document.getElementById('f-subrow');
@@ -1735,7 +1746,12 @@ function genCode() {
   const val = id => document.getElementById(id)?.value || '';
   const num = id => Math.max(1, Number(val(id) || 1));
   let body = '';
-  if(sys === 'SLB' && comp === 'RSQ') {
+  let tailSeg = partKind;
+  if(comp === 'EXOUT' || comp === 'EXIN') {
+    /* 集箱进出口侧蛇形管：L{片}-{B|F}{根}-SQ-{U|D}，腿字母由部件固定，无 Q/W 尾段 */
+    body = `${val('f-pos-letter')}${m0pad(num('f-pos-num'), 3)}-${comp === 'EXOUT' ? 'B' : 'F'}${m0pad(num('f-pos2-num'), 3)}-SQ-${val('f-dir') || 'U'}`;
+    tailSeg = '';
+  } else if(sys === 'SLB' && comp === 'RSQ') {
     body = `J${val('f-corner')}-${val('f-layer')}${m0pad(num('f-nozzle'), 2)}`;
   } else if(sys === 'SLB') {
     body = `${val('f-pos')}-${val('f-dir')}${m0pad(num('f-tube'), 3)}`;
@@ -1748,7 +1764,7 @@ function genCode() {
     body = `${val('f-pos-letter')}${m0pad(num('f-pos-num'), 3)}-${val('f-dir')}${m0pad(num('f-tube'), 3)}`;
   }
   const partKind = val('f-part-kind') === 'W' ? 'W' : 'Q';
-  const code = `${b}-${sys}-${comp}-${body}-${partKind}`;
+  const code = [`${b}-${sys}-${comp}-${body}`, tailSeg].filter(Boolean).join('-');
   out.innerHTML = code.split('-').map(seg => `<span class="code-segment">${escapeHTML(seg)}</span>`).join('-');
   const matched = validateCodeAgainstMatrix(code);
   const desc = document.getElementById('codeDesc');
@@ -1758,16 +1774,31 @@ function genCode() {
 }
 /* ========== 新编码规则 ==========
  * 模板：{机组}G-SYS-COMP-{方位}{三位排/片号}-{方位}{三位排/屏号}-{方向}{三位管号}-Q{序号}
- * 机组：1G/2G；系统：SLB/GZRQ/GGRQ/PSGRQ/DPGRQ/DGRQ/DZRQ/SMQ；部件：GQ/WB/SG/LHD/RSQ
+ * 机组：1G/2G；系统：SLB/GZRQ/GGRQ/PSGRQ/DPGRQ/DGRQ/DZRQ/SMQ；部件：GQ/WB/SG/LHD/RSQ/EXIN/EXOUT
  * 方位/方向：A侧→R、B侧→L、炉左往右→L、炉右往左→R、炉前往后→F、炉后往前→B；受热面管序用 F/B（高再管数待核），
  * 省煤器 U=上组/D=下组（数字位=圈号001~003）、吊挂管 F=前后排（F001前/F002后）；
+ * 高过集箱进出口侧蛇形管（EXOUT出口/EXIN进口）：L{片001~032}-{B|F}{根001~024}-SQ-{U上部|D下部}，无Q/W尾段；
  * 无明确排/屏号用 000 占位；方向不明不得臆造字母，保持原样进「待确认」人工核实；低过/低再默认第 1 检修空间可省略 */
 function parseTubeCode(code) {
   const raw = canonicalizeSystemAliases(String(code || '').trim().toUpperCase());
-  const head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|PSGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ)(?:-(.*))?$/);
+  const head = raw.match(/^([12])G-(SLB|GZRQ|GGRQ|PSGRQ|DPGRQ|DGRQ|DZRQ|SMQ)-(GQ|WB|SG|LHD|RSQ|EXIN|EXOUT)(?:-(.*))?$/);
   if(!head) return null;
   const parsed = { raw, unit: head[1] + 'G', boiler: head[1], sys: head[2], comp: head[3], pos: null, posNum: null, pos2: null, pos2Num: null, space: null, corner: null, layer: '', nozzle: null, dir: null, tube: null, seq: null };
   const parts = head[4] ? head[4].split('-') : [];
+  /* 集箱进出口侧蛇形管段（EXOUT/EXIN，2026-11-15 炉顶大包口径）：
+     L{片}-{B|F}{根}-SQ-{U|D}，出口侧固定 B 腿、进口侧固定 F 腿，SQ=蛇形管段、U/D=上部/下部，无 Q/W 尾段 */
+  if(parsed.comp === 'EXOUT' || parsed.comp === 'EXIN') {
+    if(parts.length !== 4) return null;
+    const segPos = parts[0].match(/^([FBLR])(\d{3})$/);
+    const segLeg = parts[1].match(/^([BF])(\d{3})$/);
+    if(!segPos || !segLeg || parts[2] !== 'SQ' || !/^[UD]$/.test(parts[3])) return null;
+    if((parsed.comp === 'EXOUT' && segLeg[1] !== 'B') || (parsed.comp === 'EXIN' && segLeg[1] !== 'F')) return null;
+    parsed.pos = parts[0]; parsed.posNum = Number(segPos[2]);
+    parsed.pos2 = parts[1]; parsed.pos2Num = Number(segLeg[2]);
+    parsed.dir = parts[3]; parsed.tube = null;
+    parsed.partKind = 'SQ';
+    return parsed;
+  }
   /* 尾段 Q=直管部位、W=弯头部位，字母即身份；历史流水数字可选（兼容旧数据），解析后忽略 */
   const tail = parts.length && /^[QW]\d{0,3}$/.test(parts[parts.length - 1]) ? parts.pop() : null;
   if(!tail) return null;
@@ -3333,7 +3364,7 @@ function buildMaintenanceOutagePlan(cycleStartYear = new Date().getFullYear(), b
     };
   });
 }
-const MAINTENANCE_PHYSICAL_CHECK_RE = /测厚|射线|硬度|金相|割管|取样|检查|检修|防磨防爆|无损|超声|UT|RT|PT|MT|复查|复检/i;
+const MAINTENANCE_PHYSICAL_CHECK_RE = /测厚|厚度|射线|硬度|金相|割管|取样|检查|检修|防磨防爆|无损|超声|UT|RT|PT|MT|复查|复检|换管|更换/i;
 function isMaintenanceInspectionRecord(record) {
   return MAINTENANCE_PHYSICAL_CHECK_RE.test(`${record?.type || ''} ${record?.desc || ''} ${record?.t || ''} ${record?.d || ''}`);
 }
@@ -3372,6 +3403,16 @@ function matrixExpandCodes(m, unit) {
       for(const p of posList) {
         for(const p2 of pos2List) {
           const head = [sp, p, p2].filter(Boolean).join('-');
+          /* 集箱进出口侧蛇形管段（segSuffix）：尾部 -SQ-{U|D}，无管号与 Q/W 尾段 */
+          if(m.segSuffix) {
+            const locParts = [
+              sp ? `第${parseInt(sp, 10)}检修空间` : '',
+              `第${parseInt(p.slice(1), 10)}片 · 第${parseInt(p2.slice(1), 10)}根`,
+              (m.dirLabels && m.dirLabels[dir]) || `${m.segSuffix}·${dir}`
+            ].filter(Boolean);
+            out.push({ code: `${prefix}-${head}-${m.segSuffix}-${dir}`, loc: locParts.join(' · ') });
+            continue;
+          }
           for(let t = 1; t <= m.tMax; t += 1) {
             const locParts = [
               sp ? `第${parseInt(sp, 10)}检修空间` : '',
@@ -3389,6 +3430,7 @@ function matrixExpandCodes(m, unit) {
 }
 function matrixRowCount(m) {
   if(m.special === 'rsq') return (m.corners[1] - m.corners[0] + 1) * m.layers.length * (m.nozzles[1] - m.nozzles[0] + 1);
+  if(m.segSuffix) return m.pMax * (m.pos2Letters ? m.p2Max : 1) * m.dirs.length;
   /* 悬挂屏回路行双向展开（F 入口段 + B 出口段）；省煤器组别行双向展开（U 上组 + D 下组）；其余行只计规范方向 */
   const dirFactor = (m.loopPairing || m.dualDir) ? m.dirs.length : 1;
   let count = (m.pos ? 1 : m.pMax * (m.pos2Letters ? m.p2Max : 1)) * m.tMax * dirFactor;
@@ -3409,6 +3451,7 @@ function tubeLedgerMatrixStats() {
 }
 function matrixRowRangeText(m) {
   if(m.special === 'rsq') return `J${m.corners[0]}~J${m.corners[1]} · ${m.layers[0]}~${m.layers[m.layers.length - 1]}层 · 喷口${m.nozzles[0]}~${m.nozzles[1]}`;
+  if(m.segSuffix) return `${m.posLetters.join('/')}${pad(1, 3)}~${m.pMax} × ${m.pos2Letters.join('/')}${pad(1, 3)}~${m.p2Max} · ${m.segSuffix}-${m.dirs.join('/')}`;
   if(m.pos) return `${m.pos} · 管1~${m.tMax}`;
   const posText = `${m.posLetters.join('/')}${pad(1, 3)}~${m.pMax}`;
   const pos2Text = m.pos2Letters ? ` × ${m.pos2Letters.join('/')}${pad(1, 3)}~${m.p2Max}` : '';
@@ -3460,6 +3503,7 @@ function tubeLocationText(code) {
   const parsed = parseTubeCode(code);
   if(!parsed) return '-';
   if(parsed.corner !== null) return `${parsed.corner}号角 · ${parsed.layer}层第${parsed.nozzle}喷口`;
+  if(parsed.partKind === 'SQ') return `第${parsed.posNum}片 · 第${parsed.pos2Num}根 · 蛇形管${parsed.dir === 'U' ? '上部' : '下部'}`;
   const posText = parsed.pos && /000$/.test(parsed.pos)
     ? ({ F000: '前墙/坡', B000: '后墙/坡', L000: '左墙/坡', R000: '右墙/坡' })[parsed.pos] || parsed.pos
     : parsed.pos ? `第${parsed.posNum}排/屏` : '';
@@ -4540,7 +4584,7 @@ function collectAICompositeSignals(code, history = []) {
     .filter(point => point.value > 0 && Number.isFinite(point.value) && Number.isFinite(new Date(point.date).getTime()));
   const metallographyPattern = /金相|组织|晶粒|碳化物|球化|晶界|蠕变|脱碳|裂纹|氧化|过热|珠光体|贝氏体|马氏体/i;
   const adversePattern = /裂纹|晶界|球化|蠕变|脱碳|过热|氧化皮|腐蚀|异常|劣化|超标|疏松/i;
-  const inspectionPattern = /无损|UT|PT|MT|RT|超声|射线|磁粉|渗透|割管|取样|复检|检修|更换/i;
+  const inspectionPattern = /无损|UT|PT|MT|RT|超声|射线|磁粉|渗透|割管|取样|复检|检修|更换|硬度|测厚|换管/i;
   const metallography = events.filter(event => metallographyPattern.test(`${event.type || ''} ${event.desc || ''}`));
   const inspectionEvents = events.filter(event => inspectionPattern.test(`${event.type || ''} ${event.desc || ''}`));
   const latestHardness = hardnessHistory[hardnessHistory.length - 1] || null;

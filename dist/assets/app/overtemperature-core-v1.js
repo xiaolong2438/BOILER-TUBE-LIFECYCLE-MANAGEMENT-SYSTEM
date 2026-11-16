@@ -21,6 +21,8 @@
     { name:'全大屏过热器', sys:'DPGRQ', comp:'GQ', posLetters:['L','R'], pMax:6, pos2Letters:['F','B'], p2Max:4, dirs:['F','B'], tMax:14, loopPairing:true },
     { name:'后屏过热器', sys:'PSGRQ', comp:'GQ', posLetters:['L','R'], pMax:21, dirs:['F','B'], tMax:13, loopPairing:true },
     { name:'高温过热器', sys:'GGRQ', comp:'GQ', posLetters:['L','R'], pMax:32, dirs:['F','B'], tMax:12, loopPairing:true },
+    { name:'高温过热器出口集箱侧蛇形管', sys:'GGRQ', comp:'EXOUT', posLetters:['L','R'], pMax:32, pos2Letters:['B'], p2Max:24, dirs:['U','D'], tubeOptional:true, dualDir:true, segSuffix:'SQ', dirLabels:{U:'蛇形管上部', D:'蛇形管下部'} },
+    { name:'高温过热器进口集箱侧蛇形管', sys:'GGRQ', comp:'EXIN', posLetters:['L','R'], pMax:32, pos2Letters:['F'], p2Max:24, dirs:['U','D'], tubeOptional:true, dualDir:true, segSuffix:'SQ', dirLabels:{U:'蛇形管上部', D:'蛇形管下部'} },
     { name:'高温再热器', sys:'GZRQ', comp:'GQ', posLetters:['L','R'], pMax:64, dirs:['F','B'], tMax:7, loopPairing:true },
     { name:'低温过热器', sys:'DGRQ', comp:'GQ', spaces:[1,5], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:5 },
     { name:'低温再热器', sys:'DZRQ', comp:'GQ', spaces:[1,6], posLetters:['L','R'], pMax:112, dirs:['D','U'], tMax:6, tubeOptional:true },
@@ -124,7 +126,8 @@
     applicable(['spaces'], function (row) { return !!row.spaces; });
     applicable(['posFrom','posTo'], function (row) { return !!row.pMax; });
     applicable(['pos2From','pos2To'], function (row) { return !!row.p2Max; });
-    applicable(['tubeFrom','tubeTo','dirs'], function (row) { return row.special !== 'rsq'; });
+    applicable(['tubeFrom','tubeTo'], function (row) { return row.special !== 'rsq' && !row.segSuffix; });
+    applicable(['dirs'], function (row) { return row.special !== 'rsq'; });
     applicable(['corners','layers','nozzles'], function (row) { return row.special === 'rsq'; });
     function checkArray(k, valid) { if (r[k] !== null && r[k].some(function (v) { return !matches.some(function (row) { return valid(v, row); }); })) errors.push(k + ' 含矩阵外或非规范方向的值'); }
     checkArray('parts', function (v) { return v === 'Q' || v === 'W'; });
@@ -153,6 +156,8 @@
     var p = typeof Assistant.parseTubeCodeParts === 'function' ? Assistant.parseTubeCodeParts(checked.code) : checked.parts;
     if (!p) return null;
     p = Object.assign({}, p);
+    /* 集箱侧蛇形管（segSuffix）：编码无 Q/W 尾段与空间概念，校验通过即已是规范身份，直接返回 */
+    if (checked.matched && checked.matched.segSuffix) return { code: checked.code, parts: p, row: checked.matched };
     if ((p.sys === 'DGRQ' || p.sys === 'DZRQ') && p.space === null) p.space = 1;
     var body = [];
     if (p.corner !== null) body = ['J' + p.corner, p.layer + p.nozzle];
@@ -208,6 +213,13 @@
       var positions2 = row.p2Max ? ints(r.pos2From || 1, r.pos2To || row.p2Max).map(function (n) { return row.pos2Letters[0] + pad(n, 3); }) : [null];
       var spaces = row.spaces ? (r.spaces || ints(row.spaces[0], row.spaces[1])) : [null];
       var dirs = canonicalDirs(row).filter(function (dir) { return selected(r.dirs, dir); });
+      /* 集箱进出口侧蛇形管段（segSuffix）：尾部 -SQ-{U|D}，无管号与 Q/W 尾段 */
+      if (row.segSuffix) {
+        spaces.forEach(function (space) { positions.forEach(function (pos) { positions2.forEach(function (pos2) { dirs.forEach(function (dir) {
+          add(prefix + '-' + [space === null ? null : space + 'KJ', pos, pos2, row.segSuffix, dir].filter(function (x) { return x !== null; }).join('-'));
+        }); }); }); });
+        return;
+      }
       spaces.forEach(function (space) { positions.forEach(function (pos) { positions2.forEach(function (pos2) { dirs.forEach(function (dir) {
         ints(r.tubeFrom || 1, r.tubeTo || row.tMax).forEach(function (tube) { parts.forEach(function (part) {
           // 弯头只记 F，B-W 归一后去重；B-only/null-parts 不扩大到 F。
