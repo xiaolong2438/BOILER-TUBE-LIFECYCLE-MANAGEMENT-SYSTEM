@@ -1640,7 +1640,7 @@ function clearLocalData() {
   } catch (err) { /* 存储不可用时继续清内存 */ }
   userDB = { events: [], replacements: [] };
   invalidateTubeViews();
-  mlog('clearLocalCache', { total, cloud: canRestoreFromCloud });
+  mlog('clear', { total, scope: 'local-cache', cloud: canRestoreFromCloud });
   if(canRestoreFromCloud) {
     showToast(`已清理本机缓存 ${total} 条，正在从云端重新载入…`, 'ok');
     setTimeout(() => location.reload(), 600);

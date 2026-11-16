@@ -88,6 +88,11 @@ function safeParseJson(raw, fallback) {
   try { return raw ? JSON.parse(raw) : fallback; } catch(err) { return fallback; }
 }
 const cloudSaveTimers = new Map();
+/* 云端并发控制：业务键用 updated_at 作乐观版本；冲突时自动并集合并，绝不静默覆盖。 */
+const cloudRevisions = new Map();
+const cloudPendingValues = new Map();
+const cloudSaveChains = new Map();
+const CLOUD_CONFLICT_KEYS = new Set(['boiler_user_db', 'boiler_material_library', 'boiler_design_drawings_meta']);
 let currentAuthSession = null;
 function cloudStorageEnabled() { return location.protocol.startsWith('http') && location.host && location.origin !== 'null'; }
 async function cloudStorageRequest(key, method = 'GET', value) {
@@ -105,19 +110,252 @@ async function cloudStorageRequest(key, method = 'GET', value) {
     return null;
   }
 }
+async function cloudStorageWrite(key, value, options = {}) {
+  if(!cloudStorageEnabled()) return { ok: false, unavailable: true };
+  const body = { value };
+  if(Object.prototype.hasOwnProperty.call(options, 'baseUpdatedAt')) body.baseUpdatedAt = options.baseUpdatedAt;
+  try {
+    const response = await fetch(`${CLOUD_STORAGE_ENDPOINT}/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => null);
+    if(response.ok && payload && payload.ok) {
+      if(payload.updatedAt) cloudRevisions.set(key, payload.updatedAt);
+      return { ok: true, status: response.status, body: payload, updatedAt: payload.updatedAt };
+    }
+    if(response.status === 409) return { ok: false, conflict: true, status: 409, body: payload };
+    if(response.status === 401 || response.status === 403) {
+      return { ok: false, unauthorized: true, status: response.status, body: payload };
+    }
+    return { ok: false, status: response.status, body: payload };
+  } catch (error) {
+    return { ok: false, networkError: true, error };
+  }
+}
+function cloudEventContentKey(record) {
+  return ['code', 'date', 'type', 'desc', 'spec', 'material', 'thickness', 'hardness']
+    .map(key => String(record && record[key] !== undefined && record[key] !== null ? record[key] : ''))
+    .join('|');
+}
+function cloudEventKey(record) {
+  if(record && record.sourceId) return 'src:' + String(record.sourceId);
+  if(record && record.ts !== undefined && record.ts !== null && record.ts !== '') return 'ts:' + String(record.ts);
+  return 'content:' + cloudEventContentKey(record);
+}
+function cloudReplacementKey(record) {
+  if(record && record.ts !== undefined && record.ts !== null && record.ts !== '') return 'ts:' + String(record.ts);
+  return 'content:' + ['oldCode', 'newCode', 'date', 'reason']
+    .map(key => String(record && record[key] !== undefined && record[key] !== null ? record[key] : ''))
+    .join('|');
+}
+function mergeCountNotice(addedFromCloud, conflicts) {
+  const parts = [];
+  if(addedFromCloud) parts.push('云端新增 ' + addedFromCloud + ' 条已并入');
+  if(conflicts) parts.push('同键冲突 ' + conflicts + ' 条保留本机版本');
+  return parts.length ? '云端数据已自动合并：' + parts.join('，') + '。' : '';
+}
+/* 业务数据冲突：按稳定身份取并集，同键保留本机版本；不删除任何一侧的记录。 */
+function mergeUserDBValues(local, remote) {
+  const localRecords = local && typeof local === 'object' ? local : {};
+  const remoteRecords = remote && typeof remote === 'object' ? remote : {};
+  const localEvents = Array.isArray(localRecords.events) ? localRecords.events : [];
+  const remoteEvents = Array.isArray(remoteRecords.events) ? remoteRecords.events : [];
+  const localReplacements = Array.isArray(localRecords.replacements) ? localRecords.replacements : [];
+  const remoteReplacements = Array.isArray(remoteRecords.replacements) ? remoteRecords.replacements : [];
+
+  const events = localEvents.slice();
+  const eventKeys = new Set(events.map(cloudEventKey));
+  const localSourceIds = new Set(events.filter(item => item && item.sourceId).map(item => String(item.sourceId)));
+  const localContentKeys = new Set(events.map(cloudEventContentKey));
+  let addedEvents = 0;
+  let conflictEvents = 0;
+  remoteEvents.forEach(record => {
+    if(!record || typeof record !== 'object') return;
+    const key = cloudEventKey(record);
+    if(eventKeys.has(key)) { conflictEvents += 1; return; }
+    if(record.sourceId ? localSourceIds.has(String(record.sourceId)) : localContentKeys.has(cloudEventContentKey(record))) {
+      conflictEvents += 1;
+      return;
+    }
+    events.push(record);
+    eventKeys.add(key);
+    localContentKeys.add(cloudEventContentKey(record));
+    if(record.sourceId) localSourceIds.add(String(record.sourceId));
+    addedEvents += 1;
+  });
+
+  const replacements = localReplacements.slice();
+  const replacementKeys = new Set(replacements.map(cloudReplacementKey));
+  let addedReplacements = 0;
+  let conflictReplacements = 0;
+  remoteReplacements.forEach(record => {
+    if(!record || typeof record !== 'object') return;
+    const key = cloudReplacementKey(record);
+    if(replacementKeys.has(key)) { conflictReplacements += 1; return; }
+    replacements.push(record);
+    replacementKeys.add(key);
+    addedReplacements += 1;
+  });
+
+  const addedFromCloud = addedEvents + addedReplacements;
+  const conflicts = conflictEvents + conflictReplacements;
+  return {
+    value: { ...localRecords, events, replacements },
+    addedFromCloud,
+    conflicts,
+    notice: mergeCountNotice(addedFromCloud, conflicts)
+  };
+}
+function mergeMaterialValues(local, remote) {
+  const localRows = Array.isArray(local) ? local : [];
+  const remoteRows = Array.isArray(remote) ? remote : [];
+  const merged = localRows.slice();
+  const keys = new Set(merged.filter(item => item && typeof item === 'object').map(item => materialKey(item)));
+  let added = 0;
+  let conflicts = 0;
+  remoteRows.forEach(item => {
+    if(!item || typeof item !== 'object') return;
+    const key = materialKey(item);
+    if(keys.has(key)) { conflicts += 1; return; }
+    merged.push(item);
+    keys.add(key);
+    added += 1;
+  });
+  return { value: merged, addedFromCloud: added, conflicts, notice: mergeCountNotice(added, conflicts) };
+}
+function mergeDrawingMetaValues(local, remote) {
+  const localRows = (Array.isArray(local) ? local : []).map(normalizeDrawingMeta).filter(Boolean);
+  const remoteRows = (Array.isArray(remote) ? remote : []).map(normalizeDrawingMeta).filter(Boolean);
+  const merged = localRows.slice();
+  const ids = new Set(merged.map(item => item.id));
+  let added = 0;
+  let conflicts = 0;
+  remoteRows.forEach(item => {
+    if(ids.has(item.id)) { conflicts += 1; return; }
+    merged.push(item);
+    ids.add(item.id);
+    added += 1;
+  });
+  return { value: merged, addedFromCloud: added, conflicts, notice: mergeCountNotice(added, conflicts) };
+}
+function mergeCloudValue(key, local, remote) {
+  if(key === 'boiler_user_db') return mergeUserDBValues(local, remote);
+  if(key === 'boiler_material_library') return mergeMaterialValues(local, remote);
+  if(key === 'boiler_design_drawings_meta') return mergeDrawingMetaValues(local, remote);
+  return { value: local, addedFromCloud: 0, conflicts: 0, notice: '' };
+}
+function currentCloudValue(key) {
+  if(key === 'boiler_user_db') return userDB;
+  if(key === 'boiler_material_library') {
+    try { return JSON.parse(localStorage.getItem(MATERIAL_LIBRARY_KEY) || '[]'); } catch { return []; }
+  }
+  if(key === 'boiler_design_drawings_meta') return designDrawings;
+  return null;
+}
+function applyCloudValue(key, value) {
+  if(key === 'boiler_user_db') {
+    userDB = value;
+    try {
+      localStorage.setItem('boiler_user_db', JSON.stringify(value));
+      localStorage.setItem(LOCAL_DB_AT_KEY, new Date().toISOString());
+    } catch (err) { /* 配额不足时保留内存版本，后续仍会推云端 */ }
+    invalidateTubeViews();
+    return;
+  }
+  if(key === 'boiler_material_library') {
+    try { localStorage.setItem(MATERIAL_LIBRARY_KEY, JSON.stringify(value)); } catch (err) {}
+    invalidateViews(['components', 'dashboard', 'tube-analysis', 'maintenance-plan']);
+    return;
+  }
+  if(key === 'boiler_design_drawings_meta') {
+    designDrawings = value;
+    try { localStorage.setItem(DESIGN_DRAWINGS_META_KEY, JSON.stringify(value)); } catch (err) {}
+    renderDesignDrawings();
+  }
+}
+function notifyCloudMerge(key, merged) {
+  if(!merged || !merged.notice) return;
+  showToast(merged.notice, 'warn', 9000);
+  try {
+    if(window.BTMaintenanceLog && typeof window.BTMaintenanceLog.hook === 'function') {
+      window.BTMaintenanceLog.hook('system', {
+        summary: merged.notice,
+        meta: { key: key, addedFromCloud: merged.addedFromCloud, conflicts: merged.conflicts }
+      });
+    }
+  } catch (err) { /* 留痕失败不影响保存 */ }
+}
+async function saveCloudValueWithMerge(key, value, attempt = 0) {
+  let base = cloudRevisions.get(key);
+  if(base === undefined) {
+    const remote = await cloudStorageRequest(key);
+    if(remote === null) {
+      console.warn('[云同步] 无法读取 ' + key + ' 的云端版本，已保留本机数据');
+      return { ok: false, networkError: true };
+    }
+    base = remote && remote.found ? (remote.updatedAt || null) : null;
+    cloudRevisions.set(key, base);
+  }
+  const result = await cloudStorageWrite(key, value, { baseUpdatedAt: base });
+  if(result.ok) return result;
+  if(!result.conflict) {
+    if(result.networkError) console.warn('[云同步] ' + key + ' 写入失败，稍后重试', result.error);
+    else if(result.unauthorized) console.warn('[云同步] ' + key + ' 未登录，未写入云端');
+    else console.warn('[云同步] ' + key + ' 写入失败：HTTP ' + result.status);
+    return result;
+  }
+  if(attempt >= 2) {
+    showToast('云端数据持续变更，已保留本机数据；请导出备份并刷新页面后重试。', 'error', 9000);
+    return result;
+  }
+  const remote = await cloudStorageRequest(key);
+  if(remote === null) {
+    console.warn('[云同步] 冲突后无法读取云端 ' + key + '，已保留本机数据');
+    return { ok: false, networkError: true };
+  }
+  const localValue = currentCloudValue(key);
+  if(!remote.found) {
+    cloudRevisions.set(key, null);
+    return saveCloudValueWithMerge(key, localValue, attempt + 1);
+  }
+  const merged = mergeCloudValue(key, localValue, remote.value);
+  applyCloudValue(key, merged.value);
+  cloudRevisions.set(key, remote.updatedAt || null);
+  notifyCloudMerge(key, merged);
+  return saveCloudValueWithMerge(key, merged.value, attempt + 1);
+}
+function flushCloudStorageSave(key) {
+  cloudSaveTimers.delete(key);
+  const value = cloudPendingValues.get(key);
+  cloudPendingValues.delete(key);
+  const previous = cloudSaveChains.get(key) || Promise.resolve();
+  const task = previous.catch(() => null).then(() => CLOUD_CONFLICT_KEYS.has(key)
+    ? saveCloudValueWithMerge(key, value)
+    : cloudStorageWrite(key, value));
+  cloudSaveChains.set(key, task);
+  return task
+    .catch(error => console.warn('[云同步] 保存 ' + key + ' 失败', error))
+    .finally(() => { if(cloudSaveChains.get(key) === task) cloudSaveChains.delete(key); });
+}
 function queueCloudStorageSave(key, value) {
   if(!cloudStorageEnabled()) return;
+  cloudPendingValues.set(key, value);
   const prev = cloudSaveTimers.get(key);
   if(prev) clearTimeout(prev);
-  cloudSaveTimers.set(key, setTimeout(() => { cloudStorageRequest(key, 'PUT', value); }, 250));
+  cloudSaveTimers.set(key, setTimeout(() => { flushCloudStorageSave(key); }, 250));
 }
 async function bootstrapCloudStorage() {
   if(!cloudStorageEnabled()) return;
-  const [remoteUserDB, remoteMaterialLibrary, remoteDrawings] = await Promise.all([
+  const [remoteUserDB, remoteMaterialLibrary, remoteDrawingMeta] = await Promise.all([
     cloudStorageRequest('boiler_user_db'),
     cloudStorageRequest('boiler_material_library'),
-    cloudStorageRequest(DESIGN_DRAWINGS_KEY)
+    cloudStorageRequest(DESIGN_DRAWINGS_META_KEY)
   ]);
+  if(remoteUserDB) cloudRevisions.set('boiler_user_db', remoteUserDB.found ? (remoteUserDB.updatedAt || null) : null);
+  if(remoteMaterialLibrary) cloudRevisions.set('boiler_material_library', remoteMaterialLibrary.found ? (remoteMaterialLibrary.updatedAt || null) : null);
+  if(remoteDrawingMeta) cloudRevisions.set(DESIGN_DRAWINGS_META_KEY, remoteDrawingMeta.found ? (remoteDrawingMeta.updatedAt || null) : null);
   let changed = false;
   let conflictNotice = '';
   const localRaw = localStorage.getItem('boiler_user_db') || '';
@@ -175,7 +413,11 @@ async function bootstrapCloudStorage() {
     const localMaterials = JSON.parse(localStorage.getItem('boiler_material_library') || '[]');
     if(Array.isArray(localMaterials) && localMaterials.length) queueCloudStorageSave('boiler_material_library', localMaterials);
   }
-  syncDesignDrawingsFromCloud(remoteDrawings);
+  /* 旧格式图纸键仅在元数据键不存在时读取一次，避免每次启动下载数 MB base64 */
+  const remoteLegacyDrawings = remoteDrawingMeta?.found === false
+    ? await cloudStorageRequest(DESIGN_DRAWINGS_KEY)
+    : null;
+  await syncDesignDrawingsFromCloud(remoteDrawingMeta, remoteLegacyDrawings);
   if(changed) invalidateTubeViews();
   if(conflictNotice) {
     showToast(conflictNotice, 'warn', 9000);
@@ -186,35 +428,71 @@ async function bootstrapCloudStorage() {
     } catch(err) { /* 留痕失败不影响主流程 */ }
   }
 }
-/* 图纸云端同步：按 id 并集合并，两端各自新增的图纸互相补齐，不覆盖不删除。
-   本机删除/改名不跨设备同步（避免云端旧版本把已删图纸带回来）。 */
-function syncDesignDrawingsFromCloud(remoteDrawings) {
-  if(!remoteDrawings) return; /* 网络失败：保持本机现状 */
-  if(remoteDrawings.found !== true || !Array.isArray(remoteDrawings.value)) {
-    if(remoteDrawings.found === false && Array.isArray(designDrawings) && designDrawings.length) {
-      queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings); /* 云端还没有图纸键：把本机存量推上去 */
+/* 图纸元数据/内容分离后：启动只同步元数据；旧格式内容逐张上传，全部成功后才写元数据。
+   按 id 并集合并，同 id 以本机为准；本机删除/改名不跨设备回滚。 */
+async function syncDesignDrawingsFromCloud(remoteMeta, remoteLegacy) {
+  if(!remoteMeta) return; /* 网络失败：保持本机现状 */
+  const localList = (Array.isArray(designDrawings) ? designDrawings : []).map(normalizeDrawingMeta).filter(Boolean);
+  const remoteList = remoteMeta.found === true && Array.isArray(remoteMeta.value)
+    ? remoteMeta.value.map(normalizeDrawingMeta).filter(Boolean)
+    : [];
+  const legacyItems = [];
+  if(Array.isArray(legacyLocalDrawings)) legacyItems.push(...legacyLocalDrawings);
+  if(remoteLegacy && remoteLegacy.found === true && Array.isArray(remoteLegacy.value)) {
+    remoteLegacy.value.forEach(item => { if(item && typeof item.data === 'string') legacyItems.push(item); });
+  }
+  const migrated = [];
+  for(const item of legacyItems) {
+    const meta = normalizeDrawingMeta(item);
+    if(!meta || !DRAWING_DATA_RE.test(String(item.data || ''))) continue;
+    const stored = await cloudStorageWrite(drawingContentKey(meta.id), item.data);
+    if(!stored.ok) {
+      showToast('图纸内容尚未全部同步到云端，已保留本机数据；下次启动会重试。', 'warn', 9000);
+      return;
     }
-    return;
+    migrated.push(meta);
   }
-  const remoteList = remoteDrawings.value.filter(d => d && d.id);
-  const localList = (Array.isArray(designDrawings) ? designDrawings : []).filter(d => d && d.id);
-  const remoteIds = new Set(remoteList.map(d => d.id));
-  const localIds = new Set(localList.map(d => d.id));
-  const localOnly = localList.filter(d => !remoteIds.has(d.id));
-  const missing = remoteList.filter(d => !localIds.has(d.id));
-  if(!missing.length) {
-    if(localOnly.length) queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings); /* 此前上传未同步成功的本机图纸补推云端 */
-    return;
-  }
-  designDrawings = localList.concat(missing);
-  try { localStorage.setItem(DESIGN_DRAWINGS_KEY, JSON.stringify(designDrawings)); } catch (err) { /* 配额不足：留在内存，下次刷新重新从云端拉取 */ }
+  const merged = localList.slice();
+  const ids = new Set(merged.map(item => item.id));
+  migrated.forEach(meta => {
+    if(ids.has(meta.id)) return;
+    merged.push(meta);
+    ids.add(meta.id);
+  });
+  const remoteIds = new Set(remoteList.map(item => item.id));
+  let addedFromCloud = 0;
+  remoteList.forEach(meta => {
+    if(ids.has(meta.id)) return;
+    merged.push(meta);
+    ids.add(meta.id);
+    remoteIds.add(meta.id);
+    addedFromCloud += 1;
+  });
+  const localOnly = merged.filter(item => !remoteIds.has(item.id));
+  const previousRaw = JSON.stringify(localList);
+  const nextRaw = JSON.stringify(merged);
+  if(previousRaw !== nextRaw) designDrawings = merged;
   renderDesignDrawings();
-  if(localOnly.length) {
-    queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings);
-    showToast('受热面图纸已合并：本机 ' + localOnly.length + ' 张 + 云端新增 ' + missing.length + ' 张，共 ' + designDrawings.length + ' 张。', 'ok', 8000);
+  if(!addedFromCloud && !localOnly.length && !migrated.length) return;
+  if(remoteMeta.found !== true || localOnly.length || migrated.length) {
+    const persisted = await persistDrawingMeta();
+    if(!persisted.ok) {
+      showToast('图纸列表已在本机更新，但云端保存未确认；请检查网络后重试。', 'warn', 9000);
+      return;
+    }
   } else {
-    showToast('已从云端新增 ' + missing.length + ' 张受热面设计图纸，本机现共 ' + designDrawings.length + ' 张。', 'ok', 8000);
+    try { localStorage.setItem(DESIGN_DRAWINGS_META_KEY, nextRaw); } catch (err) {}
+    renderDesignDrawings();
   }
+  if(migrated.length) {
+    try { localStorage.removeItem(DESIGN_DRAWINGS_KEY); } catch (err) {}
+    legacyLocalDrawings = null;
+  }
+  const parts = [];
+  if(addedFromCloud) parts.push('云端新增 ' + addedFromCloud + ' 张');
+  if(localOnly.length) parts.push('本机 ' + localOnly.length + ' 张已补推');
+  if(migrated.length) parts.push('旧格式迁移 ' + migrated.length + ' 张');
+  showToast('受热面图纸已同步：' + parts.join('，') + '，共 ' + designDrawings.length + ' 张。', 'ok', 8000);
 }
 async function loadAuthSession() {
   if(!cloudStorageEnabled()) return;
@@ -1343,7 +1621,33 @@ async function downloadXLSXTemplate() {
   XLSX.writeFile(workbook, `锅炉寿命数据_录入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 function backupLocalData() { const backup = JSON.stringify({ version: 'v6.7-local-backup', exportedAt: new Date().toISOString(), data: userDB }, null, 2); downloadBlob(`锅炉本地数据备份_${new Date().toISOString().slice(0,10)}.json`, backup, 'application/json;charset=utf-8;'); }
-function clearLocalData() { const total = userDB.events.length + userDB.replacements.length; if(total === 0) { showToast('当前没有可清空的本地数据', 'info'); return; } if(confirm(`即将清空 ${total} 条本地数据。清空前将自动导出备份，是否继续？`) && confirm('请再次确认：备份下载后将清空浏览器本地数据。')) { backupLocalData(); userDB = {events:[], replacements:[]}; saveDB(); mlog('clear', { total }); showToast(`已备份并清空 ${total} 条本地数据`, 'ok'); } }
+/* 只清理本机缓存，绝不把空库推到共享云端。
+   已登录云端时刷新即可重新载入；未登录时必须显式告知无法恢复。 */
+function clearLocalData() {
+  const total = userDB.events.length + userDB.replacements.length;
+  if(total === 0) { showToast('当前没有可清理的本机缓存', 'info'); return; }
+  const canRestoreFromCloud = cloudStorageEnabled();
+  const warn = canRestoreFromCloud
+    ? `即将清理本机缓存 ${total} 条。清理前会自动导出备份；云端共享数据不受影响，刷新后可重新载入。是否继续？`
+    : `即将清理本机缓存 ${total} 条。当前未连接云端，清理后无法恢复。清理前会自动导出备份，是否继续？`;
+  if(!confirm(warn)) return;
+  if(!confirm('请再次确认：仅清理本机缓存，云端共享数据保持不变。')) return;
+  backupLocalData();
+  try {
+    localStorage.removeItem('boiler_user_db');
+    localStorage.removeItem(LOCAL_DB_AT_KEY);
+    localStorage.removeItem(DB_BACKUP_KEY);
+  } catch (err) { /* 存储不可用时继续清内存 */ }
+  userDB = { events: [], replacements: [] };
+  invalidateTubeViews();
+  mlog('clear', { total, scope: 'local-cache', cloud: canRestoreFromCloud });
+  if(canRestoreFromCloud) {
+    showToast(`已清理本机缓存 ${total} 条，正在从云端重新载入…`, 'ok');
+    setTimeout(() => location.reload(), 600);
+  } else {
+    showToast(`已清理本机缓存 ${total} 条（未连接云端，无法恢复）`, 'warn', 9000);
+  }
+}
 
 // ========== DATA (基础数据库) ==========
 const COMPONENTS = { ww: { name: '炉膛水冷壁', sys: 'SLB', badge: 'badge-ww', spec: 'Φ63.5×7.5 SA-210C、Φ159×18 20G', mat: '按材料库分项', count: 722, detail: {'前墙':'192根','后墙':'192根','侧墙':'169*2根','循环回路':'24个'} }, rsh: { name: '顶棚过热器', sys: 'RSH', badge: 'badge-sh', spec: 'Φ159×18 20G、Φ48.5×6 15CrMoG', mat: '按材料库分项', count: 128, detail: {'区域':'顶棚 CE','屏/排':'1排','管数':'128根'} }, wsh: { name: '包墙过热器', sys: 'WSH', badge: 'badge-sh', spec: 'Φ51×6 12Cr1MoVG、Φ51×7 12Cr1MoVG、Φ63.5×12 12Cr1MoVG', mat: '按材料库分项', count: 260, detail: {'区域':'前/后/侧包墙','屏/排':'1排','管数':'260根'} }, lsh: { name: '低温过热器', sys: 'DGRQ', badge: 'badge-sh', spec: 'Φ57×6 15CrMoG、Φ60×8.5 15CrMoG、Φ57×6 12Cr1MoVG、Φ57×8 12Cr1MoVG', mat: '按材料库分项', count: 112, detail: {'排数':'112排','管圈':'5根','布置':'顺列逆流'} }, psh: { name: '全大屏过热器', sys: 'DPGRQ', badge: 'badge-sh', spec: 'Φ51×7 12Cr1MoVG、Φ51×7 SA-213T91', mat: '按材料库分项', count: '6片', detail: {'小屏':'4小屏/片','管数':'14根/小屏'} }, 'hsh-p': { name: '屏式过热器', sys: 'PSGRQ', badge: 'badge-sh', spec: 'Φ60×8 12Cr1MoVG、Φ60×8 SA-213T91、Φ60×9 12Cr1MoVG、Φ60×9 SA-213TP347H、Φ54×8.5 12Cr1MoVG、Φ54×8.5 SA-213T91、Φ54×8.5 SA-213TP347H、Φ54×9 SA-213TP347H', mat: '按材料库分项', count: 21, detail: {'屏数':'21屏','管数':'13根/屏'} }, hsh: { name: '高温过热器', sys: 'GGRQ', badge: 'badge-sh', spec: 'Φ51×9 12Cr1MoVG、Φ51×8 SA-213T91、Φ51×8 SA-213TP304H、Φ51×11 SA-213T22、Φ54×7.5 SA-213TP347H、Φ54×9 SA-213T91、Φ54×11 SA-213T22、Φ54×9 12Cr1MoVG', mat: '按材料库分项', count: 32, detail: {'片数':'32片','管圈':'12管圈'} }, lrh: { name: '低温再热器', sys: 'DZRQ', badge: 'badge-rh', spec: 'Φ63.5×4 SA-210C、Φ63.5×4 15CrMoG、Φ63.5×4 12Cr1MoVG、Φ63.5×6 SA-210C、Φ63.5×6 15CrMoG', mat: '按材料库分项', count: 112, detail: {'水平':'112片','垂直':'56片'} }, hrh: { name: '高温再热器', sys: 'GZRQ', badge: 'badge-rh', spec: 'Φ60×4 12Cr1MoVG、Φ51×4 12Cr1MoVG、Φ60×4 SA-213T91、Φ60×4 SA-213TP304H、Φ60×6 SA-213T91、Φ60×5 SA-213T22、Φ51×5 SA-213T22、Φ60×5 12Cr1MoVG', mat: '按材料库分项', count: 64, detail: {'片数':'64片','管圈':'7管圈'} }, eco: { name: '省煤器', sys: 'SMQ', badge: 'badge-eco', spec: 'Φ51×6 SA-210C、Φ60×9 SA-210C、Φ159×18 20G', mat: '按材料库分项', count: 124, detail: {'排数':'124排 × 3管圈（U上组/D下组）','吊挂管':'112根（F001前/F002后）'} } };
@@ -1745,6 +2049,7 @@ function genCode() {
   const comp = compSelect ? compSelect.value : 'GQ';
   const val = id => document.getElementById(id)?.value || '';
   const num = id => Math.max(1, Number(val(id) || 1));
+  const partKind = val('f-part-kind') === 'W' ? 'W' : 'Q';
   let body = '';
   let tailSeg = partKind;
   if(comp === 'EXOUT' || comp === 'EXIN') {
@@ -1763,7 +2068,6 @@ function genCode() {
   } else {
     body = `${val('f-pos-letter')}${m0pad(num('f-pos-num'), 3)}-${val('f-dir')}${m0pad(num('f-tube'), 3)}`;
   }
-  const partKind = val('f-part-kind') === 'W' ? 'W' : 'Q';
   const code = [`${b}-${sys}-${comp}-${body}`, tailSeg].filter(Boolean).join('-');
   out.innerHTML = code.split('-').map(seg => `<span class="code-segment">${escapeHTML(seg)}</span>`).join('-');
   const matched = validateCodeAgainstMatrix(code);
@@ -5260,8 +5564,14 @@ function getAssistantRole() {
 }
 
 // ========== 受热面设计图纸 ==========
+/* 元数据与内容分离：列表/云端同步只传元数据（不含 base64），图片/PDF 按需拉取。
+   旧键 boiler_design_drawings（含 data）仅作一次性迁移来源，新代码不再写入。 */
+const DESIGN_DRAWINGS_META_KEY = 'boiler_design_drawings_meta';
 const DESIGN_DRAWINGS_KEY = 'boiler_design_drawings';
+const DRAWING_CONTENT_PREFIX = 'boiler_drawing_content:';
 const DRAWING_MAX_BYTES = 4 * 1024 * 1024;
+const DRAWING_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const DRAWING_DATA_RE = /^data:(image\/(?:png|jpeg|jpg|webp)|application\/pdf);base64,[A-Za-z0-9+/=\s]+$/;
 // 高温过热器12回路材质分段基准（图纸148M211-0 + 用户确认2026-10-31）。
 // 每回路=入口段F00k(向下)+底部弯头+出口段F(25-k)(向上)；frontSegs沿流程(顶→底)、rearSegs沿流程(底→顶)。
 // W记录对应底弯件=frontSegs末段；与 scripts/clean_boiler_film_records.py 的 GGRQ_LOOP_SEGMENTS 保持一致。
@@ -5528,18 +5838,143 @@ function renderSMQLoopBaseline() {
   host.innerHTML = tubeLoopBaselineTable(SMQ_LOOP_BASELINE, '省煤器材质分段基准（每排三管圈，图纸 148M3-0）', '沿水流程分段（进口集箱 → 吊挂管直段）');
 }
 let designDrawings = [];
-try { designDrawings = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '[]'); } catch (err) { designDrawings = []; }
-if (!Array.isArray(designDrawings)) designDrawings = [];
-
-function saveDesignDrawings() {
+let legacyLocalDrawings = null;
+try {
+  const storedMeta = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_META_KEY) || 'null');
+  if (Array.isArray(storedMeta)) designDrawings = storedMeta.map(normalizeDrawingMeta).filter(Boolean);
+} catch (err) { designDrawings = []; }
+if (!designDrawings.length) {
+  /* 旧格式（含 base64）一次性迁移来源：只取元数据，内容随后按需推送 */
   try {
-    localStorage.setItem(DESIGN_DRAWINGS_KEY, JSON.stringify(designDrawings));
-  } catch (err) {
-    /* 本机配额不足（4MB 图纸 base64 后约 5.3MB，超 localStorage 限额）：仍推云端，刷新后由启动同步拉回 */
-    showToast('本机浏览器存储空间不足，图纸已保存到云端；刷新页面后将自动从云端载入。', 'warn', 8000);
+    const legacy = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '[]');
+    if (Array.isArray(legacy)) {
+      legacyLocalDrawings = legacy.filter(d => d && typeof d === 'object' && typeof d.data === 'string');
+      designDrawings = legacy.map(normalizeDrawingMeta).filter(Boolean);
+    }
+  } catch (err) { legacyLocalDrawings = null; }
+}
+
+const drawingContentCache = new Map();
+function dataUrlToObjectUrl(data, isPdf) {
+  const match = String(data || '').match(/^data:([^;,]+);base64,([\s\S]+)$/);
+  if (!match) return null;
+  let binary;
+  try { binary = atob(match[2].replace(/\s+/g, '')); } catch (err) { return null; }
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const mime = isPdf ? 'application/pdf' : match[1];
+  return URL.createObjectURL(new Blob([bytes], { type: mime }));
+}
+function normalizeDrawingMeta(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = String(raw.id || '').trim();
+  if (!DRAWING_ID_RE.test(id)) return null;
+  const fileType = raw.fileType === 'pdf' ? 'pdf' : raw.fileType === 'image' ? 'image' : null;
+  if (!fileType) return null;
+  const text = (value, max) => String(value === null || value === undefined ? '' : value).trim().slice(0, max);
+  const size = Number(raw.size);
+  return {
+    id,
+    name: text(raw.name || raw.fileName, 200),
+    drawingNo: text(raw.drawingNo, 80),
+    sys: text(raw.sys, 16),
+    fileName: text(raw.fileName, 260),
+    fileType,
+    size: Number.isFinite(size) && size >= 0 ? size : 0,
+    uploadedAt: text(raw.uploadedAt, 40)
+  };
+}
+function drawingContentKey(id) { return DRAWING_CONTENT_PREFIX + id; }
+async function ensureDrawingContent(id) {
+  if (drawingContentCache.has(id)) return drawingContentCache.get(id);
+  const response = await cloudStorageRequest(drawingContentKey(id));
+  if (!response || response.found !== true || typeof response.value !== 'string') return null;
+  const data = response.value;
+  if (!DRAWING_DATA_RE.test(data)) {
+    console.warn('[图纸] 内容格式不合法，已拒绝渲染：' + id);
+    return null;
   }
-  queueCloudStorageSave(DESIGN_DRAWINGS_KEY, designDrawings);
+  const meta = designDrawings.find(d => d.id === id);
+  const isPdf = /^data:application\/pdf;base64,/i.test(data);
+  if (meta && ((meta.fileType === 'pdf') !== isPdf)) {
+    console.warn('[图纸] 内容类型与元数据不一致，已拒绝渲染：' + id);
+    return null;
+  }
+  const entry = { data, url: dataUrlToObjectUrl(data, isPdf) };
+  if (!entry.url) return null;
+  drawingContentCache.set(id, entry);
+  return entry;
+}
+function releaseDrawingContent(id) {
+  const entry = drawingContentCache.get(id);
+  if (!entry) return;
+  if (entry.url) URL.revokeObjectURL(entry.url);
+  drawingContentCache.delete(id);
+}
+/* 元数据落盘：本地缓存 + 云端（可等待确认）。只有云端确认成功才算“已保存到云端”。 */
+async function persistDrawingMeta(options = {}) {
+  const serialized = JSON.stringify(designDrawings);
+  let localOk = true;
+  try { localStorage.setItem(DESIGN_DRAWINGS_META_KEY, serialized); }
+  catch (err) { localOk = false; }
+  if (!cloudStorageEnabled()) return { ok: localOk, localOnly: true, localOk };
+  if (options.defer) {
+    queueCloudStorageSave(DESIGN_DRAWINGS_META_KEY, designDrawings);
+    return { ok: true, localOk, deferred: true };
+  }
+  const result = await saveCloudValueWithMerge(DESIGN_DRAWINGS_META_KEY, designDrawings);
+  return { ok: Boolean(result && result.ok), localOk, result };
+}
+function saveDesignDrawings() {
+  persistDrawingMeta({ defer: true }).then(result => {
+    if (!result.localOk) showToast('本机浏览器存储空间不足，图纸元数据已排队同步云端。', 'warn', 8000);
+  }).catch(() => null);
   renderDesignDrawings();
+}
+function drawingThumbPlaceholder(id, label) {
+  return '<div data-drawing-thumb="' + escapeHTML(id) + '" style="width:100%; height:130px; border-radius:6px 6px 0 0; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-dim); font-size:12px;">' + escapeHTML(label) + '</div>';
+}
+function renderDrawingThumbnail(host, id) {
+  ensureDrawingContent(id).then(entry => {
+    if (!entry || !host.isConnected) return;
+    const img = document.createElement('img');
+    img.src = entry.url;
+    img.alt = '';
+    img.style.cssText = 'width:100%; height:130px; object-fit:cover; border-radius:6px 6px 0 0; cursor:pointer; display:block;';
+    img.setAttribute('data-drawing-action', 'view');
+    img.setAttribute('data-drawing-id', id);
+    host.replaceWith(img);
+  }).catch(() => null);
+}
+function bindDrawingGrid(grid) {
+  if (grid.dataset.drawingBound === '1') return;
+  grid.dataset.drawingBound = '1';
+  grid.addEventListener('click', event => {
+    const target = event.target && event.target.closest ? event.target.closest('[data-drawing-action]') : null;
+    if (!target) return;
+    const id = target.getAttribute('data-drawing-id');
+    const action = target.getAttribute('data-drawing-action');
+    if (!id) return;
+    if (action === 'view') openDrawingViewer(id);
+    else if (action === 'rename') renameDesignDrawing(id);
+    else if (action === 'delete') deleteDesignDrawing(id);
+  });
+}
+function observeDrawingThumbs(grid) {
+  const nodes = Array.from(grid.querySelectorAll('[data-drawing-thumb]'));
+  if (!nodes.length) return;
+  if (typeof IntersectionObserver !== 'function') {
+    nodes.forEach(node => renderDrawingThumbnail(node, node.getAttribute('data-drawing-thumb')));
+    return;
+  }
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      observer.unobserve(entry.target);
+      renderDrawingThumbnail(entry.target, entry.target.getAttribute('data-drawing-thumb'));
+    });
+  }, { rootMargin: '200px' });
+  nodes.forEach(node => observer.observe(node));
 }
 function designDrawingsForSys(sys) {
   return designDrawings.filter(d => !sys || d.sys === sys || !d.sys);
@@ -5547,43 +5982,88 @@ function designDrawingsForSys(sys) {
 function fmtDrawingSize(bytes) {
   return bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
 }
-function handleDrawingUpload(event) {
-  if (!canManageTubeData()) { showToast('当前权限为只读，不能上传图纸。', 'warn'); event.target.value = ''; return; }
-  const files = [...(event.target.files || [])];
-  event.target.value = '';
-  if (!files.length) return;
-  const sys = document.getElementById('drawingSysFilter')?.value || '';
-  let queued = files.length;
-  files.forEach(file => {
-    if (file.size > DRAWING_MAX_BYTES) { showToast('「' + file.name + '」超过 4MB，未上传', 'error'); queued -= 1; if (!queued) renderDesignDrawings(); return; }
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = function(e) {
-      const data = String(e.target.result || '');
-      const fileType = file.type === 'application/pdf' || /\.pdf$/i.test(file.name) ? 'pdf' : 'image';
-      designDrawings.push({
-        id: 'dw' + Date.now() + Math.random().toString(36).slice(2, 7),
-        name: file.name.replace(/\.[^.]+$/, ''),
-        drawingNo: '',
-        sys,
-        fileName: file.name, fileType: fileType, size: file.size,
-        uploadedAt: new Date().toISOString().slice(0, 10),
-        data: data
-      });
-      saveDesignDrawings();
-      queued -= 1;
-      if (!queued) showToast('已上传 ' + files.length + ' 个图纸文件', 'ok');
-    };
-    reader.onerror = function() { queued -= 1; showToast('「' + file.name + '」读取失败', 'error'); };
+    reader.onload = e => resolve(String(e.target.result || ''));
+    reader.onerror = () => reject(new Error('读取失败'));
     reader.readAsDataURL(file);
   });
 }
-function deleteDesignDrawing(id) {
+function newDrawingId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return 'dw' + crypto.randomUUID().replace(/[^A-Za-z0-9]/g, '').slice(0, 32);
+  }
+  /* 兼容无 randomUUID 的旧内核：仍用 CSPRNG 生成，不使用 Math.random */
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return 'dw' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+}
+async function handleDrawingUpload(event) {
+  const input = event && event.target;
+  if (!canManageTubeData()) {
+    showToast('当前权限为只读，不能上传图纸。', 'warn');
+    if (input) input.value = '';
+    return;
+  }
+  const files = input && input.files ? Array.from(input.files) : [];
+  if (input) input.value = '';
+  if (!files.length) return;
+  const sys = document.getElementById('drawingSysFilter')?.value || '';
+  let saved = 0;
+  const failures = [];
+  for (const file of files) {
+    if (file.size > DRAWING_MAX_BYTES) { failures.push('「' + file.name + '」超过 4MB'); continue; }
+    try {
+      const data = await readFileAsDataURL(file);
+      if (!DRAWING_DATA_RE.test(data)) { failures.push('「' + file.name + '」格式不受支持'); continue; }
+      const fileType = data.slice(0, 22).toLowerCase() === 'data:application/pdf' ? 'pdf' : 'image';
+      const id = newDrawingId();
+      if (cloudStorageEnabled()) {
+        const stored = await cloudStorageWrite(drawingContentKey(id), data);
+        if (!stored.ok) { failures.push('「' + file.name + '」内容保存失败'); continue; }
+      }
+      const meta = normalizeDrawingMeta({
+        id, name: file.name.replace(/\.[^.]+$/, ''), drawingNo: '', sys,
+        fileName: file.name, fileType, size: file.size,
+        uploadedAt: new Date().toISOString().slice(0, 10)
+      });
+      if (!meta) { failures.push('「' + file.name + '」元数据不合法'); continue; }
+      designDrawings.push(meta);
+      const persisted = await persistDrawingMeta();
+      if (!persisted.ok) {
+        designDrawings = designDrawings.filter(d => d.id !== id);
+        await persistDrawingMeta({ defer: true });
+        failures.push('「' + file.name + '」云端保存未确认');
+        continue;
+      }
+      saved += 1;
+    } catch (err) {
+      failures.push('「' + file.name + '」' + (err && err.message ? err.message : '读取失败'));
+    }
+  }
+  renderDesignDrawings();
+  if (saved && !failures.length) showToast('已上传 ' + saved + ' 个图纸文件，内容与列表均已保存。', 'ok');
+  else if (saved) showToast('已保存 ' + saved + ' 个图纸；' + failures.join('；'), 'warn', 9000);
+  else if (failures.length) showToast(failures.join('；'), 'error', 9000);
+}
+async function deleteDesignDrawing(id) {
   if (!canManageTubeData()) { showToast('当前权限为只读，不能删除图纸。', 'warn'); return; }
   const drawing = designDrawings.find(d => d.id === id);
   if (!drawing) return;
   if (!confirm('确定删除图纸「' + (drawing.name || drawing.fileName) + '」？')) return;
+  const previous = designDrawings;
   designDrawings = designDrawings.filter(d => d.id !== id);
-  saveDesignDrawings();
+  const persisted = await persistDrawingMeta();
+  if (!persisted.ok) {
+    designDrawings = previous;
+    renderDesignDrawings();
+    showToast('删除未同步到云端，已保留该图纸；请检查网络后重试。', 'error', 8000);
+    return;
+  }
+  releaseDrawingContent(id);
+  cloudStorageRequest(drawingContentKey(id), 'DELETE').catch(() => null);
+  renderDesignDrawings();
   mlog('delete', { record: { id: id, name: drawing.name }, source: 'manual' });
 }
 function drawingSurfaceLabel(sys) {
@@ -5607,20 +6087,23 @@ function renderDesignDrawings() {
   const sys = filter ? filter.value : '';
   const list = designDrawingsForSys(sys).sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
   grid.innerHTML = list.length ? list.map(d => {
+    const idAttr = escapeHTML(d.id);
     const thumb = d.fileType === 'image'
-      ? '<img src="' + d.data + '" alt="' + escapeHTML(d.name) + '" style="width:100%; height:130px; object-fit:cover; border-radius:6px 6px 0 0; cursor:pointer;" onclick="openDrawingViewer(\'' + d.id + '\')">'
-      : '<div style="width:100%; height:130px; border-radius:6px 6px 0 0; display:flex; align-items:center; justify-content:center; background:var(--bg); cursor:pointer; font-size:44px;" onclick="openDrawingViewer(\'' + d.id + '\')">📄</div>';
+      ? drawingThumbPlaceholder(d.id, '加载预览…')
+      : '<div style="width:100%; height:130px; border-radius:6px 6px 0 0; display:flex; align-items:center; justify-content:center; background:var(--bg); cursor:pointer; font-size:44px;" data-drawing-action="view" data-drawing-id="' + idAttr + '">📄</div>';
     return '<div class="card" style="margin:0; padding:0; overflow:hidden;">' +
       thumb +
       '<div style="padding:10px 12px;">' +
-      '<div style="font-weight:700; cursor:pointer;" onclick="openDrawingViewer(\'' + d.id + '\')">' + escapeHTML(d.name || d.fileName) + '</div>' +
+      '<div style="font-weight:700; cursor:pointer;" data-drawing-action="view" data-drawing-id="' + idAttr + '">' + escapeHTML(d.name || d.fileName) + '</div>' +
       '<div style="font-size:11px; color:var(--text-dim); margin:4px 0;">' + escapeHTML(drawingSurfaceLabel(d.sys)) + ' · ' + escapeHTML(d.drawingNo || '未填图号') + ' · ' + fmtDrawingSize(d.size) + ' · ' + escapeHTML(d.uploadedAt) + '</div>' +
       '<div style="display:flex; gap:8px; margin-top:8px;">' +
-      '<button class="btn btn-outline" style="padding:3px 10px; font-size:11px;" onclick="openDrawingViewer(\'' + d.id + '\')">查看</button>' +
-      '<button class="btn btn-outline" style="padding:3px 10px; font-size:11px;" onclick="renameDesignDrawing(\'' + d.id + '\')">改名/图号</button>' +
-      '<button class="btn btn-outline" style="padding:3px 10px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteDesignDrawing(\'' + d.id + '\')">删除</button>' +
+      '<button class="btn btn-outline" style="padding:3px 10px; font-size:11px;" data-drawing-action="view" data-drawing-id="' + idAttr + '">查看</button>' +
+      '<button class="btn btn-outline" style="padding:3px 10px; font-size:11px;" data-drawing-action="rename" data-drawing-id="' + idAttr + '">改名/图号</button>' +
+      '<button class="btn btn-outline" style="padding:3px 10px; font-size:11px; border-color:var(--danger); color:var(--danger);" data-drawing-action="delete" data-drawing-id="' + idAttr + '">删除</button>' +
       '</div></div></div>';
   }).join('') : '<div style="color:var(--text-dim); padding:20px; text-align:center;">暂无图纸。点击上方「上传图纸」导入材料分界图/总图（图片或 PDF，如 148M211-0 高温过热器材料分界图）。</div>';
+  bindDrawingGrid(grid);
+  observeDrawingThumbs(grid);
 }
 function openDrawingsForSys(sys) {
   const filter = document.getElementById('drawingSysFilter');
@@ -5628,7 +6111,7 @@ function openDrawingsForSys(sys) {
   switchView('drawings');
   renderDesignDrawings();
 }
-function renameDesignDrawing(id) {
+async function renameDesignDrawing(id) {
   if (!canManageTubeData()) { showToast('当前权限为只读。', 'warn'); return; }
   const drawing = designDrawings.find(d => d.id === id);
   if (!drawing) return;
@@ -5636,25 +6119,29 @@ function renameDesignDrawing(id) {
   if (name === null) return;
   const drawingNo = prompt('图号（如 148M211-0）：', drawing.drawingNo || '');
   if (drawingNo === null) return;
-  drawing.name = name.trim() || drawing.name;
-  drawing.drawingNo = drawingNo.trim();
-  saveDesignDrawings();
+  const before = { name: drawing.name, drawingNo: drawing.drawingNo };
+  drawing.name = name.trim().slice(0, 200) || drawing.name;
+  drawing.drawingNo = drawingNo.trim().slice(0, 80);
+  const persisted = await persistDrawingMeta();
+  if (!persisted.ok) {
+    drawing.name = before.name;
+    drawing.drawingNo = before.drawingNo;
+    renderDesignDrawings();
+    showToast('改名未同步到云端，已回滚；请检查网络后重试。', 'error', 8000);
+    return;
+  }
+  renderDesignDrawings();
 }
 let drawingViewerUrl = '';
-function openDrawingViewer(id) {
-  const drawing = designDrawings.find(d => d.id === id);
-  if (!drawing) { showToast('未找到图纸文件（可能未随本机存储）。', 'warn'); return; }
+function closeDrawingViewer() {
   if (drawingViewerUrl) { URL.revokeObjectURL(drawingViewerUrl); drawingViewerUrl = ''; }
-  const bin = atob(drawing.data.split(',')[1] || '');
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
-  const mime = (drawing.data.match(/^data:([^;]+);/) || [])[1] || 'application/octet-stream';
-  const blob = new Blob([bytes], { type: drawing.fileType === 'pdf' ? 'application/pdf' : mime });
-  drawingViewerUrl = URL.createObjectURL(blob);
-  const body = drawing.fileType === 'pdf'
-    ? '<iframe src="' + drawingViewerUrl + '" style="width:100%; height:72vh; border:0; border-radius:6px;" title="' + escapeHTML(drawing.name) + '"></iframe>'
-    : '<img src="' + drawingViewerUrl + '" style="width:100%; border-radius:6px;" alt="' + escapeHTML(drawing.name) + '">';
-  openDataEditModal(
+  closeDataEditModal();
+}
+async function openDrawingViewer(id) {
+  const drawing = designDrawings.find(d => d.id === id);
+  if (!drawing) { showToast('未找到图纸记录。', 'warn'); return; }
+  if (drawingViewerUrl) { URL.revokeObjectURL(drawingViewerUrl); drawingViewerUrl = ''; }
+  const shell = body => openDataEditModal(
     '<div class="data-edit-panel" role="dialog" aria-modal="true" style="max-width:1100px; width:96vw;">' +
     '<div class="data-edit-head">' +
     '<h3 id="dataEditTitle">' + escapeHTML(drawing.name || drawing.fileName) + (drawing.drawingNo ? ' · ' + escapeHTML(drawing.drawingNo) : '') + '</h3>' +
@@ -5663,10 +6150,17 @@ function openDrawingViewer(id) {
     '<p class="data-edit-sub">' + escapeHTML(drawingSurfaceLabel(drawing.sys)) + ' · ' + fmtDrawingSize(drawing.size) + '</p>' +
     body +
     '</div>');
-}
-function closeDrawingViewer() {
-  if (drawingViewerUrl) { URL.revokeObjectURL(drawingViewerUrl); drawingViewerUrl = ''; }
-  closeDataEditModal();
+  shell('<p style="padding:24px; color:var(--text-dim);">正在从云端载入图纸…</p>');
+  const entry = await ensureDrawingContent(id);
+  if (!entry) {
+    shell('<p style="padding:24px; color:var(--danger);">图纸内容无法载入：可能尚未同步到云端，或内容格式不受信任。请重新上传。</p>');
+    return;
+  }
+  if (!document.getElementById('dataEditTitle')) return; /* 用户已关闭弹窗 */
+  drawingViewerUrl = entry.url;
+  shell(drawing.fileType === 'pdf'
+    ? '<iframe src="' + entry.url + '" style="width:100%; height:72vh; border:0; border-radius:6px;" title="' + escapeHTML(drawing.name) + '"></iframe>'
+    : '<img src="' + entry.url + '" style="width:100%; border-radius:6px;" alt="' + escapeHTML(drawing.name) + '">');
 }
 
 // ========== INIT ==========
