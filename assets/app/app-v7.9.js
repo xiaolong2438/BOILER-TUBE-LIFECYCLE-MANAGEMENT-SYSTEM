@@ -636,8 +636,9 @@ document.getElementById('dataEditModal')?.addEventListener('click', event => {
 });
 /* 图纸查看器工具栏：缩放与全屏（事件委托，重渲染面板后无需重新绑定） */
 document.getElementById('dataEditModal')?.addEventListener('click', event => {
-  const target = event.target && event.target.closest ? event.target.closest('[data-drawing-zoom], [data-drawing-fullscreen]') : null;
+  const target = event.target && event.target.closest ? event.target.closest('[data-drawing-zoom], [data-drawing-fullscreen], [data-drawing-recover]') : null;
   if(!target) return;
+  if(target.hasAttribute('data-drawing-recover')) { openDrawingViewer(target.getAttribute('data-drawing-recover'), { remoteLegacy: true }); return; }
   if(target.hasAttribute('data-drawing-fullscreen')) { toggleDrawingFullscreen(); return; }
   applyDrawingZoomAction(target.getAttribute('data-drawing-zoom'));
 });
@@ -5866,19 +5867,18 @@ try {
   const storedMeta = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_META_KEY) || 'null');
   if (Array.isArray(storedMeta)) designDrawings = storedMeta.map(normalizeDrawingMeta).filter(Boolean);
 } catch (err) { designDrawings = []; }
-try {
-  /* 旧格式键仍在 = 内容迁移尚未完成：始终解析，供兜底查看与下次启动重试；
-     列表来源仍以元数据为准，只有元数据缺失时才回退到旧数组。 */
-  const legacyRaw = localStorage.getItem(DESIGN_DRAWINGS_KEY);
-  if (legacyRaw) {
-    const legacy = JSON.parse(legacyRaw);
+if (!designDrawings.length) {
+  /* 仅元数据缺失时才在启动阶段解析旧数组：旧数组可能是数 MB base64，
+     每次启动都解析会阻塞主线程。其余情况由 legacyDrawingData() 在内容确实缺失时惰性解析。 */
+  try {
+    const legacy = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '[]');
     if (Array.isArray(legacy)) {
       legacyLocalDrawings = legacy.filter(d => d && typeof d === 'object' && typeof d.data === 'string');
-      if (!designDrawings.length) designDrawings = legacy.map(normalizeDrawingMeta).filter(Boolean);
+      designDrawings = legacy.map(normalizeDrawingMeta).filter(Boolean);
     }
-  }
-} catch (err) { legacyLocalDrawings = null; }
-legacyContentLoaded = true;
+  } catch (err) { legacyLocalDrawings = null; }
+  legacyContentLoaded = true;
+}
 
 const drawingContentCache = new Map();
 function dataUrlToObjectUrl(data, isPdf) {
@@ -5953,7 +5953,7 @@ async function reuploadLegacyDrawingContent(id, data) {
   if (stored && stored.ok) dropLocalLegacyDrawing(id);
   return Boolean(stored && stored.ok);
 }
-async function ensureDrawingContent(id) {
+async function ensureDrawingContent(id, options = {}) {
   if (drawingContentCache.has(id)) return drawingContentCache.get(id);
   drawingContentError = '';
   let data = null;
@@ -5966,7 +5966,8 @@ async function ensureDrawingContent(id) {
     const local = legacyDrawingData(id);
     if (local && DRAWING_DATA_RE.test(local)) { data = local; fromLegacy = true; }
   }
-  if (!fromLegacy && (!data || !DRAWING_DATA_RE.test(data))) {
+  /* 云端旧数组可能包含全部图纸 base64（数十 MB），只在用户显式要求恢复时才下载 */
+  if (options.remoteLegacy && !fromLegacy && (!data || !DRAWING_DATA_RE.test(data))) {
     const remote = await remoteLegacyDrawingData(id);
     if (remote && DRAWING_DATA_RE.test(remote)) { data = remote; fromLegacy = true; }
   }
@@ -6375,7 +6376,7 @@ document.addEventListener('fullscreenchange', () => {
 function closeDrawingViewer() {
   closeDataEditModal();
 }
-async function openDrawingViewer(id) {
+async function openDrawingViewer(id, options = {}) {
   const drawing = designDrawings.find(d => d.id === id);
   if (!drawing) { showToast('未找到图纸记录。', 'warn'); return; }
   releaseDrawingViewer();
@@ -6401,19 +6402,20 @@ async function openDrawingViewer(id) {
     body +
     '</div>');
   shell('<p style="padding:24px; color:var(--text-dim);">正在从云端载入图纸…</p>');
-  const entry = await ensureDrawingContent(id);
+  const entry = await ensureDrawingContent(id, options);
   if (!entry) {
     const reason = drawingContentError ? '：' + escapeHTML(drawingContentError) : '';
-    shell('<p style="padding:24px; color:var(--danger);">图纸内容无法载入' + reason + '。已尝试云端内容、本机与云端旧格式缓存；若仍失败，请重新上传该图纸。</p>');
+    shell('<p style="padding:24px; color:var(--danger);">图纸内容无法载入' + reason + '。已尝试云端内容与本机旧格式缓存；若仍失败，请重新上传该图纸。</p>' +
+      (options.remoteLegacy ? '' : '<p style="padding:0 24px 24px;"><button type="button" class="btn btn-outline" data-drawing-recover="' + escapeHTML(id) + '">尝试从云端旧格式缓存恢复（可能较慢）</button></p>'));
     return;
   }
   if (!document.getElementById('dataEditTitle')) return; /* 用户已关闭弹窗 */
   /* 文件类型以实际内容为准：兼容历史上传把 PDF 记成 image 的元数据 */
   isPdf = /^data:application\/pdf;base64,/i.test(entry.data);
   drawingViewer.isPdf = isPdf;
-  const viewerBlobUrl = dataUrlToObjectUrl(entry.data, isPdf);
-  drawingViewer.url = viewerBlobUrl || entry.url;
-  drawingViewer.ownsUrl = Boolean(viewerBlobUrl);
+  /* 复用内容缓存里的 Blob URL，避免再次 atob 解码整份 base64；缓存条目由删除操作统一释放 */
+  drawingViewer.url = entry.url;
+  drawingViewer.ownsUrl = false;
   if (isPdf) {
     shell('<div class="drawing-viewer-stage drawing-viewer-stage-pdf">' +
       '<iframe src="' + entry.url + '" style="width:100%; height:100%; border:0;" title="' + escapeHTML(drawing.name) + '"></iframe>' +

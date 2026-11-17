@@ -118,3 +118,10 @@ test('非法键被拒绝（含 # 的键保留给分块命名空间）', async (t
   const get = await call(db, onRequestGet, 'GET', 'bad key!');
   assert.equal(get.status, 400);
 });
+
+test('分块行读写使用主键范围而非 LIKE（避免全表扫描 app_kv）', () => {
+  const source = readFileSync(new URL('../functions/api/storage/[key].js', import.meta.url), 'utf8');
+  assert.match(source, /SELECT key, value FROM app_kv WHERE key >= \? AND key < \? ORDER BY key/);
+  assert.match(source, /DELETE FROM app_kv WHERE key >= \? AND key < \?/);
+  assert.doesNotMatch(source, /LIKE \? ESCAPE/, '分块 SQL 不得再使用无法命中主键索引的 LIKE');
+});

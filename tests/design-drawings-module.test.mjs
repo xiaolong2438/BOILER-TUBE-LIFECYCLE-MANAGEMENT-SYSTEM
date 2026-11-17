@@ -26,7 +26,7 @@ assert.match(js, /async function ensureDrawingContent\(/);
 assert.match(js, /cloudStorageRequest\(drawingContentKey\(id\)\)/, "图纸内容按需从云端读取");
 assert.match(js, /function handleDrawingUpload\(event\)/);
 assert.match(js, /function renderDesignDrawings\(\)/);
-assert.match(js, /function openDrawingViewer\(id\)/);
+assert.match(js, /function openDrawingViewer\(id, options = \{\}\)/);
 assert.match(js, /function closeDrawingViewer\(\)/);
 assert.match(js, /function deleteDesignDrawing\(id\)/);
 assert.match(js, /function renameDesignDrawing\(id\)/);
@@ -48,8 +48,8 @@ assert.match(deleteFn, /if \(!confirm\(/, "删除图纸需确认");
 assert.match(deleteFn, /releaseDrawingContent\(id\)/, "删除时释放内容缓存");
 
 // 查看器：按需加载内容、校验 data URL、无内联事件
-assert.match(js, /async function openDrawingViewer\(id\)/);
-assert.match(js, /const entry = await ensureDrawingContent\(id\)/, "查看器按需拉取内容");
+assert.match(js, /async function openDrawingViewer\(id, options = \{\}\)/);
+assert.match(js, /const entry = await ensureDrawingContent\(id, options\)/, "查看器按需拉取内容");
 assert.match(js, /if \(!entry\)/, "内容不可信/缺失时显示错误而不是渲染");
 assert.match(js, /<iframe src="' \+ entry\.url/, "PDF 用内嵌框架查看");
 assert.doesNotMatch(js, /onclick="openDrawingViewer\(/, "不得使用内联事件拼接图纸 id");
@@ -75,11 +75,12 @@ assert.match(css, /\.drawing-viewer-panel:fullscreen/, "全屏样式应铺满视
 assert.doesNotMatch(js, /data\.slice\(0, 22\)\.toLowerCase\(\)/, "PDF 前缀判定不得截断后再与短字符串比较");
 assert.ok(js.includes("const fileType = /^data:application\\/pdf;/i.test(data)"), "PDF 按 data URL 前缀判定类型");
 assert.match(js, /function legacyDrawingData\(id\)/, "云端内容缺失时应回退本机旧格式缓存");
-assert.match(js, /async function remoteLegacyDrawingData\(id\)/, "本机无缓存时应回退云端旧格式数组");
+assert.match(js, /async function remoteLegacyDrawingData\(id\)/, "本机无缓存时应可按需回退云端旧格式数组");
+assert.match(js, /options\.remoteLegacy/, "云端旧格式数组体积大，必须由用户显式触发恢复");
+assert.ok(js.includes("仅元数据缺失时才在启动阶段解析旧数组"), "启动阶段不得每次都解析数 MB 旧数组");
 assert.match(js, /reuploadLegacyDrawingContent\(id, data\)/, "旧缓存命中后应后台补传云端");
-assert.match(js, /旧格式键仍在 = 内容迁移尚未完成/, "旧格式内容不得因元数据存在而被忽略");
 assert.match(js, /meta\.fileType = isPdf \? 'pdf' : 'image'/, "元数据文件类型与内容不一致时应按内容修正");
-assert.match(js, /已尝试云端内容、本机与云端旧格式缓存/, "错误提示应说明已尝试的兜底来源");
+assert.match(js, /已尝试云端内容与本机旧格式缓存/, "错误提示应说明已尝试的兜底来源");
 assert.match(css, /\.drawing-viewer-stage\s*\{[\s\S]*?overflow:\s*auto/, "缩放后舞台可滚动查看");
 
 // 数据页/生成器联动

@@ -22,17 +22,19 @@ function safeKey(rawKey) {
 const CHUNK_THRESHOLD = 45000;
 const CHUNK_BATCH_SIZE = 20;
 const UPSERT_SQL = 'INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP';
-const DELETE_CHUNK_SQL = "DELETE FROM app_kv WHERE key LIKE ? ESCAPE '\\'";
-const SELECT_CHUNK_SQL = "SELECT key, value FROM app_kv WHERE key LIKE ? ESCAPE '\\' ORDER BY key";
+/* 分块行必须走主键范围查询：SQLite 的 LIKE 默认大小写不敏感，无法命中 key 的 BINARY
+   主键索引，会全表扫描 app_kv（表内存放全部图纸 base64），读取会慢到不可用。 */
+const DELETE_CHUNK_SQL = 'DELETE FROM app_kv WHERE key >= ? AND key < ?';
+const SELECT_CHUNK_SQL = 'SELECT key, value FROM app_kv WHERE key >= ? AND key < ? ORDER BY key';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 function chunkRowKey(key, index) {
   return key + '#p' + String(index).padStart(3, '0');
 }
-/* LIKE 通配符转义（键字符集中 `_` 是通配符） */
-function chunkLikePattern(key) {
-  return key.replace(/[\\%_]/g, '\\$&') + '#p%';
+/* [首块, 末块之后)：'#p' + 'q' 覆盖所有 #pNNN 键，且不触碰主行与业务键 */
+function chunkRange(key) {
+  return [chunkRowKey(key, 0), key + '#q'];
 }
 /* 按 UTF-8 字节切块；回退到序列起点，避免截断多字节字符 */
 function splitUtf8ByBytes(text, maxBytes) {
@@ -52,7 +54,7 @@ function splitUtf8ByBytes(text, maxBytes) {
   return pieces;
 }
 async function clearChunkRows(db, key) {
-  await db.prepare(DELETE_CHUNK_SQL).bind(chunkLikePattern(key)).run();
+  await db.prepare(DELETE_CHUNK_SQL).bind(...chunkRange(key)).run();
 }
 
 function readBodyValue(request) {
@@ -74,7 +76,7 @@ export async function onRequestGet({ env, params }) {
   if(parsed && typeof parsed === 'object' && !Array.isArray(parsed)
     && parsed.__chunked === true && Number.isInteger(parsed.parts) && parsed.parts > 0) {
     const chunkRows = await env.DB.prepare(SELECT_CHUNK_SQL)
-      .bind(chunkLikePattern(key))
+      .bind(...chunkRange(key))
       .all()
       .catch(() => null);
     const chunks = ((chunkRows && chunkRows.results) || []).map(r => {
@@ -100,7 +102,7 @@ export async function onRequestPut({ env, request, params }) {
   const serialized = JSON.stringify(value);
   const byteLength = textEncoder.encode(serialized).length;
   /* 先清旧分块行，主行最后写：小值覆盖旧分块版本、分块行数变化都不留垃圾 */
-  const statements = [env.DB.prepare(DELETE_CHUNK_SQL).bind(chunkLikePattern(key))];
+  const statements = [env.DB.prepare(DELETE_CHUNK_SQL).bind(...chunkRange(key))];
   if(byteLength <= CHUNK_THRESHOLD) {
     statements.push(env.DB.prepare(UPSERT_SQL).bind(key, serialized));
   } else {
@@ -121,8 +123,8 @@ export async function onRequestPut({ env, request, params }) {
 export async function onRequestDelete({ env, params }) {
   const key = safeKey(params.key);
   if(!key) return jsonResponse({ error: 'Invalid key' }, { status: 400 });
-  await env.DB.prepare("DELETE FROM app_kv WHERE key = ? OR (key LIKE ? ESCAPE '\\')")
-    .bind(key, chunkLikePattern(key))
+  await env.DB.prepare('DELETE FROM app_kv WHERE key = ? OR (key >= ? AND key < ?)')
+    .bind(key, ...chunkRange(key))
     .run();
   return jsonResponse({ ok: true, key });
 }
