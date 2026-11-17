@@ -634,6 +634,13 @@ document.addEventListener('keydown', event => {
 document.getElementById('dataEditModal')?.addEventListener('click', event => {
   if(event.target?.id === 'dataEditModal') closeDataEditModal();
 });
+/* 图纸查看器工具栏：缩放与全屏（事件委托，重渲染面板后无需重新绑定） */
+document.getElementById('dataEditModal')?.addEventListener('click', event => {
+  const target = event.target && event.target.closest ? event.target.closest('[data-drawing-zoom], [data-drawing-fullscreen]') : null;
+  if(!target) return;
+  if(target.hasAttribute('data-drawing-fullscreen')) { toggleDrawingFullscreen(); return; }
+  applyDrawingZoomAction(target.getAttribute('data-drawing-zoom'));
+});
 document.addEventListener('keydown', event => {
   if(event.key === 'Escape') closeDataEditModal();
 });
@@ -1204,6 +1211,20 @@ function deleteEvent(ts) { if(confirm('确定删除？')) { const removed = user
 const DATA_EDIT_TYPES = ['测厚', '硬度', '金相分析', '无损检测', '割管取样', '检修维护', '报废更换', '安装投运'];
 const DATA_EDIT_FIELD_LABELS = { boiler: '机组', code: '管段编码', spec: '规格', material: '材质', thickness: '厚度', hardness: '硬度', type: '事件类型', date: '日期', desc: '详细数据/结论', oldCode: '旧管段编码', newCode: '新管段编码', reason: '更换原因' };
 
+/* 图纸查看器状态：与编辑弹窗共用容器，关闭弹窗时统一释放查看器对象 URL。
+ * 注意查看器 URL 独立于列表缩略图缓存（ensureDrawingContent），避免关闭查看器后缩略图/再次打开失效。 */
+const drawingViewer = { id: '', url: '', ownsUrl: false, scale: 1, fitScale: 1, naturalW: 0, naturalH: 0, isPdf: false };
+function releaseDrawingViewer() {
+  if (drawingViewer.ownsUrl && drawingViewer.url) URL.revokeObjectURL(drawingViewer.url);
+  drawingViewer.id = '';
+  drawingViewer.url = '';
+  drawingViewer.ownsUrl = false;
+  drawingViewer.scale = 1;
+  drawingViewer.fitScale = 1;
+  drawingViewer.naturalW = 0;
+  drawingViewer.naturalH = 0;
+  drawingViewer.isPdf = false;
+}
 function openDataEditModal(html) {
   const host = document.getElementById('dataEditModal');
   if(!host) { alert('编辑弹窗容器缺失，请刷新页面。'); return; }
@@ -1214,6 +1235,7 @@ function openDataEditModal(html) {
 function closeDataEditModal() {
   const host = document.getElementById('dataEditModal');
   if(!host) return;
+  releaseDrawingViewer();
   host.classList.remove('open');
   host.setAttribute('aria-hidden', 'true');
   host.innerHTML = '';
@@ -6132,22 +6154,174 @@ async function renameDesignDrawing(id) {
   }
   renderDesignDrawings();
 }
-let drawingViewerUrl = '';
+const DRAWING_ZOOM_MIN = 0.08;
+const DRAWING_ZOOM_MAX = 8;
+const DRAWING_ZOOM_STEP = 1.25;
+
+function drawingZoomPercent() { return Math.round(drawingViewer.scale * 100) + '%'; }
+
+function updateDrawingZoomLabel() {
+  const label = document.getElementById('drawingZoomValue');
+  if (label) label.textContent = drawingZoomPercent();
+}
+
+/* 按目标比例缩放；keepCenter 时保持视口中心对应的图像位置不跳动。 */
+function setDrawingViewerScale(next, keepCenter = true) {
+  const img = document.getElementById('drawingViewerImage');
+  const stage = document.getElementById('drawingViewerStage');
+  if (!img || !stage || !drawingViewer.naturalW) return;
+  const scale = Math.min(DRAWING_ZOOM_MAX, Math.max(DRAWING_ZOOM_MIN, next));
+  const prevW = img.offsetWidth || drawingViewer.naturalW;
+  const prevH = img.offsetHeight || drawingViewer.naturalH;
+  const centerX = stage.scrollLeft + stage.clientWidth / 2;
+  const centerY = stage.scrollTop + stage.clientHeight / 2;
+  const ratioX = prevW ? centerX / prevW : 0.5;
+  const ratioY = prevH ? centerY / prevH : 0.5;
+  drawingViewer.scale = scale;
+  img.style.width = Math.max(1, Math.round(drawingViewer.naturalW * scale)) + 'px';
+  img.style.height = 'auto';
+  updateDrawingZoomLabel();
+  if (!keepCenter) return;
+  const nextW = img.offsetWidth || 1;
+  const nextH = img.offsetHeight || 1;
+  stage.scrollLeft = Math.max(0, ratioX * nextW - stage.clientWidth / 2);
+  stage.scrollTop = Math.max(0, ratioY * nextH - stage.clientHeight / 2);
+}
+
+/* 适应窗口：整张图纸缩放到可视区域内并居中（小图不放大，避免糊）。 */
+function fitDrawingViewer() {
+  const img = document.getElementById('drawingViewerImage');
+  const stage = document.getElementById('drawingViewerStage');
+  if (!img || !stage) return;
+  const naturalW = img.naturalWidth || drawingViewer.naturalW;
+  const naturalH = img.naturalHeight || drawingViewer.naturalH;
+  if (!naturalW || !naturalH) return;
+  drawingViewer.naturalW = naturalW;
+  drawingViewer.naturalH = naturalH;
+  const availW = Math.max(120, stage.clientWidth - 16);
+  const availH = Math.max(120, stage.clientHeight - 16);
+  drawingViewer.fitScale = Math.min(1, availW / naturalW, availH / naturalH);
+  setDrawingViewerScale(drawingViewer.fitScale, false);
+  stage.scrollLeft = Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2);
+  stage.scrollTop = Math.max(0, (stage.scrollHeight - stage.clientHeight) / 2);
+}
+
+function applyDrawingZoomAction(action) {
+  if (!drawingViewer.naturalW) return;
+  if (action === 'in') setDrawingViewerScale(drawingViewer.scale * DRAWING_ZOOM_STEP);
+  else if (action === 'out') setDrawingViewerScale(drawingViewer.scale / DRAWING_ZOOM_STEP);
+  else if (action === 'fit') fitDrawingViewer();
+  else if (action === 'actual') setDrawingViewerScale(1);
+}
+
+function bindDrawingViewerStage(stage, img) {
+  if (!stage || !img) return;
+  stage.addEventListener('wheel', event => {
+    if (!drawingViewer.naturalW) return;
+    event.preventDefault();
+    setDrawingViewerScale(drawingViewer.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12));
+  }, { passive: false });
+  stage.addEventListener('dblclick', event => {
+    if (event.target !== img || !drawingViewer.naturalW) return;
+    if (drawingViewer.scale > drawingViewer.fitScale * 1.05) fitDrawingViewer();
+    else setDrawingViewerScale(1);
+  });
+  let drag = null;
+  stage.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || !drawingViewer.naturalW) return;
+    if (stage.scrollWidth <= stage.clientWidth && stage.scrollHeight <= stage.clientHeight) return;
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: stage.scrollLeft, top: stage.scrollTop };
+    stage.classList.add('is-panning');
+    try { stage.setPointerCapture(event.pointerId); } catch (err) { /* 忽略不支持指针捕获的浏览器 */ }
+  });
+  stage.addEventListener('pointermove', event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    stage.scrollLeft = drag.left - (event.clientX - drag.x);
+    stage.scrollTop = drag.top - (event.clientY - drag.y);
+  });
+  const endDrag = event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    drag = null;
+    stage.classList.remove('is-panning');
+    try { stage.releasePointerCapture(event.pointerId); } catch (err) { /* 同上 */ }
+  };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+}
+
+function drawingViewerPanel() { return document.querySelector('#dataEditModal .drawing-viewer-panel'); }
+function updateDrawingFullscreenLabel() {
+  const btn = document.getElementById('drawingFullscreenBtn');
+  if (!btn) return;
+  const panel = drawingViewerPanel();
+  const active = Boolean(document.fullscreenElement) || Boolean(panel && panel.classList.contains('is-maximized'));
+  btn.textContent = active ? '退出全屏' : '全屏';
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+}
+function exitDrawingFullscreen() {
+  const panel = drawingViewerPanel();
+  if (panel) panel.classList.remove('is-maximized');
+  if (document.fullscreenElement && document.exitFullscreen) {
+    try { document.exitFullscreen().catch(() => {}); } catch (err) { /* 忽略 */ }
+  }
+}
+function toggleDrawingFullscreen() {
+  const panel = drawingViewerPanel();
+  if (!panel) return;
+  if (document.fullscreenElement || panel.classList.contains('is-maximized')) {
+    exitDrawingFullscreen();
+    updateDrawingFullscreenLabel();
+    return;
+  }
+  const enterMaximized = () => {
+    panel.classList.add('is-maximized');
+    updateDrawingFullscreenLabel();
+    requestAnimationFrame(fitDrawingViewer);
+  };
+  const request = panel.requestFullscreen || panel.webkitRequestFullscreen;
+  if (!request) { enterMaximized(); return; }
+  try {
+    const result = request.call(panel);
+    if (result && typeof result.then === 'function') result.then(() => {
+      updateDrawingFullscreenLabel();
+      requestAnimationFrame(fitDrawingViewer);
+    }).catch(enterMaximized);
+    else setTimeout(() => { updateDrawingFullscreenLabel(); fitDrawingViewer(); }, 0);
+  } catch (err) {
+    enterMaximized();
+  }
+}
+document.addEventListener('fullscreenchange', () => {
+  updateDrawingFullscreenLabel();
+  if (document.getElementById('drawingViewerImage')) requestAnimationFrame(fitDrawingViewer);
+});
+
 function closeDrawingViewer() {
-  if (drawingViewerUrl) { URL.revokeObjectURL(drawingViewerUrl); drawingViewerUrl = ''; }
   closeDataEditModal();
 }
 async function openDrawingViewer(id) {
   const drawing = designDrawings.find(d => d.id === id);
   if (!drawing) { showToast('未找到图纸记录。', 'warn'); return; }
-  if (drawingViewerUrl) { URL.revokeObjectURL(drawingViewerUrl); drawingViewerUrl = ''; }
+  releaseDrawingViewer();
+  drawingViewer.id = id;
+  drawingViewer.isPdf = drawing.fileType === 'pdf';
+  const isPdf = drawing.fileType === 'pdf';
+  const zoomTools = isPdf ? '' :
+    '<button type="button" class="drawing-viewer-tool" data-drawing-zoom="out" title="缩小" aria-label="缩小">−</button>' +
+    '<span class="drawing-zoom-value" id="drawingZoomValue" aria-live="polite">100%</span>' +
+    '<button type="button" class="drawing-viewer-tool" data-drawing-zoom="in" title="放大" aria-label="放大">＋</button>' +
+    '<button type="button" class="drawing-viewer-tool" data-drawing-zoom="fit" title="适应窗口">适应</button>' +
+    '<button type="button" class="drawing-viewer-tool" data-drawing-zoom="actual" title="原始大小">1:1</button>';
   const shell = body => openDataEditModal(
-    '<div class="data-edit-panel" role="dialog" aria-modal="true" style="max-width:1100px; width:96vw;">' +
-    '<div class="data-edit-head">' +
+    '<div class="data-edit-panel drawing-viewer-panel" role="dialog" aria-modal="true">' +
+    '<div class="data-edit-head drawing-viewer-head">' +
     '<h3 id="dataEditTitle">' + escapeHTML(drawing.name || drawing.fileName) + (drawing.drawingNo ? ' · ' + escapeHTML(drawing.drawingNo) : '') + '</h3>' +
+    '<div class="drawing-viewer-tools">' + zoomTools +
+    '<button type="button" class="drawing-viewer-tool" id="drawingFullscreenBtn" data-drawing-fullscreen title="全屏查看（Esc 退出）" aria-pressed="false">全屏</button>' +
     '<button type="button" class="data-edit-close" onclick="closeDrawingViewer()" aria-label="关闭">×</button>' +
     '</div>' +
-    '<p class="data-edit-sub">' + escapeHTML(drawingSurfaceLabel(drawing.sys)) + ' · ' + fmtDrawingSize(drawing.size) + '</p>' +
+    '</div>' +
+    '<p class="data-edit-sub">' + escapeHTML(drawingSurfaceLabel(drawing.sys)) + ' · ' + fmtDrawingSize(drawing.size) + (isPdf ? '' : ' · 滚轮缩放 / 拖动平移 / 双击切换') + '</p>' +
     body +
     '</div>');
   shell('<p style="padding:24px; color:var(--text-dim);">正在从云端载入图纸…</p>');
@@ -6157,10 +6331,28 @@ async function openDrawingViewer(id) {
     return;
   }
   if (!document.getElementById('dataEditTitle')) return; /* 用户已关闭弹窗 */
-  drawingViewerUrl = entry.url;
-  shell(drawing.fileType === 'pdf'
-    ? '<iframe src="' + entry.url + '" style="width:100%; height:72vh; border:0; border-radius:6px;" title="' + escapeHTML(drawing.name) + '"></iframe>'
-    : '<img src="' + entry.url + '" style="width:100%; border-radius:6px;" alt="' + escapeHTML(drawing.name) + '">');
+  const viewerBlobUrl = dataUrlToObjectUrl(entry.data, isPdf);
+  drawingViewer.url = viewerBlobUrl || entry.url;
+  drawingViewer.ownsUrl = Boolean(viewerBlobUrl);
+  if (isPdf) {
+    shell('<div class="drawing-viewer-stage drawing-viewer-stage-pdf">' +
+      '<iframe src="' + entry.url + '" style="width:100%; height:100%; border:0;" title="' + escapeHTML(drawing.name) + '"></iframe>' +
+      '</div>');
+    return;
+  }
+  shell('<div class="drawing-viewer-stage" id="drawingViewerStage">' +
+    '<img id="drawingViewerImage" src="' + drawingViewer.url + '" draggable="false" alt="' + escapeHTML(drawing.name) + '">' +
+    '</div>');
+  const stage = document.getElementById('drawingViewerStage');
+  const img = document.getElementById('drawingViewerImage');
+  bindDrawingViewerStage(stage, img);
+  const ready = () => {
+    drawingViewer.naturalW = img.naturalWidth;
+    drawingViewer.naturalH = img.naturalHeight;
+    requestAnimationFrame(() => { fitDrawingViewer(); img.classList.add('is-ready'); });
+  };
+  if (img.complete && img.naturalWidth) ready();
+  else img.addEventListener('load', ready, { once: true });
 }
 
 // ========== INIT ==========

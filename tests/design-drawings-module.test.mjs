@@ -7,6 +7,7 @@ import vm from "node:vm";
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(resolve(here, "../炉管全生命周期管理系统.html"), "utf8");
 const js = readFileSync(resolve(here, "../assets/app/app-v7.9.js"), "utf8");
+const css = readFileSync(resolve(here, "../assets/app/app-v8.0.css"), "utf8");
 
 // 导航与视图
 assert.match(html, /data-view="drawings"/, "设计图纸导航入口应存在");
@@ -55,6 +56,21 @@ assert.doesNotMatch(js, /onclick="openDrawingViewer\(/, "不得使用内联事�
 assert.doesNotMatch(js, /'<img src="' \+ d\.data/, "列表不得直接拼接 base64 内容");
 assert.match(js, /data-drawing-thumb=/, "图片缩略图按需加载");
 assert.match(js, /data-drawing-action="view"/, "卡片使用事件委托属性");
+
+// 查看器：放大/缩小、适应窗口、拖动平移与全屏
+assert.match(js, /function setDrawingViewerScale\(/, "查看器应支持按比例缩放");
+assert.match(js, /function fitDrawingViewer\(/, "查看器应支持适应窗口");
+assert.match(js, /function toggleDrawingFullscreen\(/, "查看器应支持全屏切换");
+assert.match(js, /requestFullscreen/, "全屏优先使用浏览器 Fullscreen API");
+assert.match(js, /is-maximized/, "Fullscreen API 不可用时退化为铺满视口");
+assert.match(js, /data-drawing-zoom="in"/, "查看器应有放大按钮");
+assert.match(js, /data-drawing-zoom="fit"/, "查看器应有适应窗口按钮");
+assert.match(js, /data-drawing-fullscreen/, "查看器应有全屏按钮");
+assert.match(js, /addEventListener\('wheel'/, "滚轮可缩放");
+assert.match(js, /pointerdown[\s\S]{0,400}scrollLeft/, "拖动可平移");
+assert.match(js, /function releaseDrawingViewer\(/, "关闭弹窗应释放查看器对象 URL");
+assert.match(css, /\.drawing-viewer-panel:fullscreen/, "全屏样式应铺满视口");
+assert.match(css, /\.drawing-viewer-stage\s*\{[\s\S]*?overflow:\s*auto/, "缩放后舞台可滚动查看");
 
 // 数据页/生成器联动
 assert.match(html, /onclick="openDrawingsForSys\(document\.getElementById\('f-system'\)\?\.value \|\| ''\)"/, "编码生成器应有一键打开对应受热面图纸");

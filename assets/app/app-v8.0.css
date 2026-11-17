@@ -4894,6 +4894,114 @@ html[data-theme="light"] .boiler-zone:hover {
   font-family: 'Consolas', monospace;
 }
 
+/* ================= 受热面图纸查看器 · 缩放 / 拖动平移 / 全屏 ================= */
+.drawing-viewer-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 96vw);
+  max-height: 92vh;
+}
+.drawing-viewer-head { align-items: center; gap: 10px; }
+.drawing-viewer-head h3 {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drawing-viewer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.drawing-viewer-tool {
+  border: 1px solid var(--line, #d5e2e7);
+  background: var(--surface-sunken, #eef3f6);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  font-family: inherit;
+  cursor: pointer;
+}
+.drawing-viewer-tool:hover { border-color: var(--accent, #2dd4ff); color: var(--accent, #2dd4ff); }
+.drawing-viewer-tool:focus-visible { outline: 2px solid var(--accent, #2dd4ff); outline-offset: 1px; }
+.drawing-zoom-value {
+  min-width: 48px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: 'Consolas', monospace;
+}
+.drawing-viewer-stage {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  height: 68vh;
+  min-height: 240px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+.drawing-viewer-stage.is-panning { cursor: grabbing; }
+.drawing-viewer-stage img {
+  flex: 0 0 auto;
+  align-self: center;
+  margin: auto;
+  display: block;
+  max-width: none;
+  max-height: none;
+  border-radius: 2px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-drag: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.drawing-viewer-stage img.is-ready { opacity: 1; }
+.drawing-viewer-stage.is-panning img { cursor: grabbing; }
+.drawing-viewer-stage-pdf { display: block; padding: 0; background: #0b1017; }
+.drawing-viewer-stage-pdf iframe { display: block; width: 100%; height: 100%; border: 0; }
+
+/* 全屏：优先浏览器 Fullscreen API，不支持时退化为铺满视口的浮层 */
+.drawing-viewer-panel:fullscreen,
+.drawing-viewer-panel:-webkit-full-screen,
+.drawing-viewer-panel.is-maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 460;
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+.drawing-viewer-panel:fullscreen .drawing-viewer-stage,
+.drawing-viewer-panel:-webkit-full-screen .drawing-viewer-stage,
+.drawing-viewer-panel.is-maximized .drawing-viewer-stage {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+@media (max-width: 720px) {
+  .drawing-viewer-tools { gap: 4px; }
+  .drawing-viewer-tool { padding: 4px 8px; }
+  .drawing-viewer-stage { height: 52vh; }
+}
+
 /* ---- v8.4.5 总览深度分析面板 · 本地可视化分析区块 ---- */
 .llm-viz {
   margin-top: 16px;
