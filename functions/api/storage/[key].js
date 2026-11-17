@@ -17,6 +17,14 @@ function safeKey(rawKey) {
   return key;
 }
 
+/* 图纸内容按 id 写入后不再变更，可安全让浏览器缓存；元数据/业务键仍需每次取最新 */
+const CACHEABLE_CONTENT_PREFIX = 'boiler_drawing_content:';
+function contentCacheInit(key) {
+  return key.indexOf(CACHEABLE_CONTENT_PREFIX) === 0
+    ? { headers: { 'Cache-Control': 'private, max-age=86400' } }
+    : undefined;
+}
+
 /* D1 单条 SQL 语句上限 100KB：大值（如图纸 base64）按 UTF-8 字节切块后逐行存储，
    主行存 {__chunked,parts,size} 元数据，GET 时按序拼回，对客户端完全透明。 */
 const CHUNK_THRESHOLD = 45000;
@@ -86,12 +94,12 @@ export async function onRequestGet({ env, params }) {
       return jsonResponse({ error: 'Chunked value incomplete', key, found: true }, { status: 500 });
     }
     try {
-      return jsonResponse({ found: true, key, value: JSON.parse(chunks.join('')), updatedAt: row.updated_at });
+      return jsonResponse({ found: true, key, value: JSON.parse(chunks.join('')), updatedAt: row.updated_at }, contentCacheInit(key));
     } catch {
       return jsonResponse({ error: 'Chunked value corrupted', key, found: true }, { status: 500 });
     }
   }
-  return jsonResponse({ found: true, key, value: parsed, updatedAt: row.updated_at });
+  return jsonResponse({ found: true, key, value: parsed, updatedAt: row.updated_at }, contentCacheInit(key));
 }
 
 export async function onRequestPut({ env, request, params }) {

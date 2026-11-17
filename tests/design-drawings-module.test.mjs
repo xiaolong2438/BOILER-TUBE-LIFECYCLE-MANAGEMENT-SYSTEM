@@ -81,6 +81,13 @@ assert.ok(js.includes("仅元数据缺失时才在启动阶段解析旧数组"),
 assert.match(js, /reuploadLegacyDrawingContent\(id, data\)/, "旧缓存命中后应后台补传云端");
 assert.match(js, /meta\.fileType = isPdf \? 'pdf' : 'image'/, "元数据文件类型与内容不一致时应按内容修正");
 assert.match(js, /已尝试云端内容与本机旧格式缓存/, "错误提示应说明已尝试的兜底来源");
+
+// 加载性能：IndexedDB 持久缓存 + 进入视图后台预载
+assert.match(js, /async function readCachedDrawingContent\(id\)/, "图纸内容应持久缓存到 IndexedDB");
+assert.match(js, /async function writeCachedDrawingContent\(id, data\)/, "云端下载后应写入本机缓存");
+assert.match(js, /function prefetchDrawingContents\(list\)/, "进入图纸视图应后台预载内容");
+assert.match(js, /prefetchDrawingContents\(list\)/, "渲染网格后应触发预载");
+assert.match(js, /removeCachedDrawingContent\(id\)/, "删除图纸应清理本机缓存");
 assert.match(css, /\.drawing-viewer-stage\s*\{[\s\S]*?overflow:\s*auto/, "缩放后舞台可滚动查看");
 
 // 数据页/生成器联动

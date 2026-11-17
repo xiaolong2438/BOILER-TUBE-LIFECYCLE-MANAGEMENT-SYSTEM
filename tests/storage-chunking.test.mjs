@@ -22,7 +22,7 @@ async function call(db, handler, method, key, body) {
     ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   });
   const response = await handler({ env: { DB: db }, request, params: { key } });
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: await response.json(), headers: response.headers };
 }
 
 async function countRows(db, pattern) {
@@ -124,4 +124,16 @@ test('分块行读写使用主键范围而非 LIKE（避免全表扫描 app_kv�
   assert.match(source, /SELECT key, value FROM app_kv WHERE key >= \? AND key < \? ORDER BY key/);
   assert.match(source, /DELETE FROM app_kv WHERE key >= \? AND key < \?/);
   assert.doesNotMatch(source, /LIKE \? ESCAPE/, '分块 SQL 不得再使用无法命中主键索引的 LIKE');
+});
+
+test('图纸内容 GET 允许浏览器缓存，元数据仍不缓存', async (t) => {
+  const { db } = fixture(t);
+  await call(db, onRequestPut, 'PUT', 'boiler_drawing_content:demo', { value: 'data:image/png;base64,' + 'A'.repeat(60000) });
+  const content = await call(db, onRequestGet, 'GET', 'boiler_drawing_content:demo');
+  assert.equal(content.status, 200);
+  assert.equal(content.headers.get('Cache-Control'), 'private, max-age=86400');
+  const meta = await call(db, onRequestPut, 'PUT', 'boiler_design_drawings_meta', { value: [{ id: 'a' }] });
+  assert.equal(meta.status, 200);
+  const metaGet = await call(db, onRequestGet, 'GET', 'boiler_design_drawings_meta');
+  assert.equal(metaGet.headers.get('Cache-Control'), null, '元数据键不得被浏览器缓存');
 });

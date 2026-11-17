@@ -5881,6 +5881,59 @@ if (!designDrawings.length) {
 }
 
 const drawingContentCache = new Map();
+const drawingContentInflight = new Map();
+/* 图纸内容本地持久缓存（IndexedDB）：到 Cloudflare 的跨洋 RTT 通常 0.5–3s，
+   每张图纸首次下载后落到本机，刷新页面或二次打开直接命中，省掉重复往返。 */
+const DRAWING_IDB_NAME = 'boiler_drawings';
+const DRAWING_IDB_STORE = 'content';
+let drawingIdbPromise = null;
+function drawingContentDB() {
+  if (drawingIdbPromise) return drawingIdbPromise;
+  drawingIdbPromise = new Promise(resolve => {
+    try {
+      if (typeof indexedDB === 'undefined') { resolve(null); return; }
+      const request = indexedDB.open(DRAWING_IDB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(DRAWING_IDB_STORE)) db.createObjectStore(DRAWING_IDB_STORE, { keyPath: 'id' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
+    } catch (err) { resolve(null); }
+  });
+  return drawingIdbPromise;
+}
+async function readCachedDrawingContent(id) {
+  const db = await drawingContentDB();
+  if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const request = db.transaction(DRAWING_IDB_STORE, 'readonly').objectStore(DRAWING_IDB_STORE).get(id);
+      request.onsuccess = () => resolve(request.result && typeof request.result.data === 'string' ? request.result.data : null);
+      request.onerror = () => resolve(null);
+    } catch (err) { resolve(null); }
+  });
+}
+async function writeCachedDrawingContent(id, data) {
+  const db = await drawingContentDB();
+  if (!db) return false;
+  return new Promise(resolve => {
+    try {
+      const tx = db.transaction(DRAWING_IDB_STORE, 'readwrite');
+      tx.objectStore(DRAWING_IDB_STORE).put({ id, data, savedAt: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch (err) { resolve(false); }
+  });
+}
+async function removeCachedDrawingContent(id) {
+  const db = await drawingContentDB();
+  if (!db) return;
+  try { db.transaction(DRAWING_IDB_STORE, 'readwrite').objectStore(DRAWING_IDB_STORE).delete(id); }
+  catch (err) { /* 缓存清理失败不影响主流程 */ }
+}
 function dataUrlToObjectUrl(data, isPdf) {
   const match = String(data || '').match(/^data:([^;,]+);base64,([\s\S]+)$/);
   if (!match) return null;
@@ -5955,13 +6008,27 @@ async function reuploadLegacyDrawingContent(id, data) {
 }
 async function ensureDrawingContent(id, options = {}) {
   if (drawingContentCache.has(id)) return drawingContentCache.get(id);
+  /* 缩略图与预载可能同时请求同一张图纸，合并为一次下载 */
+  if (!options.remoteLegacy && drawingContentInflight.has(id)) return drawingContentInflight.get(id);
+  const task = loadDrawingContent(id, options).finally(() => {
+    if (drawingContentInflight.get(id) === task) drawingContentInflight.delete(id);
+  });
+  if (!options.remoteLegacy) drawingContentInflight.set(id, task);
+  return task;
+}
+async function loadDrawingContent(id, options = {}) {
   drawingContentError = '';
   let data = null;
   let fromLegacy = false;
-  const response = await cloudStorageRequest(drawingContentKey(id));
-  if (response && response.found === true && typeof response.value === 'string') data = response.value;
-  else if (response === null) drawingContentError = '云端内容读取失败（网络中断或服务异常）';
-  else drawingContentError = '云端缺少该图纸内容';
+  let fromLocalCache = false;
+  const cachedData = await readCachedDrawingContent(id);
+  if (cachedData && DRAWING_DATA_RE.test(cachedData)) { data = cachedData; fromLocalCache = true; }
+  if (!data) {
+    const response = await cloudStorageRequest(drawingContentKey(id));
+    if (response && response.found === true && typeof response.value === 'string') data = response.value;
+    else if (response === null) drawingContentError = '云端内容读取失败（网络中断或服务异常）';
+    else drawingContentError = '云端缺少该图纸内容';
+  }
   if (!data || !DRAWING_DATA_RE.test(data)) {
     const local = legacyDrawingData(id);
     if (local && DRAWING_DATA_RE.test(local)) { data = local; fromLegacy = true; }
@@ -5988,6 +6055,7 @@ async function ensureDrawingContent(id, options = {}) {
   if (!entry.url) { drawingContentError = '内容解码失败'; return null; }
   drawingContentCache.set(id, entry);
   drawingContentError = '';
+  if (!fromLocalCache) writeCachedDrawingContent(id, data).catch(() => null);
   if (fromLegacy) {
     console.warn('[图纸] 已从旧格式缓存恢复内容，正在补传云端：' + id);
     reuploadLegacyDrawingContent(id, data).catch(() => null);
@@ -5996,9 +6064,11 @@ async function ensureDrawingContent(id, options = {}) {
 }
 function releaseDrawingContent(id) {
   const entry = drawingContentCache.get(id);
-  if (!entry) return;
-  if (entry.url) URL.revokeObjectURL(entry.url);
-  drawingContentCache.delete(id);
+  if (entry) {
+    if (entry.url) URL.revokeObjectURL(entry.url);
+    drawingContentCache.delete(id);
+  }
+  removeCachedDrawingContent(id).catch(() => null);
 }
 /* 元数据落盘：本地缓存 + 云端（可等待确认）。只有云端确认成功才算“已保存到云端”。 */
 async function persistDrawingMeta(options = {}) {
@@ -6203,6 +6273,26 @@ function renderDesignDrawings() {
   }).join('') : '<div style="color:var(--text-dim); padding:20px; text-align:center;">暂无图纸。点击上方「上传图纸」导入材料分界图/总图（图片或 PDF，如 148M211-0 高温过热器材料分界图）。</div>';
   bindDrawingGrid(grid);
   observeDrawingThumbs(grid);
+  setTimeout(() => prefetchDrawingContents(list), 0);
+}
+
+/* 进入图纸视图后后台预载内容（含 PDF），把跨洋 RTT 提前到点击之前。
+   ensureDrawingContent 命中 IndexedDB 时不会产生网络请求；最多 3 路并发避免抢占带宽。 */
+let drawingPrefetchRun = 0;
+function prefetchDrawingContents(list) {
+  if (!cloudStorageEnabled() || !Array.isArray(list) || !list.length) return;
+  const run = ++drawingPrefetchRun;
+  const queue = list.map(d => d && d.id).filter(id => id && !drawingContentCache.has(id));
+  if (!queue.length) return;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < queue.length && run === drawingPrefetchRun) {
+      const id = queue[cursor++];
+      try { await ensureDrawingContent(id); } catch (err) { /* 预载失败不影响手动打开 */ }
+    }
+  };
+  const workers = Math.min(3, queue.length);
+  for (let i = 0; i < workers; i += 1) worker();
 }
 function openDrawingsForSys(sys) {
   const filter = document.getElementById('drawingSysFilter');
