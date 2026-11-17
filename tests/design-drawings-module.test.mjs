@@ -70,6 +70,16 @@ assert.match(js, /addEventListener\('wheel'/, "滚轮可缩放");
 assert.match(js, /pointerdown[\s\S]{0,400}scrollLeft/, "拖动可平移");
 assert.match(js, /function releaseDrawingViewer\(/, "关闭弹窗应释放查看器对象 URL");
 assert.match(css, /\.drawing-viewer-panel:fullscreen/, "全屏样式应铺满视口");
+
+// 内容载入兜底：旧格式缓存 + 类型以内容为准
+assert.doesNotMatch(js, /data\.slice\(0, 22\)\.toLowerCase\(\)/, "PDF 前缀判定不得截断后再与短字符串比较");
+assert.ok(js.includes("const fileType = /^data:application\\/pdf;/i.test(data)"), "PDF 按 data URL 前缀判定类型");
+assert.match(js, /function legacyDrawingData\(id\)/, "云端内容缺失时应回退本机旧格式缓存");
+assert.match(js, /async function remoteLegacyDrawingData\(id\)/, "本机无缓存时应回退云端旧格式数组");
+assert.match(js, /reuploadLegacyDrawingContent\(id, data\)/, "旧缓存命中后应后台补传云端");
+assert.match(js, /旧格式键仍在 = 内容迁移尚未完成/, "旧格式内容不得因元数据存在而被忽略");
+assert.match(js, /meta\.fileType = isPdf \? 'pdf' : 'image'/, "元数据文件类型与内容不一致时应按内容修正");
+assert.match(js, /已尝试云端内容、本机与云端旧格式缓存/, "错误提示应说明已尝试的兜底来源");
 assert.match(css, /\.drawing-viewer-stage\s*\{[\s\S]*?overflow:\s*auto/, "缩放后舞台可滚动查看");
 
 // 数据页/生成器联动

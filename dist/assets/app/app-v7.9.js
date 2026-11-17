@@ -5861,20 +5861,24 @@ function renderSMQLoopBaseline() {
 }
 let designDrawings = [];
 let legacyLocalDrawings = null;
+let legacyContentLoaded = false;
 try {
   const storedMeta = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_META_KEY) || 'null');
   if (Array.isArray(storedMeta)) designDrawings = storedMeta.map(normalizeDrawingMeta).filter(Boolean);
 } catch (err) { designDrawings = []; }
-if (!designDrawings.length) {
-  /* 旧格式（含 base64）一次性迁移来源：只取元数据，内容随后按需推送 */
-  try {
-    const legacy = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || '[]');
+try {
+  /* 旧格式键仍在 = 内容迁移尚未完成：始终解析，供兜底查看与下次启动重试；
+     列表来源仍以元数据为准，只有元数据缺失时才回退到旧数组。 */
+  const legacyRaw = localStorage.getItem(DESIGN_DRAWINGS_KEY);
+  if (legacyRaw) {
+    const legacy = JSON.parse(legacyRaw);
     if (Array.isArray(legacy)) {
       legacyLocalDrawings = legacy.filter(d => d && typeof d === 'object' && typeof d.data === 'string');
-      designDrawings = legacy.map(normalizeDrawingMeta).filter(Boolean);
+      if (!designDrawings.length) designDrawings = legacy.map(normalizeDrawingMeta).filter(Boolean);
     }
-  } catch (err) { legacyLocalDrawings = null; }
-}
+  }
+} catch (err) { legacyLocalDrawings = null; }
+legacyContentLoaded = true;
 
 const drawingContentCache = new Map();
 function dataUrlToObjectUrl(data, isPdf) {
@@ -5907,24 +5911,86 @@ function normalizeDrawingMeta(raw) {
   };
 }
 function drawingContentKey(id) { return DRAWING_CONTENT_PREFIX + id; }
+let drawingContentError = '';
+/* 旧格式内容兜底：本机 localStorage → 云端旧数组。仅在云端内容键不可用/损坏时触发。 */
+function legacyDrawingData(id) {
+  if (!legacyContentLoaded) {
+    legacyContentLoaded = true;
+    try {
+      const legacy = JSON.parse(localStorage.getItem(DESIGN_DRAWINGS_KEY) || 'null');
+      if (Array.isArray(legacy)) {
+        legacyLocalDrawings = legacy.filter(d => d && typeof d === 'object' && typeof d.data === 'string');
+      }
+    } catch (err) { legacyLocalDrawings = null; }
+  }
+  if (!Array.isArray(legacyLocalDrawings)) return null;
+  const item = legacyLocalDrawings.find(d => d && String(d.id || '') === String(id) && typeof d.data === 'string');
+  return item ? item.data : null;
+}
+let remoteLegacyDrawingPromise = null;
+async function remoteLegacyDrawingData(id) {
+  if (!remoteLegacyDrawingPromise) {
+    remoteLegacyDrawingPromise = cloudStorageRequest(DESIGN_DRAWINGS_KEY).then(response => (
+      response && response.found === true && Array.isArray(response.value) ? response.value : []
+    )).catch(() => []);
+  }
+  const list = await remoteLegacyDrawingPromise;
+  const item = list.find(d => d && String(d.id || '') === String(id) && typeof d.data === 'string');
+  return item ? item.data : null;
+}
+function dropLocalLegacyDrawing(id) {
+  if (!Array.isArray(legacyLocalDrawings)) return;
+  const next = legacyLocalDrawings.filter(d => !d || String(d.id || '') !== String(id));
+  if (next.length === legacyLocalDrawings.length) return;
+  legacyLocalDrawings = next.length ? next : null;
+  try {
+    if (next.length) localStorage.setItem(DESIGN_DRAWINGS_KEY, JSON.stringify(next));
+    else localStorage.removeItem(DESIGN_DRAWINGS_KEY);
+  } catch (err) { /* 清理失败不影响查看，下次启动继续重试 */ }
+}
+async function reuploadLegacyDrawingContent(id, data) {
+  const stored = await cloudStorageWrite(drawingContentKey(id), data);
+  if (stored && stored.ok) dropLocalLegacyDrawing(id);
+  return Boolean(stored && stored.ok);
+}
 async function ensureDrawingContent(id) {
   if (drawingContentCache.has(id)) return drawingContentCache.get(id);
+  drawingContentError = '';
+  let data = null;
+  let fromLegacy = false;
   const response = await cloudStorageRequest(drawingContentKey(id));
-  if (!response || response.found !== true || typeof response.value !== 'string') return null;
-  const data = response.value;
-  if (!DRAWING_DATA_RE.test(data)) {
-    console.warn('[图纸] 内容格式不合法，已拒绝渲染：' + id);
+  if (response && response.found === true && typeof response.value === 'string') data = response.value;
+  else if (response === null) drawingContentError = '云端内容读取失败（网络中断或服务异常）';
+  else drawingContentError = '云端缺少该图纸内容';
+  if (!data || !DRAWING_DATA_RE.test(data)) {
+    const local = legacyDrawingData(id);
+    if (local && DRAWING_DATA_RE.test(local)) { data = local; fromLegacy = true; }
+  }
+  if (!fromLegacy && (!data || !DRAWING_DATA_RE.test(data))) {
+    const remote = await remoteLegacyDrawingData(id);
+    if (remote && DRAWING_DATA_RE.test(remote)) { data = remote; fromLegacy = true; }
+  }
+  if (!data || !DRAWING_DATA_RE.test(data)) {
+    if (!drawingContentError) drawingContentError = '内容格式不受信任';
+    console.warn('[图纸] 内容无法载入：' + id + '（' + drawingContentError + '）');
     return null;
   }
   const meta = designDrawings.find(d => d.id === id);
   const isPdf = /^data:application\/pdf;base64,/i.test(data);
-  if (meta && ((meta.fileType === 'pdf') !== isPdf)) {
-    console.warn('[图纸] 内容类型与元数据不一致，已拒绝渲染：' + id);
-    return null;
+  /* 内容类型以实际内容为准：修复历史上传把 PDF 记成 image 的元数据，避免永久打不开 */
+  if (meta && meta.fileType !== (isPdf ? 'pdf' : 'image')) {
+    console.warn('[图纸] 元数据文件类型与内容不一致，已按内容修正：' + id);
+    meta.fileType = isPdf ? 'pdf' : 'image';
+    try { localStorage.setItem(DESIGN_DRAWINGS_META_KEY, JSON.stringify(designDrawings)); } catch (err) { /* 配额不足时仅内存生效 */ }
   }
   const entry = { data, url: dataUrlToObjectUrl(data, isPdf) };
-  if (!entry.url) return null;
+  if (!entry.url) { drawingContentError = '内容解码失败'; return null; }
   drawingContentCache.set(id, entry);
+  drawingContentError = '';
+  if (fromLegacy) {
+    console.warn('[图纸] 已从旧格式缓存恢复内容，正在补传云端：' + id);
+    reuploadLegacyDrawingContent(id, data).catch(() => null);
+  }
   return entry;
 }
 function releaseDrawingContent(id) {
@@ -5959,6 +6025,16 @@ function drawingThumbPlaceholder(id, label) {
 function renderDrawingThumbnail(host, id) {
   ensureDrawingContent(id).then(entry => {
     if (!entry || !host.isConnected) return;
+    /* 历史元数据可能把 PDF 记成图片：按实际内容显示 PDF 占位，避免 <img> 裂图 */
+    if (/^data:application\/pdf;base64,/i.test(entry.data)) {
+      const icon = document.createElement('div');
+      icon.style.cssText = 'width:100%; height:130px; border-radius:6px 6px 0 0; display:flex; align-items:center; justify-content:center; background:var(--bg); font-size:44px; cursor:pointer;';
+      icon.textContent = '📄';
+      icon.setAttribute('data-drawing-action', 'view');
+      icon.setAttribute('data-drawing-id', id);
+      host.replaceWith(icon);
+      return;
+    }
     const img = document.createElement('img');
     img.src = entry.url;
     img.alt = '';
@@ -6039,7 +6115,7 @@ async function handleDrawingUpload(event) {
     try {
       const data = await readFileAsDataURL(file);
       if (!DRAWING_DATA_RE.test(data)) { failures.push('「' + file.name + '」格式不受支持'); continue; }
-      const fileType = data.slice(0, 22).toLowerCase() === 'data:application/pdf' ? 'pdf' : 'image';
+      const fileType = /^data:application\/pdf;/i.test(data) ? 'pdf' : 'image';
       const id = newDrawingId();
       if (cloudStorageEnabled()) {
         const stored = await cloudStorageWrite(drawingContentKey(id), data);
@@ -6304,9 +6380,9 @@ async function openDrawingViewer(id) {
   if (!drawing) { showToast('未找到图纸记录。', 'warn'); return; }
   releaseDrawingViewer();
   drawingViewer.id = id;
-  drawingViewer.isPdf = drawing.fileType === 'pdf';
-  const isPdf = drawing.fileType === 'pdf';
-  const zoomTools = isPdf ? '' :
+  let isPdf = drawing.fileType === 'pdf';
+  drawingViewer.isPdf = isPdf;
+  const drawingZoomTools = () => isPdf ? '' :
     '<button type="button" class="drawing-viewer-tool" data-drawing-zoom="out" title="缩小" aria-label="缩小">−</button>' +
     '<span class="drawing-zoom-value" id="drawingZoomValue" aria-live="polite">100%</span>' +
     '<button type="button" class="drawing-viewer-tool" data-drawing-zoom="in" title="放大" aria-label="放大">＋</button>' +
@@ -6316,7 +6392,7 @@ async function openDrawingViewer(id) {
     '<div class="data-edit-panel drawing-viewer-panel" role="dialog" aria-modal="true">' +
     '<div class="data-edit-head drawing-viewer-head">' +
     '<h3 id="dataEditTitle">' + escapeHTML(drawing.name || drawing.fileName) + (drawing.drawingNo ? ' · ' + escapeHTML(drawing.drawingNo) : '') + '</h3>' +
-    '<div class="drawing-viewer-tools">' + zoomTools +
+    '<div class="drawing-viewer-tools">' + drawingZoomTools() +
     '<button type="button" class="drawing-viewer-tool" id="drawingFullscreenBtn" data-drawing-fullscreen title="全屏查看（Esc 退出）" aria-pressed="false">全屏</button>' +
     '<button type="button" class="data-edit-close" onclick="closeDrawingViewer()" aria-label="关闭">×</button>' +
     '</div>' +
@@ -6327,10 +6403,14 @@ async function openDrawingViewer(id) {
   shell('<p style="padding:24px; color:var(--text-dim);">正在从云端载入图纸…</p>');
   const entry = await ensureDrawingContent(id);
   if (!entry) {
-    shell('<p style="padding:24px; color:var(--danger);">图纸内容无法载入：可能尚未同步到云端，或内容格式不受信任。请重新上传。</p>');
+    const reason = drawingContentError ? '：' + escapeHTML(drawingContentError) : '';
+    shell('<p style="padding:24px; color:var(--danger);">图纸内容无法载入' + reason + '。已尝试云端内容、本机与云端旧格式缓存；若仍失败，请重新上传该图纸。</p>');
     return;
   }
   if (!document.getElementById('dataEditTitle')) return; /* 用户已关闭弹窗 */
+  /* 文件类型以实际内容为准：兼容历史上传把 PDF 记成 image 的元数据 */
+  isPdf = /^data:application\/pdf;base64,/i.test(entry.data);
+  drawingViewer.isPdf = isPdf;
   const viewerBlobUrl = dataUrlToObjectUrl(entry.data, isPdf);
   drawingViewer.url = viewerBlobUrl || entry.url;
   drawingViewer.ownsUrl = Boolean(viewerBlobUrl);
