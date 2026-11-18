@@ -85,9 +85,22 @@ assert.match(js, /已尝试云端内容与本机旧格式缓存/, "错误提示�
 // 加载性能：IndexedDB 持久缓存 + 进入视图后台预载
 assert.match(js, /async function readCachedDrawingContent\(id\)/, "图纸内容应持久缓存到 IndexedDB");
 assert.match(js, /async function writeCachedDrawingContent\(id, data\)/, "云端下载后应写入本机缓存");
-assert.match(js, /function prefetchDrawingContents\(list\)/, "进入图纸视图应后台预载内容");
-assert.match(js, /prefetchDrawingContents\(list\)/, "渲染网格后应触发预载");
+assert.match(js, /function prefetchDrawingThumbnails\(list\)/, "进入图纸视图应后台预载缩略图");
+assert.match(js, /prefetchDrawingThumbnails\(list\)/, "渲染网格后应触发缩略图预载");
+assert.doesNotMatch(js, /function prefetchDrawingContents\(list\)/, "不得随视图预载整份原图（几十张就是上百 MB）");
 assert.match(js, /removeCachedDrawingContent\(id\)/, "删除图纸应清理本机缓存");
+
+// 跨设备读取速度：列表只下缩略图，PDF 不下载内容，同步只探存在性
+assert.match(js, /const DRAWING_THUMB_PREFIX = 'boiler_drawing_thumb:'/, "缩略图单独一个云端键");
+assert.match(js, /function drawingThumbKey\(id\)/);
+assert.match(js, /function buildDrawingThumbnail\(data\)/, "上传时用 canvas 生成缩略图");
+assert.match(js, /async function ensureDrawingThumbnail\(id\)/, "卡片按需拉缩略图");
+assert.match(js, /async function storeDrawingThumbnail\(id, data\)/);
+assert.match(js, /cloudStorageWrite\(drawingThumbKey\(id\), thumb\)/, "缩略图写回云端供其他电脑使用");
+assert.match(js, /if \(meta && meta\.fileType === 'pdf'\) \{ drawingThumbFallback/, "PDF 卡片直接给图标，不下载内容");
+assert.match(js, /releaseDrawingThumbnail\(id\)/, "删除图纸时清理缩略图");
+assert.match(js, /async function cloudStorageProbe\(key\)/, "同步前只探存在性，不下整份原图");
+assert.match(js, /ensureDrawingThumbnail\(id\)\.then\(thumb =>/, "查看器先用缩略图占位");
 
 // 跨设备可见性：手动同步列表与缺失内容
 assert.match(html, /id="drawingSyncBtn"[^>]*onclick="syncDrawingsToCloud\(\)"/, "图纸库应提供同步到云端入口");

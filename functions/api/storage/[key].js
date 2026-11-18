@@ -17,12 +17,18 @@ function safeKey(rawKey) {
   return key;
 }
 
-/* 图纸内容按 id 写入后不再变更，可安全让浏览器缓存；元数据/业务键仍需每次取最新 */
+/* 图纸内容/缩略图按 id 写入后不再变更，可安全让浏览器缓存；元数据/业务键仍需每次取最新。
+   内容 1 天、缩略图 7 天：缩略图小且要频繁用于列表，命中的价值更高。 */
 const CACHEABLE_CONTENT_PREFIX = 'boiler_drawing_content:';
+const CACHEABLE_THUMB_PREFIX = 'boiler_drawing_thumb:';
 function contentCacheInit(key) {
-  return key.indexOf(CACHEABLE_CONTENT_PREFIX) === 0
-    ? { headers: { 'Cache-Control': 'private, max-age=86400' } }
-    : undefined;
+  if(key.indexOf(CACHEABLE_THUMB_PREFIX) === 0) {
+    return { headers: { 'Cache-Control': 'private, max-age=604800' } };
+  }
+  if(key.indexOf(CACHEABLE_CONTENT_PREFIX) === 0) {
+    return { headers: { 'Cache-Control': 'private, max-age=86400' } };
+  }
+  return undefined;
 }
 
 /* D1 单条 SQL 语句上限 100KB：大值（如图纸 base64）按 UTF-8 字节切块后逐行存储。
@@ -145,11 +151,16 @@ async function deleteChunks(env, key, range) {
   await env.DB.prepare(DELETE_CHUNK_SQL).bind(...range).run().catch(() => null);
 }
 
-export async function onRequestGet({ env, params }) {
+export async function onRequestGet({ env, request, params }) {
   const key = safeKey(params.key);
   if(!key) return jsonResponse({ error: 'Invalid key' }, { status: 400 });
-  const row = await readMainRow(env, key);
+  /* probe=1：只回存在性与版本，不下内容。同步图纸时用它避免把整批原图重下一遍。 */
+  const probe = new URL(request.url).searchParams.get('probe') === '1';
+  const row = probe
+    ? await env.DB.prepare('SELECT key, updated_at FROM app_kv WHERE key = ?').bind(key).first()
+    : await readMainRow(env, key);
   if(!row) return jsonResponse({ found: false, key }, { status: 404 });
+  if(probe) return jsonResponse({ found: true, key, updatedAt: row.updated_at }, { headers: { 'Cache-Control': 'no-store' } });
   let parsed = null;
   try { parsed = JSON.parse(row.value); } catch { parsed = null; }
   if(parsed && typeof parsed === 'object' && !Array.isArray(parsed)

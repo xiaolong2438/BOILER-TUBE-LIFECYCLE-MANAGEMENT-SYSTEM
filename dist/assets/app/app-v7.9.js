@@ -134,6 +134,18 @@ async function cloudStorageWrite(key, value, options = {}) {
     return { ok: false, networkError: true, error };
   }
 }
+/* 只问「这个键在不在云端」，不下载内容：同步图纸时避免把几十 MB 原图全拉一遍。 */
+async function cloudStorageProbe(key) {
+  if(!cloudStorageEnabled()) return null;
+  try {
+    const response = await fetch(`${CLOUD_STORAGE_ENDPOINT}/${encodeURIComponent(key)}?probe=1`);
+    if(response.status === 404) return false;
+    const payload = await response.json().catch(() => null);
+    return Boolean(response.ok && payload && payload.found === true);
+  } catch {
+    return null;
+  }
+}
 function cloudEventContentKey(record) {
   return ['code', 'date', 'type', 'desc', 'spec', 'material', 'thickness', 'hardness']
     .map(key => String(record && record[key] !== undefined && record[key] !== null ? record[key] : ''))
@@ -5593,6 +5605,12 @@ function getAssistantRole() {
 const DESIGN_DRAWINGS_META_KEY = 'boiler_design_drawings_meta';
 const DESIGN_DRAWINGS_KEY = 'boiler_design_drawings';
 const DRAWING_CONTENT_PREFIX = 'boiler_drawing_content:';
+/* 列表卡片只有 130px 高：上传时生成 480px 缩略图单独存一个键，
+   跨设备打开图纸库时每张卡只下 30–60KB，而不是整份 4MB 原图。 */
+const DRAWING_THUMB_PREFIX = 'boiler_drawing_thumb:';
+const DRAWING_THUMB_MAX_SIDE = 480;
+const DRAWING_THUMB_QUALITY = 0.72;
+const DRAWING_THUMB_DATA_RE = /^data:image\/(?:jpeg|png|webp);base64,/;
 const DRAWING_MAX_BYTES = 4 * 1024 * 1024;
 const DRAWING_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const DRAWING_DATA_RE = /^data:(image\/(?:png|jpeg|jpg|webp)|application\/pdf);base64,[A-Za-z0-9+/=\s]+$/;
@@ -5883,6 +5901,10 @@ if (!designDrawings.length) {
 
 const drawingContentCache = new Map();
 const drawingContentInflight = new Map();
+const drawingThumbCache = new Map();
+const drawingThumbInflight = new Map();
+/* 云端确认没有缩略图的历史图纸：本会话内不再重复问同一个 404 */
+const drawingThumbMissing = new Set();
 const drawingCloudVerified = new Set();
 let drawingSyncInProgress = false;
 /* 图纸内容本地持久缓存（IndexedDB）：到 Cloudflare 的跨洋 RTT 通常 0.5–3s，
@@ -5907,36 +5929,44 @@ function drawingContentDB() {
   });
   return drawingIdbPromise;
 }
-async function readCachedDrawingContent(id) {
+/* 同一个 IndexedDB 仓库存两类数据：原图用 id，缩略图用 'thumb:<id>' 前缀。 */
+function drawingThumbCacheKey(id) { return 'thumb:' + id; }
+async function readCachedDrawingValue(key) {
   const db = await drawingContentDB();
   if (!db) return null;
   return new Promise(resolve => {
     try {
-      const request = db.transaction(DRAWING_IDB_STORE, 'readonly').objectStore(DRAWING_IDB_STORE).get(id);
+      const request = db.transaction(DRAWING_IDB_STORE, 'readonly').objectStore(DRAWING_IDB_STORE).get(key);
       request.onsuccess = () => resolve(request.result && typeof request.result.data === 'string' ? request.result.data : null);
       request.onerror = () => resolve(null);
     } catch (err) { resolve(null); }
   });
 }
-async function writeCachedDrawingContent(id, data) {
+async function writeCachedDrawingValue(key, data) {
   const db = await drawingContentDB();
   if (!db) return false;
   return new Promise(resolve => {
     try {
       const tx = db.transaction(DRAWING_IDB_STORE, 'readwrite');
-      tx.objectStore(DRAWING_IDB_STORE).put({ id, data, savedAt: Date.now() });
+      tx.objectStore(DRAWING_IDB_STORE).put({ id: key, data, savedAt: Date.now() });
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => resolve(false);
       tx.onabort = () => resolve(false);
     } catch (err) { resolve(false); }
   });
 }
-async function removeCachedDrawingContent(id) {
+async function removeCachedDrawingValue(key) {
   const db = await drawingContentDB();
   if (!db) return;
-  try { db.transaction(DRAWING_IDB_STORE, 'readwrite').objectStore(DRAWING_IDB_STORE).delete(id); }
+  try { db.transaction(DRAWING_IDB_STORE, 'readwrite').objectStore(DRAWING_IDB_STORE).delete(key); }
   catch (err) { /* 缓存清理失败不影响主流程 */ }
 }
+async function readCachedDrawingContent(id) { return readCachedDrawingValue(id); }
+async function writeCachedDrawingContent(id, data) { return writeCachedDrawingValue(id, data); }
+async function removeCachedDrawingContent(id) { return removeCachedDrawingValue(id); }
+async function readCachedDrawingThumbnail(id) { return readCachedDrawingValue(drawingThumbCacheKey(id)); }
+async function writeCachedDrawingThumbnail(id, data) { return writeCachedDrawingValue(drawingThumbCacheKey(id), data); }
+async function removeCachedDrawingThumbnail(id) { return removeCachedDrawingValue(drawingThumbCacheKey(id)); }
 /* 汇总本机所有可用的图纸内容来源：内存 → IndexedDB → 旧格式数组 */
 async function readAnyLocalDrawingContent(id) {
   const entry = drawingContentCache.get(id);
@@ -5949,9 +5979,9 @@ async function readAnyLocalDrawingContent(id) {
 }
 /* 云端内容键缺失/损坏时用本机内容补传；每张图纸每会话只核对一次 */
 async function verifyCloudDrawingContent(id, data) {
-  const remote = await cloudStorageRequest(drawingContentKey(id));
-  if (remote && remote.found === true && typeof remote.value === 'string' && DRAWING_DATA_RE.test(remote.value)) return true;
-  if (remote === null || remote === undefined) return false;
+  const exists = await cloudStorageProbe(drawingContentKey(id));
+  if (exists === true) return true;
+  if (exists === null) return false;
   const stored = await cloudStorageWrite(drawingContentKey(id), data);
   if (stored && stored.ok) console.info('[图纸] 已补传云端内容：' + id);
   return Boolean(stored && stored.ok);
@@ -6097,6 +6127,100 @@ function releaseDrawingContent(id) {
   }
   removeCachedDrawingContent(id).catch(() => null);
 }
+/* ===== 缩略图链路：列表只拉小图，原图只在查看器里按需拉 ===== */
+function drawingThumbKey(id) { return DRAWING_THUMB_PREFIX + id; }
+/* 用 canvas 把原图缩到 480px、JPEG 0.72；一张 3MB 的图通常落到 30–60KB。
+   失败（旧内核无 canvas、图片损坏、PDF）返回 null，调用方退回占位。 */
+function buildDrawingThumbnail(data) {
+  return new Promise(resolve => {
+    if (!/^data:image\//i.test(String(data || ''))) { resolve(null); return; }
+    if (typeof document === 'undefined' || typeof Image !== 'function') { resolve(null); return; }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
+        if (!width || !height) { resolve(null); return; }
+        const scale = Math.min(1, DRAWING_THUMB_MAX_SIDE / Math.max(width, height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const ctx = canvas.getContext && canvas.getContext('2d');
+        if (!ctx) { resolve(null); return; }
+        /* JPEG 没有透明通道：先铺白底，避免 PNG 透明区域发黑 */
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const thumb = canvas.toDataURL('image/jpeg', DRAWING_THUMB_QUALITY);
+        resolve(DRAWING_THUMB_DATA_RE.test(thumb) ? thumb : null);
+      } catch (err) { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = data;
+  });
+}
+function rememberDrawingThumb(id, data) {
+  const entry = { data, url: data };
+  drawingThumbCache.set(id, entry);
+  return entry;
+}
+async function ensureDrawingThumbnail(id) {
+  if (drawingThumbCache.has(id)) return drawingThumbCache.get(id);
+  if (drawingThumbMissing.has(id)) return null;
+  /* 卡片渲染与预载可能同时要同一张缩略图，合并成一次请求 */
+  if (drawingThumbInflight.has(id)) return drawingThumbInflight.get(id);
+  const task = loadDrawingThumbnail(id).finally(() => {
+    if (drawingThumbInflight.get(id) === task) drawingThumbInflight.delete(id);
+  });
+  drawingThumbInflight.set(id, task);
+  return task;
+}
+async function loadDrawingThumbnail(id) {
+  /* PDF 没有缩略图键：不要为此白跑一次请求 */
+  const meta = designDrawings.find(d => d && d.id === id);
+  if (meta && meta.fileType === 'pdf') return null;
+  const cached = await readCachedDrawingThumbnail(id);
+  if (cached && DRAWING_THUMB_DATA_RE.test(cached)) return rememberDrawingThumb(id, cached);
+  if (!cloudStorageEnabled()) return null;
+  const response = await cloudStorageRequest(drawingThumbKey(id));
+  if (response && response.found === true && typeof response.value === 'string' && DRAWING_THUMB_DATA_RE.test(response.value)) {
+    writeCachedDrawingThumbnail(id, response.value).catch(() => null);
+    return rememberDrawingThumb(id, response.value);
+  }
+  /* 只有明确 404 才记下来，网络异常留给下次重试 */
+  if (response && response.found === false) {
+    drawingThumbMissing.add(id);
+    /* 上线前的老图纸没有缩略图键：本机若已缓存原图，就地生成一张并后台回传云端（不产生下载） */
+    try {
+      const local = await readCachedDrawingContent(id);
+      const thumb = local && DRAWING_DATA_RE.test(local) ? await buildDrawingThumbnail(local) : null;
+      if (thumb) {
+        drawingThumbMissing.delete(id);
+        rememberDrawingThumb(id, thumb);
+        writeCachedDrawingThumbnail(id, thumb).catch(() => null);
+        cloudStorageWrite(drawingThumbKey(id), thumb).catch(() => null);
+        return drawingThumbCache.get(id) || null;
+      }
+    } catch (err) { /* 生成失败就保持占位 */ }
+  }
+  return null;
+}
+/* 原图已经在手时（上传后、查看器载入后、手动同步时）生成并回传缩略图。 */
+async function storeDrawingThumbnail(id, data) {
+  const thumb = await buildDrawingThumbnail(data);
+  if (!thumb) return false;
+  drawingThumbMissing.delete(id);
+  rememberDrawingThumb(id, thumb);
+  writeCachedDrawingThumbnail(id, thumb).catch(() => null);
+  if (!cloudStorageEnabled()) return false;
+  const stored = await cloudStorageWrite(drawingThumbKey(id), thumb);
+  return Boolean(stored && stored.ok);
+}
+function releaseDrawingThumbnail(id) {
+  drawingThumbCache.delete(id);
+  drawingThumbMissing.delete(id);
+  removeCachedDrawingThumbnail(id).catch(() => null);
+}
 /* 元数据落盘：本地缓存 + 云端（可等待确认）。只有云端确认成功才算“已保存到云端”。 */
 async function persistDrawingMeta(options = {}) {
   const serialized = JSON.stringify(designDrawings);
@@ -6120,21 +6244,24 @@ function saveDesignDrawings() {
 function drawingThumbPlaceholder(id, label) {
   return '<div data-drawing-thumb="' + escapeHTML(id) + '" style="width:100%; height:130px; border-radius:6px 6px 0 0; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-dim); font-size:12px;">' + escapeHTML(label) + '</div>';
 }
+function drawingThumbFallback(host, id, label) {
+  const box = document.createElement('div');
+  box.style.cssText = 'width:100%; height:130px; border-radius:6px 6px 0 0; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-dim); font-size:12px; cursor:pointer;';
+  box.textContent = label;
+  box.setAttribute('data-drawing-action', 'view');
+  box.setAttribute('data-drawing-id', id);
+  host.replaceWith(box);
+}
 function renderDrawingThumbnail(host, id) {
-  ensureDrawingContent(id).then(entry => {
-    if (!entry || !host.isConnected) return;
-    /* 历史元数据可能把 PDF 记成图片：按实际内容显示 PDF 占位，避免 <img> 裂图 */
-    if (/^data:application\/pdf;base64,/i.test(entry.data)) {
-      const icon = document.createElement('div');
-      icon.style.cssText = 'width:100%; height:130px; border-radius:6px 6px 0 0; display:flex; align-items:center; justify-content:center; background:var(--bg); font-size:44px; cursor:pointer;';
-      icon.textContent = '📄';
-      icon.setAttribute('data-drawing-action', 'view');
-      icon.setAttribute('data-drawing-id', id);
-      host.replaceWith(icon);
-      return;
-    }
+  const meta = designDrawings.find(d => d && d.id === id);
+  /* PDF 卡片只给图标：为了 130px 的缩略图去下载整份 PDF 是纯粹的带宽浪费 */
+  if (meta && meta.fileType === 'pdf') { drawingThumbFallback(host, id, '📄 点击查看'); return; }
+  ensureDrawingThumbnail(id).then(thumb => {
+    if (!host.isConnected) return;
+    /* 上线前上传的历史图纸还没有缩略图：先给占位，等用户点开查看器时再从原图补生成 */
+    if (!thumb) { drawingThumbFallback(host, id, '点击查看'); return; }
     const img = document.createElement('img');
-    img.src = entry.url;
+    img.src = thumb.url;
     img.alt = '';
     img.style.cssText = 'width:100%; height:130px; object-fit:cover; border-radius:6px 6px 0 0; cursor:pointer; display:block;';
     img.setAttribute('data-drawing-action', 'view');
@@ -6223,6 +6350,8 @@ async function handleDrawingUpload(event) {
       if (cloudStorageEnabled()) {
         const stored = await cloudStorageWrite(drawingContentKey(id), data);
         if (!stored.ok) { failures.push('「' + file.name + '」内容保存失败'); continue; }
+        /* 缩略图失败不阻塞上传：列表会退回占位，查看器载入原图时再补一次 */
+        try { await storeDrawingThumbnail(id, data); } catch (err) { /* 忽略 */ }
       }
       const meta = normalizeDrawingMeta({
         id, name: file.name.replace(/\.[^.]+$/, ''), drawingNo: '', sys,
@@ -6263,7 +6392,9 @@ async function deleteDesignDrawing(id) {
     return;
   }
   releaseDrawingContent(id);
+  releaseDrawingThumbnail(id);
   cloudStorageRequest(drawingContentKey(id), 'DELETE').catch(() => null);
+  cloudStorageRequest(drawingThumbKey(id), 'DELETE').catch(() => null);
   renderDesignDrawings();
   mlog('delete', { record: { id: id, name: drawing.name }, source: 'manual' });
 }
@@ -6305,22 +6436,23 @@ function renderDesignDrawings() {
   }).join('') : '<div style="color:var(--text-dim); padding:20px; text-align:center;">暂无图纸。点击上方「上传图纸」导入材料分界图/总图（图片或 PDF，如 148M211-0 高温过热器材料分界图）。</div>';
   bindDrawingGrid(grid);
   observeDrawingThumbs(grid);
-  setTimeout(() => prefetchDrawingContents(list), 0);
+  setTimeout(() => prefetchDrawingThumbnails(list), 0);
 }
 
-/* 进入图纸视图后后台预载内容（含 PDF），把跨洋 RTT 提前到点击之前。
-   ensureDrawingContent 命中 IndexedDB 时不会产生网络请求；最多 3 路并发避免抢占带宽。 */
+/* 进入图纸视图后只后台预载缩略图（每张 30–60KB），把等待提前到点击之前。
+   原图不再随视图预载：一个系统二三十张图就是上百 MB，改由查看器按需拉取。
+   ensureDrawingThumbnail 命中 IndexedDB 时不会产生网络请求；最多 3 路并发避免抢占带宽。 */
 let drawingPrefetchRun = 0;
-function prefetchDrawingContents(list) {
-  if (!cloudStorageEnabled() || !Array.isArray(list) || !list.length) return;
+function prefetchDrawingThumbnails(list) {
+  if (!Array.isArray(list) || !list.length) return;
   const run = ++drawingPrefetchRun;
-  const queue = list.map(d => d && d.id).filter(id => id && !drawingContentCache.has(id));
+  const queue = list.map(d => d && d.id).filter(id => id && !drawingThumbCache.has(id));
   if (!queue.length) return;
   let cursor = 0;
   const worker = async () => {
     while (cursor < queue.length && run === drawingPrefetchRun) {
       const id = queue[cursor++];
-      try { await ensureDrawingContent(id); } catch (err) { /* 预载失败不影响手动打开 */ }
+      try { await ensureDrawingThumbnail(id); } catch (err) { /* 预载失败不影响手动打开 */ }
     }
   };
   const workers = Math.min(3, queue.length);
@@ -6352,21 +6484,32 @@ async function syncDrawingsToCloud() {
   let done = 0;
   let uploaded = 0;
   let existed = 0;
+  let thumbs = 0;
   const missing = [];
   for (const id of ids) {
-    const remote = await cloudStorageRequest(drawingContentKey(id));
-    if (remote && remote.found === true && typeof remote.value === 'string' && DRAWING_DATA_RE.test(remote.value)) {
+    /* 只探存在性，不下整份原图：否则同步一次就是几十 MB 流量 */
+    const exists = await cloudStorageProbe(drawingContentKey(id));
+    let localContent = null;
+    if (exists === true) {
       existed += 1;
     } else {
-      const content = await readAnyLocalDrawingContent(id);
-      const stored = content ? await cloudStorageWrite(drawingContentKey(id), content) : { ok: false };
+      localContent = await readAnyLocalDrawingContent(id);
+      const stored = localContent ? await cloudStorageWrite(drawingContentKey(id), localContent) : { ok: false };
       if (stored && stored.ok) { uploaded += 1; drawingCloudVerified.add(id); }
       else missing.push(id);
+    }
+    /* 顺手补齐缩略图：只用手头已有的内容，不为缩略图再下一遍原图 */
+    if (!drawingThumbCache.has(id)) {
+      const source = localContent || await readAnyLocalDrawingContent(id);
+      if (source) {
+        try { if (await storeDrawingThumbnail(id, source)) thumbs += 1; } catch (err) { /* 忽略 */ }
+      }
     }
     done += 1;
     setStatus('正在同步内容 ' + done + '/' + ids.length + '…');
   }
   const summary = '同步完成：列表已保存；内容新增 ' + uploaded + ' 张，云端已存在 ' + existed + ' 张' +
+    (thumbs ? '，缩略图新增 ' + thumbs + ' 张' : '') +
     (missing.length ? '，本机缺少内容 ' + missing.length + ' 张' : '') + '。';
   setStatus(summary);
   showToast(summary, missing.length ? 'warn' : 'ok', 9000);
@@ -6571,6 +6714,15 @@ async function openDrawingViewer(id, options = {}) {
     body +
     '</div>');
   shell('<p style="padding:24px; color:var(--text-dim);">正在从云端载入图纸…</p>');
+  /* 原图可能有好几 MB：先用缩略图占位，缩略图本身只有几十 KB，通常一个 RTT 就到 */
+  ensureDrawingThumbnail(id).then(thumb => {
+    if (!thumb || drawingContentCache.has(id)) return;
+    if (!document.getElementById('dataEditTitle') || document.getElementById('drawingViewerStage')) return;
+    shell('<div class="drawing-viewer-stage" id="drawingViewerStage">' +
+      '<img src="' + thumb.url + '" alt="" style="max-width:100%; max-height:100%; object-fit:contain; opacity:.85;">' +
+      '</div>' +
+      '<p style="margin:0; padding:0 24px 12px; color:var(--text-dim); font-size:12px;">正在载入原图（先看缩略图）…</p>');
+  }).catch(() => null);
   const entry = await ensureDrawingContent(id, options);
   if (!entry) {
     const reason = drawingContentError ? '：' + escapeHTML(drawingContentError) : '';
@@ -6585,6 +6737,8 @@ async function openDrawingViewer(id, options = {}) {
   /* 复用内容缓存里的 Blob URL，避免再次 atob 解码整份 base64；缓存条目由删除操作统一释放 */
   drawingViewer.url = entry.url;
   drawingViewer.ownsUrl = false;
+  /* 上线前上传的图纸没有缩略图：原图既然已经在手，顺手补一张，下次进列表就快了 */
+  if (!isPdf && !drawingThumbCache.has(id)) storeDrawingThumbnail(id, entry.data).catch(() => null);
   if (isPdf) {
     shell('<div class="drawing-viewer-stage drawing-viewer-stage-pdf">' +
       '<iframe src="' + entry.url + '" style="width:100%; height:100%; border:0;" title="' + escapeHTML(drawing.name) + '"></iframe>' +

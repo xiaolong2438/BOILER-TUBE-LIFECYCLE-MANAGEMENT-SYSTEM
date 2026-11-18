@@ -16,8 +16,8 @@ function fixture(t) {
   return { db };
 }
 
-async function call(db, handler, method, key, body) {
-  const request = new Request('https://synthetic.example/api/storage/' + encodeURIComponent(key), {
+async function call(db, handler, method, key, body, query = '') {
+  const request = new Request('https://synthetic.example/api/storage/' + encodeURIComponent(key) + query, {
     method,
     ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   });
@@ -149,6 +149,25 @@ test('图纸内容 GET 允许浏览器缓存，元数据仍不缓存', async (t)
   assert.equal(meta.status, 200);
   const metaGet = await call(db, onRequestGet, 'GET', 'boiler_design_drawings_meta');
   assert.equal(metaGet.headers.get('Cache-Control'), null, '元数据键不得被浏览器缓存');
+
+  await call(db, onRequestPut, 'PUT', 'boiler_drawing_thumb:demo', { value: 'data:image/jpeg;base64,' + 'B'.repeat(40000) });
+  const thumb = await call(db, onRequestGet, 'GET', 'boiler_drawing_thumb:demo');
+  assert.equal(thumb.status, 200);
+  assert.equal(thumb.headers.get('Cache-Control'), 'private, max-age=604800', '缩略图缓存更久（列表频繁读取且体积小）');
+});
+
+test('probe=1 只返回存在性与版本，不返回内容', async (t) => {
+  const { db } = fixture(t);
+  await call(db, onRequestPut, 'PUT', 'probe_key', { value: { data: 'x'.repeat(60000) }, baseUpdatedAt: null });
+
+  const probe = await call(db, onRequestGet, 'GET', 'probe_key', undefined, '?probe=1');
+  assert.equal(probe.status, 200);
+  assert.equal(probe.body.found, true);
+  assert.equal(probe.body.value, undefined, '探测不得回传内容');
+  assert.equal(probe.headers.get('Cache-Control'), 'no-store');
+
+  const missing = await call(db, onRequestGet, 'GET', 'probe_missing', undefined, '?probe=1');
+  assert.equal(missing.status, 404);
 });
 
 test('baseUpdatedAt 并发冲突返回 409，且旧值保持不变', async (t) => {

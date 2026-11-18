@@ -117,6 +117,7 @@
 - `_routes.json` 让 `/assets/*` 直接走 Cloudflare 静态边缘服务，不再经过 Functions（登录态下每个资源省去一次 D1 会话查询）。
 - `_headers` 为静态资源启用 `max-age=300, stale-while-revalidate=86400`，入口页 `no-cache`。
 - 受热面图纸元数据与图片/PDF 内容分离：列表只同步元数据，缩略图与查看器按需从云端拉取，首屏不再下载整批 base64。
+- 图纸列表只下 480px 缩略图（30–60KB/张），原图仅在查看器按需拉取；PDF 卡片直接给图标不下载内容。
 - 修改 `assets` 文件建议递增文件名版本号（如 `app-v7.9.js` → `app-v8.0.js`），可立即击穿缓存；新增模块的登记要求见 [docs/dev-workflow.md](docs/dev-workflow.md)。
 
 ## 目录结构
