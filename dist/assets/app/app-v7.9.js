@@ -5882,6 +5882,8 @@ if (!designDrawings.length) {
 
 const drawingContentCache = new Map();
 const drawingContentInflight = new Map();
+const drawingCloudVerified = new Set();
+let drawingSyncInProgress = false;
 /* 图纸内容本地持久缓存（IndexedDB）：到 Cloudflare 的跨洋 RTT 通常 0.5–3s，
    每张图纸首次下载后落到本机，刷新页面或二次打开直接命中，省掉重复往返。 */
 const DRAWING_IDB_NAME = 'boiler_drawings';
@@ -5933,6 +5935,25 @@ async function removeCachedDrawingContent(id) {
   if (!db) return;
   try { db.transaction(DRAWING_IDB_STORE, 'readwrite').objectStore(DRAWING_IDB_STORE).delete(id); }
   catch (err) { /* 缓存清理失败不影响主流程 */ }
+}
+/* 汇总本机所有可用的图纸内容来源：内存 → IndexedDB → 旧格式数组 */
+async function readAnyLocalDrawingContent(id) {
+  const entry = drawingContentCache.get(id);
+  if (entry && typeof entry.data === 'string' && DRAWING_DATA_RE.test(entry.data)) return entry.data;
+  const cached = await readCachedDrawingContent(id);
+  if (cached && DRAWING_DATA_RE.test(cached)) return cached;
+  const legacy = legacyDrawingData(id);
+  if (legacy && DRAWING_DATA_RE.test(legacy)) return legacy;
+  return null;
+}
+/* 云端内容键缺失/损坏时用本机内容补传；每张图纸每会话只核对一次 */
+async function verifyCloudDrawingContent(id, data) {
+  const remote = await cloudStorageRequest(drawingContentKey(id));
+  if (remote && remote.found === true && typeof remote.value === 'string' && DRAWING_DATA_RE.test(remote.value)) return true;
+  if (remote === null || remote === undefined) return false;
+  const stored = await cloudStorageWrite(drawingContentKey(id), data);
+  if (stored && stored.ok) console.info('[图纸] 已补传云端内容：' + id);
+  return Boolean(stored && stored.ok);
 }
 function dataUrlToObjectUrl(data, isPdf) {
   const match = String(data || '').match(/^data:([^;,]+);base64,([\s\S]+)$/);
@@ -6056,6 +6077,11 @@ async function loadDrawingContent(id, options = {}) {
   drawingContentCache.set(id, entry);
   drawingContentError = '';
   if (!fromLocalCache) writeCachedDrawingContent(id, data).catch(() => null);
+  /* 本机缓存命中也顺手核对一次云端：内容键缺失时补传，保证其他电脑能看到 */
+  if (fromLocalCache && cloudStorageEnabled() && !drawingSyncInProgress && !drawingCloudVerified.has(id)) {
+    drawingCloudVerified.add(id);
+    verifyCloudDrawingContent(id, data).catch(() => null);
+  }
   if (fromLegacy) {
     console.warn('[图纸] 已从旧格式缓存恢复内容，正在补传云端：' + id);
     reuploadLegacyDrawingContent(id, data).catch(() => null);
@@ -6293,6 +6319,53 @@ function prefetchDrawingContents(list) {
   };
   const workers = Math.min(3, queue.length);
   for (let i = 0; i < workers; i += 1) worker();
+}
+/* 手动同步：把本机图纸列表写回云端，并补齐云端缺失的内容键。
+   其他电脑看不到图纸，通常就是这两者之一没有真正落到云端。 */
+async function syncDrawingsToCloud() {
+  const button = document.getElementById('drawingSyncBtn');
+  const statusEl = document.getElementById('drawingSyncStatus');
+  const setStatus = text => { if (statusEl) statusEl.textContent = text; };
+  if (!cloudStorageEnabled()) { showToast('当前是本地预览，无法同步云端。', 'warn'); return; }
+  if (!canManageTubeData()) { showToast('当前权限为只读，不能同步图纸。', 'warn'); return; }
+  const ids = designDrawings.map(d => d && d.id).filter(Boolean);
+  if (!ids.length) { showToast('本机没有图纸可同步。', 'info'); return; }
+  if (button) button.disabled = true;
+  drawingSyncInProgress = true;
+  setStatus('正在同步图纸列表…');
+  let persisted = null;
+  try { persisted = await persistDrawingMeta(); } catch (err) { persisted = { ok: false }; }
+  if (!persisted || !persisted.ok) {
+    const detail = (persisted && persisted.result && persisted.result.status) || '网络错误';
+    setStatus('图纸列表同步失败（' + detail + '），请确认已登录且网络正常后重试。');
+    showToast('图纸列表同步失败（' + detail + '）。', 'error', 9000);
+    drawingSyncInProgress = false;
+    if (button) button.disabled = false;
+    return;
+  }
+  let done = 0;
+  let uploaded = 0;
+  let existed = 0;
+  const missing = [];
+  for (const id of ids) {
+    const remote = await cloudStorageRequest(drawingContentKey(id));
+    if (remote && remote.found === true && typeof remote.value === 'string' && DRAWING_DATA_RE.test(remote.value)) {
+      existed += 1;
+    } else {
+      const content = await readAnyLocalDrawingContent(id);
+      const stored = content ? await cloudStorageWrite(drawingContentKey(id), content) : { ok: false };
+      if (stored && stored.ok) { uploaded += 1; drawingCloudVerified.add(id); }
+      else missing.push(id);
+    }
+    done += 1;
+    setStatus('正在同步内容 ' + done + '/' + ids.length + '…');
+  }
+  const summary = '同步完成：列表已保存；内容新增 ' + uploaded + ' 张，云端已存在 ' + existed + ' 张' +
+    (missing.length ? '，本机缺少内容 ' + missing.length + ' 张' : '') + '。';
+  setStatus(summary);
+  showToast(summary, missing.length ? 'warn' : 'ok', 9000);
+  drawingSyncInProgress = false;
+  if (button) button.disabled = false;
 }
 function openDrawingsForSys(sys) {
   const filter = document.getElementById('drawingSysFilter');

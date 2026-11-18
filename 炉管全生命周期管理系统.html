@@ -948,9 +948,11 @@
       <div class="card-title">图纸库</div>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
         <label class="btn" style="cursor:pointer;">📤 上传图纸（图片/PDF）<input type="file" id="drawingFileInput" accept="image/png,image/jpeg,image/webp,application/pdf" multiple style="display:none;" onchange="handleDrawingUpload(event)"></label>
+        <button type="button" class="btn btn-outline" id="drawingSyncBtn" onclick="syncDrawingsToCloud()" title="把本机图纸列表与云端缺失的图纸内容补传到云端，其他电脑才能看到">☁️ 同步到云端</button>
         <select id="drawingSysFilter" onchange="renderDesignDrawings()" style="padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text);">
           <option value="">全部受热面</option>
         </select>
+        <span id="drawingSyncStatus" style="font-size:12px; color:var(--text-dim);"></span>
         <span style="font-size:12px; color:var(--text-dim);">单个文件 ≤ 4MB；图纸列表与云端同步，图片/PDF 内容按需从云端载入。</span>
       </div>
       <div id="drawingsGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px;"></div>
@@ -1054,7 +1056,7 @@
 <!-- 编码归一领域核心先于主应用执行；助手界面和超温模块仅在使用时加载 -->
 <script src="assets/app/lazy-v1.js" defer></script>
 <script src="assets/app/assistant-core-v1.js" defer></script>
-<script src="assets/app/app-v7.9.js?v=20261117-drawing-cache" defer></script>
+<script src="assets/app/app-v7.9.js?v=20261118-drawing-sync" defer></script>
 <script src="assets/app/maintenance-log-v1.js" defer></script>
 <script src="assets/app/ui-shell-v8.js" defer></script>
 <script src="assets/app/theme-toggle-v1.js" defer></script>

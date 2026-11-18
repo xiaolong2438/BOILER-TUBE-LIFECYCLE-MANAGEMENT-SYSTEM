@@ -88,6 +88,12 @@ assert.match(js, /async function writeCachedDrawingContent\(id, data\)/, "云端
 assert.match(js, /function prefetchDrawingContents\(list\)/, "进入图纸视图应后台预载内容");
 assert.match(js, /prefetchDrawingContents\(list\)/, "渲染网格后应触发预载");
 assert.match(js, /removeCachedDrawingContent\(id\)/, "删除图纸应清理本机缓存");
+
+// 跨设备可见性：手动同步列表与缺失内容
+assert.match(html, /id="drawingSyncBtn"[^>]*onclick="syncDrawingsToCloud\(\)"/, "图纸库应提供同步到云端入口");
+assert.match(js, /async function syncDrawingsToCloud\(\)/, "应支持把列表与内容补传到云端");
+assert.match(js, /async function readAnyLocalDrawingContent\(id\)/, "同步时应读取本机可用内容");
+assert.match(js, /async function verifyCloudDrawingContent\(id, data\)/, "本机缓存命中时应在后台核对并补传云端");
 assert.match(css, /\.drawing-viewer-stage\s*\{[\s\S]*?overflow:\s*auto/, "缩放后舞台可滚动查看");
 
 // 数据页/生成器联动
