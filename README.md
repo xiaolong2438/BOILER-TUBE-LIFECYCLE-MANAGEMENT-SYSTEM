@@ -35,7 +35,8 @@
 - AI 输出可追溯：结论接地过滤 + 数值审计，无本地数据依据的模型数字会被标记
 - LLM 密钥支持服务端代理（Pages secret）或浏览器本地配置
 - 用户名密码登录（PBKDF2），会话存 D1；浅色/深色主题切换
-- 业务数据 localStorage 与云端 KV 双写，多设备加载时自动备份防覆盖
+- 业务数据 localStorage 缓存 + 云端 KV 双写；写入带 `updated_at` 版本校验，多设备并发保存时按业务键自动并集合并，不静默覆盖
+- “备份并清理本机缓存”只清本浏览器缓存，云端共享数据不受影响，刷新后自动重新载入
 
 ## 编码规则（现行口径）
 
@@ -115,6 +116,7 @@
 - SheetJS（Excel）与 pdf.js（PDF 识别）**首次使用时才从 CDN 加载**，首屏不再引用这两个库。
 - `_routes.json` 让 `/assets/*` 直接走 Cloudflare 静态边缘服务，不再经过 Functions（登录态下每个资源省去一次 D1 会话查询）。
 - `_headers` 为静态资源启用 `max-age=300, stale-while-revalidate=86400`，入口页 `no-cache`。
+- 受热面图纸元数据与图片/PDF 内容分离：列表只同步元数据，缩略图与查看器按需从云端拉取，首屏不再下载整批 base64。
 - 修改 `assets` 文件建议递增文件名版本号（如 `app-v7.9.js` → `app-v8.0.js`），可立即击穿缓存；新增模块的登记要求见 [docs/dev-workflow.md](docs/dev-workflow.md)。
 
 ## 目录结构

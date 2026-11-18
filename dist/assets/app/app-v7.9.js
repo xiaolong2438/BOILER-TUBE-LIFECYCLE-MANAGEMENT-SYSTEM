@@ -330,6 +330,7 @@ function flushCloudStorageSave(key) {
   cloudSaveTimers.delete(key);
   const value = cloudPendingValues.get(key);
   cloudPendingValues.delete(key);
+  if(value === undefined) return Promise.resolve();
   const previous = cloudSaveChains.get(key) || Promise.resolve();
   const task = previous.catch(() => null).then(() => CLOUD_CONFLICT_KEYS.has(key)
     ? saveCloudValueWithMerge(key, value)
@@ -1649,7 +1650,7 @@ function backupLocalData() { const backup = JSON.stringify({ version: 'v6.7-loca
 function clearLocalData() {
   const total = userDB.events.length + userDB.replacements.length;
   if(total === 0) { showToast('当前没有可清理的本机缓存', 'info'); return; }
-  const canRestoreFromCloud = cloudStorageEnabled();
+  const canRestoreFromCloud = cloudStorageEnabled() && !!currentAuthSession;
   const warn = canRestoreFromCloud
     ? `即将清理本机缓存 ${total} 条。清理前会自动导出备份；云端共享数据不受影响，刷新后可重新载入。是否继续？`
     : `即将清理本机缓存 ${total} 条。当前未连接云端，清理后无法恢复。清理前会自动导出备份，是否继续？`;
@@ -6198,6 +6199,11 @@ async function handleDrawingUpload(event) {
   const input = event && event.target;
   if (!canManageTubeData()) {
     showToast('当前权限为只读，不能上传图纸。', 'warn');
+    if (input) input.value = '';
+    return;
+  }
+  if (!cloudStorageEnabled()) {
+    showToast('图纸内容需要云端存储；当前未连接云端，请登录后上传。', 'warn', 8000);
     if (input) input.value = '';
     return;
   }

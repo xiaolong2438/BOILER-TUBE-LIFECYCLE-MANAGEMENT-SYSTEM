@@ -57,24 +57,62 @@ INIT 时 `loadLLMConfigToForm()` 负责回填表单并刷新 `#llm-status` 状�
 审计只认「带小数或带计量单位」的数值（5.55mm、168HB、82%），建议里的纯数量（12 根）不报，
 否则提示会被忽略。新增任何调用大模型的入口，都要接一次审计。
 
-## 5. 多设备覆盖保护
+## 5. 多设备并发与覆盖保护
 
-业务数据是 `localStorage` + KV，云端写入是 last-write-wins，所以加载时必须防"静默覆盖"：
+业务数据是 `localStorage` 缓存 + KV 云端，云端写入是整包覆盖，所以分两层防护。
+
+### 5.1 启动载入（`bootstrapCloudStorage()`）
 
 - 每次 `saveDB()` 会写 `boiler_user_db_local_at`（本机最后写入时间）。
-- 启动时 `bootstrapCloudStorage()` 比较云端 `updated_at` 与本机时间：
+- 启动时比较云端 `updated_at` 与本机时间：
   - 本机更新（`localAt > remoteAt + 2s`）：**保留本机**，排队上传，提示"本机数据比云端新"。
   - 云端更新：先把本机数据备份到 `boiler_user_db_backup`（材料库同理备份到
     `boiler_material_library_backup`），再载入云端版本，并在「维护记录」留一条系统日志。
-- 注意：这是**防丢保护**，不是合并。真要做多端协作，得改成按 `ts` 增量合并或服务端版本号。
 
-### 受热面图纸（`boiler_design_drawings`）
+### 5.2 页面打开后的并发保存（乐观版本 + 并集合并）
 
-图纸走同一 KV 端点，但合并策略与业务数据不同：启动时按 `id` **并集**合并（两端各自新增互相补齐，
-同 id 以本机版本为准），不覆盖、不删除——本机删除/改名不跨设备同步，云端缺键时才整批推送本机存量。
-单张图纸上限 4MB，base64 后远超 D1 单条 SQL 100KB 语句上限，所以 `/api/storage/[key]` 对大值按 UTF-8
-字节自动分块成多行（主行存 `{__chunked,parts,size}`，行键 `key#pNNN`），GET 透明拼回，对前端无感；
-客户端键字符集中 `#` 保留给分块命名空间。`tests/storage-chunking.test.mjs` 校验分块往返与清理。
+启动比较只管载入那一刻；页面打开后两端同时编辑必须另有机制：
+
+- `PUT /api/storage/<key>` 支持可选 `baseUpdatedAt`，服务端与 `app_kv.updated_at` 精确比对，
+  不匹配返回 `409 { error: 'conflict', updatedAt }`；不传则保持旧的**无条件写入**（其他键兼容）。
+- 前端 `cloudStorageWrite()` / `saveCloudValueWithMerge()`：业务键
+  （`boiler_user_db`、`boiler_material_library`、`boiler_design_drawings_meta`）带版本写入，
+  冲突后拉取云端值、按业务键**并集合并**（同键保留本机），写回本地并重试，最多 3 次。
+  - 事件：优先 `sourceId`，其次 `ts`，最后内容键；更换：`ts` 或旧码+新码+日期+原因。
+  - 材料库：`materialKey()`；图纸：`id`。
+  - 合并结果写入「维护记录」系统日志并 toast 提示"云端新增 N 条 / 同键冲突 M 条保留本机"。
+  - 连续冲突仍失败时保留本机数据并提示导出备份后刷新，**绝不静默覆盖**。
+- 说明：这是并集，不做删除传播——本机删除的记录可能在下次合并时被云端副本带回，
+  这是"不丢记录"优先的既定取舍。
+
+### 5.3 大值分块（`/api/storage/[key]`）
+
+单张图纸上限 4MB，base64 后远超 D1 单条 SQL 100KB 语句上限，所以对大值按 UTF-8 字节分块：
+
+- 分块行键 `key#v<gen>#pNNN`，主行存 `{__chunked,parts,size,gen}`；
+- 写入顺序：先完整写入新代次分块 → 再原子切换主行指针 → 成功后清理旧代次；
+  任一分块批次失败只删本代次，旧值仍可读；
+- GET 同时兼容新格式与历史 `key#pNNN`，缺块返回 500，不拼半截值；
+- 客户端键字符集中 `#` 保留给分块命名空间；
+- `tests/storage-chunking.test.mjs` 覆盖往返、清理、缺块、条件冲突、跨批次失败与并发写入。
+
+### 5.4 受热面图纸（元数据 / 内容分离）
+
+- 元数据键 `boiler_design_drawings_meta`（不含 base64），内容键 `boiler_drawing_content:<id>`。
+- 启动只拉元数据；旧键 `boiler_design_drawings` 仅在元数据键缺失时读取一次并逐张迁移，
+  全部内容上传成功后才写元数据、清理本机旧键。
+- 列表缩略图由 `IntersectionObserver` 按需拉取内容；查看器先校验 data URL 为
+  `image/png|jpeg|webp` 或 `application/pdf`，再用 Blob URL 渲染。
+- 元数据经 `normalizeDrawingMeta()` 校验（id 字符集/长度、类型、字符串截断）后才进入界面；
+  卡片改用 `data-drawing-*` 事件委托，不再拼接内联 `onclick`。
+- 上传只有在内容键与元数据都确认成功后才提示"已保存"；改名/删除失败回滚并提示。
+
+### 5.5 “清理本机缓存”
+
+`clearLocalData()` 只删 `boiler_user_db` / `boiler_user_db_local_at` / `boiler_user_db_backup`，
+**不调用 `saveDB()`、不排队上传空库**；已登录云端时提示后刷新重新载入，未登录时明确告知无法恢复。
+`tests/local-clear.test.mjs` 锁定该行为。
+
 
 ## 6. 超温模块的共享存储与验证
 
