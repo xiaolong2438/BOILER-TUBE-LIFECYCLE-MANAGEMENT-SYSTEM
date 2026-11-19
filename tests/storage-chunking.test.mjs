@@ -264,3 +264,41 @@ test('两个分块写入并发时仅一个提交成功，胜者值可完整读�
   const meta = JSON.parse((await mainRow(db, 'race_key')).value);
   assert.equal(await countRows(db, `race\_key#v${meta.gen}#%`), meta.parts, '胜者分块必须完整');
 });
+
+/* Cloudflare Pages Functions 的 params.key 不做 URL 解码：客户端 encodeURIComponent
+   会把 `boiler_drawing_content:<id>` 编成 `...%3A...`。这里按生产真实形态
+   （params 保持百分号编码）回归 400 Invalid key 问题。 */
+function callRawParams(db, handler, method, rawParamsKey, body, query = '') {
+  const request = new Request('https://synthetic.example/api/storage/' + rawParamsKey + query, {
+    method,
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  });
+  return handler({ env: { DB: db }, request, params: { key: rawParamsKey } }).then(r => r.json());
+}
+
+test('百分号编码的冒号键名（Pages 未解码形态）可正常读写', async (t) => {
+  const { db } = fixture(t);
+  const rawKey = encodeURIComponent('boiler_drawing_content:dw1794188051875cgpta');
+  const value = 'data:application/pdf;base64,JVBERi0xLjYK';
+
+  const put = await callRawParams(db, onRequestPut, 'PUT', rawKey, { value });
+  assert.equal(put.ok, true, '编码键名 PUT 必须成功而非 400 Invalid key');
+  assert.equal(put.key, 'boiler_drawing_content:dw1794188051875cgpta');
+
+  const probe = await callRawParams(db, onRequestGet, 'GET', rawKey, undefined, '?probe=1');
+  assert.equal(probe.found, true);
+
+  const get = await callRawParams(db, onRequestGet, 'GET', rawKey);
+  assert.equal(get.found, true);
+  assert.equal(get.value, value);
+});
+
+test('非法百分号序列与解码后仍含非法字符的键名被拒绝', async (t) => {
+  const { db } = fixture(t);
+  const put = await callRawParams(db, onRequestPut, 'PUT', 'bad%zzkey', { value: { a: 1 } });
+  assert.equal(put.error, 'Invalid key');
+  const put2 = await callRawParams(db, onRequestPut, 'PUT', 'double%252Fslash', { value: { a: 1 } });
+  assert.equal(put2.error, 'Invalid key');
+  const put3 = await callRawParams(db, onRequestPut, 'PUT', 'path%2Finjection', { value: { a: 1 } });
+  assert.equal(put3.error, 'Invalid key');
+});

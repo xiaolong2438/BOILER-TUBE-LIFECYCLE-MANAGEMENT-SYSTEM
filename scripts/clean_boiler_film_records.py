@@ -661,6 +661,9 @@ def save_deterministic_workbook(path: Path, workbook: Any) -> None:
         for name in sorted(source.namelist()):
             content = source.read(name)
             if name == "docProps/core.xml":
+                # openpyxl 自产 core.xml 极小且永不含 DTD；解析前拒绝 DOCTYPE/ENTITY 并限制大小，防实体扩展（CWE-776）
+                if len(content) > 65536 or b"<!DOCTYPE" in content or b"<!ENTITY" in content:
+                    raise ValueError("Unexpected or oversized docProps/core.xml")
                 root = ET.fromstring(content)
                 for tag in ("created", "modified"):
                     node = root.find("{http://purl.org/dc/terms/}" + tag)

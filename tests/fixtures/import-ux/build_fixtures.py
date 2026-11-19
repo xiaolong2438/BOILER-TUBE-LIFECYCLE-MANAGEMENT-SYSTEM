@@ -12,19 +12,23 @@ Run: python tests/fixtures/import-ux/build_fixtures.py
 import csv
 import datetime
 import os
+import pathlib
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 夹具名全部为本文件内的固定字面量，路径固定在夹具目录内，不接受外部输入
+FIXTURES_DIR = pathlib.Path(HERE).resolve()
 # 固定时间戳：夹具是可复现的构建产物，重复生成不应产生无意义的二进制 diff
 FIXED_DATETIME = datetime.datetime(2024, 1, 1, 0, 0, 0)
 FIXED_ZIP_TIME = (2024, 1, 1, 0, 0, 0)
 
 
-def write_csv(name, rows, bom=True):
-    path = os.path.join(HERE, name)
-    with open(path, "w", encoding="utf-8-sig" if bom else "utf-8", newline="") as fh:
-        csv.writer(fh).writerows(rows)
-    print("written", path)
+def fixture_file(name):
+    """返回夹具目录内的固定文件路径；拒绝任何越出夹具目录的名字。"""
+    candidate = (FIXTURES_DIR / name).resolve()
+    if candidate.parent != FIXTURES_DIR:
+        raise ValueError("fixture name escapes fixtures dir: %r" % (name,))
+    return candidate
 
 
 def build_events_csv():
@@ -45,7 +49,10 @@ def build_events_csv():
         ["1G-SLB-LHD-F000-L005-Q001", "1", "2026-05-22", "更换", "Φ60×9", "SA-210C", "", "", "爆管更换", "", "1G-SLB-LHD-F000-L005-Q002"],
         [""] * len(header),  # 空行：应被自动丢弃
     ]
-    write_csv("现场检测记录-乱序列.csv", rows)
+    path = fixture_file("现场检测记录-乱序列.csv")
+    with path.open("w", encoding="utf-8-sig", newline="") as fh:
+        csv.writer(fh).writerows(rows)
+    print("written", path)
 
 
 def build_material_csv():
@@ -58,7 +65,10 @@ def build_material_csv():
         ["省煤器", "ECO", "入口第1排", "蛇形管", "Φ51×6", "51", "6", "SA-210C", "10", "60", "A区", "第47页"],
         ["高温过热器", "HSH", "出口第2排", "吊管", "Φ51×8", "51", "8", "", "", "", "", "缺材质"],
     ]
-    write_csv("受热面材料台账-别名表头.csv", rows)
+    path = fixture_file("受热面材料台账-别名表头.csv")
+    with path.open("w", encoding="utf-8-sig", newline="") as fh:
+        csv.writer(fh).writerows(rows)
+    print("written", path)
 
 
 def build_unrelated_csv():
@@ -68,20 +78,23 @@ def build_unrelated_csv():
         ["华东钢管厂", "王经理", "13800138000", "水冷壁管", "长期合作"],
         ["北方耐材", "李经理", "13900139000", "耐火浇注料", ""],
     ]
-    write_csv("无关表格-供应商清单.csv", rows, bom=False)
+    path = fixture_file("无关表格-供应商清单.csv")
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        csv.writer(fh).writerows(rows)
+    print("written", path)
 
 
 def normalize_zip_timestamps(path):
     """把 ZIP 内全部条目的时间戳固定，保证重复生成字节一致（openpyxl 会写入当前时间）。"""
-    tmp = path + ".tmp"
-    with zipfile.ZipFile(path, "r") as src, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
+    tmp = str(path) + ".tmp"
+    with zipfile.ZipFile(str(path), "r") as src, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
         for info in src.infolist():
             data = src.read(info.filename)
             fixed = zipfile.ZipInfo(info.filename, date_time=FIXED_ZIP_TIME)
             fixed.compress_type = zipfile.ZIP_DEFLATED
             fixed.external_attr = info.external_attr
             dst.writestr(fixed, data)
-    os.replace(tmp, path)
+    os.replace(tmp, str(path))
 
 
 def build_xlsx():
@@ -99,8 +112,8 @@ def build_xlsx():
     ws2.append(["省煤器", "ECO", "Φ51×6", "SA-210C", "10"])
     wb.properties.created = FIXED_DATETIME
     wb.properties.modified = FIXED_DATETIME
-    path = os.path.join(HERE, "检测记录.xlsx")
-    wb.save(path)
+    path = fixture_file("检测记录.xlsx")
+    wb.save(str(path))
     normalize_zip_timestamps(path)
     print("written", path)
 
@@ -138,8 +151,8 @@ def build_docx():
             "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
             "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>"
             "</Relationships>")
-    path = os.path.join(HERE, "检测台账.docx")
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+    path = fixture_file("检测台账.docx")
+    with zipfile.ZipFile(str(path), "w", zipfile.ZIP_DEFLATED) as zf:
         for name, content in [("[Content_Types].xml", content_types), ("_rels/.rels", rels), ("word/document.xml", document)]:
             info = zipfile.ZipInfo(name, date_time=FIXED_ZIP_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
@@ -155,10 +168,10 @@ if __name__ == "__main__":
     build_docx()
     # openpyxl 读回校验：确保 XLSX 夹具真实可读
     from openpyxl import load_workbook
-    wb = load_workbook(os.path.join(HERE, "检测记录.xlsx"))
+    wb = load_workbook(str(fixture_file("检测记录.xlsx")))
     assert wb.sheetnames == ["测厚记录", "材料库"], wb.sheetnames
     assert wb["测厚记录"].max_row == 5, wb["测厚记录"].max_row
     print("xlsx round-trip ok")
-    with zipfile.ZipFile(os.path.join(HERE, "检测台账.docx")) as zf:
+    with zipfile.ZipFile(str(fixture_file("检测台账.docx"))) as zf:
         assert "word/document.xml" in zf.namelist()
     print("docx round-trip ok")

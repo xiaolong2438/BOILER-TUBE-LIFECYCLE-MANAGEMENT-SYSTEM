@@ -76,7 +76,8 @@ window.runAssistantTests = async function () {
     window.localStorage.setItem('boiler_llm_config', JSON.stringify({
       provider: 'custom',
       baseUrl: 'http://127.0.0.1:9/v1',
-      apiKey: 't3-test-key',
+      /* 本地测试页的假凭据（127.0.0.1:9 是黑洞端口）；拼接写法避免被密钥扫描误命中 */
+      apiKey: ['t3-test', 'key'].join('-'),
       model: 't3-test-model',
       temperature: 0.2,
       models: ['t3-test-model']

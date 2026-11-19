@@ -9,7 +9,11 @@ function jsonResponse(payload, init = {}) {
 }
 
 function safeKey(rawKey) {
-  const key = String(rawKey || '').trim();
+  /* Cloudflare Pages Functions 的 params.key 不做 URL 解码：客户端 fetch 对
+     `boiler_drawing_content:<id>` 这类键 encodeURIComponent 后变成 `...%3A...`，
+     不先解码就会因 `%` 不在合法字符集而被一律拒成 400 Invalid key。 */
+  let key = String(rawKey || '').trim();
+  try { key = decodeURIComponent(key).trim(); } catch { /* 非法百分号序列：保留原样交给正则拒绝 */ }
   if(!key || key.length > 128) return null;
   if(!/^[A-Za-z0-9._:-]+$/.test(key)) return null;
   /* `#` 保留给分块行命名空间（key#v<gen>#pNNN / 旧格式 key#pNNN），客户端键不允许使用 */
